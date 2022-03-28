@@ -82,7 +82,7 @@ wget --content-disposition ${ngc_vehicletypenet} -O ${default_model_download_pat
 # mkdir ${default_model_download_path}/multitask_cls_model
 # wget --no-check-certificate ${ngc_mcls_classification} -O ${default_model_download_path}/multitask_cls_model/multitask_cls_resnet18.etlt
 
-mkdir ${default_model_download_path}/bicycletypenet_model
+mkdir -p ${default_model_download_path}/bicycletypenet_model
 cp scripts/bicycletypenet_resnet18_vehicletypenet_pruned.etlt ${default_model_download_path}/bicycletypenet_model/
 rm -rf ${default_model_download_path}/*.zip
 
