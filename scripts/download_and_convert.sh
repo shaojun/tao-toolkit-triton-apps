@@ -36,6 +36,16 @@ tao-converter /tao_models/vehicletypenet_model/resnet18_vehicletypenet_pruned.et
               -m 16 \
               -e /model_repository/vehicletypenet_tao/1/model.plan
 
+# Generate a BicycleTypeNet model.
+echo "Converting the BicycleTypeNet model"
+mkdir -p /model_repository/bicycletypenet_tao/1
+tao-converter /tao_models/bicycletypenet_model/bicycletypenet_resnet18_vehicletypenet_pruned.etlt \
+              -k nvidia_tlt \
+              -d 3,224,224 \
+              -o predictions/Softmax \
+              -m 16 \
+              -e /model_repository/bicycletypenet_tao/1/model.plan
+
 # Generate an LPRnet model.
 # echo "Converting the LPRNet model"
 # mkdir -p /model_repository/lprnet_tao/1
