@@ -35,6 +35,7 @@ from kafka import KafkaConsumer
 import json
 import uuid
 import numpy as np
+from typing import List
 
 infer_server_url = None
 infer_server_protocol = None
@@ -162,21 +163,12 @@ for event in consumer:
             #                                           FLAGS.classes, FLAGS.scaling, FLAGS.infer_server_url,
             #                                           FLAGS.infer_server_protocol,
             #                                           [cropped_base64_image_file_text])
-            infer_results = base64_tao_client.infer(FLAGS, [cropped_base64_image_file_text])
-
-            is_model_support_batching = True
-            for infer_result in infer_results:
-                for results in infer_result:
-                    if not is_model_support_batching:
-                        results = [results]
-                    for result in results:
-                        if infer_result.dtype.type == np.object_:
-                            cls = "".join(chr(x) for x in result).split(':')
-                        else:
-                            cls = result.split(':')
-                        print("    conf: {} (label_index: {}) = label: {}".format(cls[0], cls[1], cls[2]))
-            # above print sample like below, which means the infer server is 72.4619% sure it's a CUP
-            #       conf: 0.724619 (label_index: 666) = label: CUP
+            infer_results = base64_tao_client.infer(FLAGS.verbose, FLAGS.streaming, FLAGS.model_name,
+                                                    FLAGS.model_version, FLAGS.batch_size, FLAGS.class_list,
+                                                    False, FLAGS.kafka_server_url, FLAGS.protocol, FLAGS.mode,
+                                                    FLAGS.output_path,
+                                                    [cropped_base64_image_file_text])
+            print("infer_results: {}".format(infer_results))
 
             # report an alarm to webservice
             # webservice.post(Priority.Error, "board with uniqueId: " + event_data['sensorId'] + " detected an electric-bicycle entering elevator, please keep the door opening")
@@ -188,3 +180,15 @@ for event in consumer:
         elif "Vehicle|#|Bicycle" in obj:
             # detected Bicycle
             pass
+
+
+def infer_test(model_name: str, class_list: str, base64_image_file_text: str):
+    if not base64_image_file_text:
+        f = open("base64_image_sample_1.txt", "r")
+        base64_image_file_text = f.read()
+    infer_results = base64_tao_client.infer(True, False, model_name,
+                                            "", 1, class_list,
+                                            False, "dev-iot.ipos.biz:9092", "http", "Classification",
+                                            "outputs",
+                                            [base64_image_file_text])
+    print("infer_results: {}".format(infer_results))

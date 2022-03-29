@@ -133,9 +133,26 @@ def requestGenerator(batched_image_data, input_name, output_name, dtype, protoco
     yield inputs, outputs
 
 
-def infer(FLAGS, base64_text_image_files: List[str]) -> []:
+def infer(verbose: bool, async_set: bool, streaming: bool, model_name: str, model_version: str,
+          batch_size: int, class_list: str, scaling: bool, url: str, protocol: str, mode: str,
+          output_path: str,
+          base64_text_image_files: List[str]) -> []:
     """Running the inferencer client."""
     # FLAGS = parse_command_line(sys.argv[1:])
+    FLAGS = argparse.ArgumentParser().parse_args()
+    FLAGS.mode = mode
+    FLAGS.verbose = verbose
+    FLAGS.streaming = streaming
+    FLAGS.protocol = protocol
+    FLAGS.async_set = async_set
+    FLAGS.model_name = model_name
+    FLAGS.model_version = model_version
+    FLAGS.batch_size = batch_size
+    FLAGS.scaling = scaling
+    FLAGS.url = url
+    FLAGS.class_list = class_list
+    FLAGS.output_path = output_path
+
     if FLAGS.mode.lower() == "detectnet_v2":
         assert os.path.isfile(FLAGS.postprocessing_config), (
             "Clustering config must be defined for DetectNet_v2."
