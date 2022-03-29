@@ -1,5 +1,5 @@
 # Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
 # "Software"), to deal in the Software without restriction, including
@@ -7,10 +7,10 @@
 # distribute, sublicense, and/or sell copies of the Software, and to
 # permit persons to whom the Software is furnished to do so, subject to
 # the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be
 # included in all copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 # EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
 # MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
@@ -23,8 +23,9 @@ import argparse
 from copy import deepcopy
 from functools import partial
 import logging
-import os
+import os, shutil
 import sys
+
 sys.path.append(r'../../../../tao-toolkit-triton-apps')
 from attrdict import AttrDict
 import numpy as np
@@ -54,6 +55,11 @@ from tao_triton.python.model.peoplesegnet_model import PeoplesegnetModel
 from tao_triton.python.model.retinanet_model import RetinanetModel
 from tao_triton.python.model.multitask_classification_model import MultitaskClassificationModel
 
+import base64
+import io
+import uuid
+from typing import List
+
 logger = logging.getLogger(__name__)
 
 TRITON_MODEL_DICT = {
@@ -63,7 +69,7 @@ TRITON_MODEL_DICT = {
     "yolov3": YOLOv3Model,
     "peoplesegnet": PeoplesegnetModel,
     "retinanet": RetinanetModel,
-    "multitask_classification":MultitaskClassificationModel
+    "multitask_classification": MultitaskClassificationModel
 }
 
 POSTPROCESSOR_DICT = {
@@ -127,89 +133,9 @@ def requestGenerator(batched_image_data, input_name, output_name, dtype, protoco
     yield inputs, outputs
 
 
-def parse_command_line(args=None):
-    """Parsing command line arguments."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-v',
-                        '--verbose',
-                        action="store_true",
-                        required=False,
-                        default=False,
-                        help='Enable verbose output')
-    parser.add_argument('-a',
-                        '--async',
-                        dest="async_set",
-                        action="store_true",
-                        required=False,
-                        default=False,
-                        help='Use asynchronous inference API')
-    parser.add_argument('--streaming',
-                        action="store_true",
-                        required=False,
-                        default=False,
-                        help='Use streaming inference API. ' +
-                        'The flag is only available with gRPC protocol.')
-    parser.add_argument('-m',
-                        '--model-name',
-                        type=str,
-                        required=True,
-                        help='Name of model')
-    parser.add_argument('-x',
-                        '--model-version',
-                        type=str,
-                        required=False,
-                        default="",
-                        help='Version of model. Default is to use latest version.')
-    parser.add_argument('-b',
-                        '--batch-size',
-                        type=int,
-                        required=False,
-                        default=1,
-                        help='Batch size. Default is 1.')
-    parser.add_argument('--mode',
-                        type=str,
-                        choices=['Classification', "DetectNet_v2", "LPRNet", "YOLOv3", "Peoplesegnet", "Retinanet", "Multitask_classification"],
-                        required=False,
-                        default='NONE',
-                        help='Type of scaling to apply to image pixels. Default is NONE.')
-    parser.add_argument('-u',
-                        '--url',
-                        type=str,
-                        required=False,
-                        default='localhost:8000',
-                        help='Inference server URL. Default is localhost:8000.')
-    parser.add_argument('-i',
-                        '--protocol',
-                        type=str,
-                        required=False,
-                        default='HTTP',
-                        help='Protocol (HTTP/gRPC) used to communicate with ' +
-                        'the inference service. Default is HTTP.')
-    parser.add_argument('image_filename',
-                        type=str,
-                        nargs='?',
-                        default=None,
-                        help='Input image / Input folder.')
-    parser.add_argument('--class_list',
-                        type=str,
-                        default="person,bag,face",
-                        help="Comma separated class names",
-                        required=False)
-    parser.add_argument('--output_path',
-                        type=str,
-                        default=os.path.join(os.getcwd(), "outputs"),
-                        help="Path to where the inferenced outputs are stored.",
-                        required=True)
-    parser.add_argument("--postprocessing_config",
-                        type=str,
-                        default="",
-                        help="Path to the DetectNet_v2 clustering config.")
-    return parser.parse_args()
-
-
-def main():
+def infer(FLAGS, base64_text_image_files: List[str]) -> []:
     """Running the inferencer client."""
-    FLAGS = parse_command_line(sys.argv[1:])
+    # FLAGS = parse_command_line(sys.argv[1:])
     if FLAGS.mode.lower() == "detectnet_v2":
         assert os.path.isfile(FLAGS.postprocessing_config), (
             "Clustering config must be defined for DetectNet_v2."
@@ -266,6 +192,25 @@ def main():
     target_shape = (triton_model.c, triton_model.h, triton_model.w)
     npdtype = triton_to_np_dtype(triton_model.triton_dtype)
     max_batch_size = triton_model.max_batch_size
+
+    temp_image_files_folder_name = "temp_infer_image_files"
+    for filename in os.listdir(temp_image_files_folder_name):
+        file_path = os.path.join(temp_image_files_folder_name, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            print('Failed to delete temp_image_files_folder %s. Reason: %s' % (file_path, e))
+
+    for image_index in range(len(base64_text_image_files)):
+        temp_image_name = str(image_index) + ".jpg"
+        b64 = base64_text_image_files[image_index]
+        temp_image = Image.open(io.BytesIO(base64.decodebytes(b64.encode('ascii'))))
+        temp_image.save(os.path.join(temp_image_files_folder_name, temp_image_name))
+    FLAGS.image_filename = temp_image_files_folder_name
+
     frames = []
     if os.path.isdir(FLAGS.image_filename):
         frames = [
@@ -275,7 +220,7 @@ def main():
                   target_shape)
             for f in os.listdir(FLAGS.image_filename)
             if os.path.isfile(os.path.join(FLAGS.image_filename, f)) and
-            os.path.splitext(f)[-1] in [".jpg", ".jpeg", ".png"]
+               os.path.splitext(f)[-1] in [".jpg", ".jpeg", ".png"]
         ]
     else:
         frames = [
@@ -347,8 +292,8 @@ def main():
             # Send request
             try:
                 req_gen_args = [batched_image_data, triton_model.input_names,
-                    triton_model.output_names, triton_model.triton_dtype,
-                    FLAGS.protocol.lower()]
+                                triton_model.output_names, triton_model.triton_dtype,
+                                FLAGS.protocol.lower()]
                 req_gen_kwargs = {}
                 if FLAGS.mode.lower() == "classification":
                     req_gen_kwargs["num_classes"] = model_config.output[0].dims[0]
@@ -392,7 +337,7 @@ def main():
                 if FLAGS.streaming:
                     triton_client.stop_stream()
                 sys.exit(1)
-            
+
             pbar.update(FLAGS.batch_size)
 
     if FLAGS.streaming:
@@ -430,6 +375,10 @@ def main():
             processed_request += 1
             pbar.update(FLAGS.batch_size)
     logger.info("PASS")
+    f = open(os.path.join(FLAGS.output_path, "results.txt", "r"))
+    return f.read()
+
 
 if __name__ == '__main__':
-    main()
+    # main()
+    pass
