@@ -55,7 +55,7 @@ class ClassificationPostprocessor(Postprocessor):
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
         output_file = os.path.join(self.output_path, "results.txt")
-        with open(output_file, "a") as wfile:
+        with open(output_file, "w") as wfile:
             for idx in range(self.batch_size):
                 results = output_array[idx]
                 current_idx = (int(this_id) - 1) * self.batch_size + idx
@@ -73,6 +73,6 @@ class ClassificationPostprocessor(Postprocessor):
                                 float(cls[0]), cls[1], cls[2]
                             )
                         )
-                    wfile.write("\n")
+                    #wfile.write("\n")
                 else:
                     break

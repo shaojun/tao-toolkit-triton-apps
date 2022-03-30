@@ -211,16 +211,19 @@ def infer(verbose: bool, async_set: bool, streaming: bool, model_name: str, mode
     max_batch_size = triton_model.max_batch_size
 
     temp_image_files_folder_name = "temp_infer_image_files"
-    for filename in os.listdir(temp_image_files_folder_name):
-        file_path = os.path.join(temp_image_files_folder_name, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-        except Exception as e:
-            print('Failed to delete temp_image_files_folder %s. Reason: %s' % (file_path, e))
-
+    # purge previous files
+    if os.path.exists(temp_image_files_folder_name):
+        for filename in os.listdir(temp_image_files_folder_name):
+            file_path = os.path.join(temp_image_files_folder_name, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print('Failed to delete temp_image_files_folder %s. Reason: %s' % (file_path, e))
+    else:
+        os.makedirs(temp_image_files_folder_name)
     for image_index in range(len(base64_text_image_files)):
         temp_image_name = str(image_index) + ".jpg"
         b64 = base64_text_image_files[image_index]
@@ -392,10 +395,34 @@ def infer(verbose: bool, async_set: bool, streaming: bool, model_name: str, mode
             processed_request += 1
             pbar.update(FLAGS.batch_size)
     logger.info("PASS")
-    f = open(os.path.join(FLAGS.output_path, "results.txt", "r"))
+    f = open(os.path.join(FLAGS.output_path, "results.txt"), "r")
     return f.read()
 
 
 if __name__ == '__main__':
-    # main()
-    pass
+    samples_folder_path = "base64_image_samples"
+    infer_results = []
+    for sample_file_name in os.listdir(samples_folder_path):
+        filename, file_extension = os.path.splitext(sample_file_name)
+        if file_extension.lower() == ".txt":
+            f = open(os.path.join(samples_folder_path, sample_file_name), "r")
+            base64_image_file_text = f.read()
+            infer_results.append("{} - {}".format(sample_file_name, infer(False, False, False, "bicycletypenet_tao",
+                                                                          "", 1, "bicycle,electric_bicycle",
+                                                                          False, "localhost:8000", "http",
+                                                                          "Classification",
+                                                                          "outputs",
+                                                                          [base64_image_file_text])))
+        elif file_extension.lower() == ".jpg":
+            base64_bytes = None
+            with open(os.path.join(samples_folder_path, sample_file_name), "rb") as imageFile:
+                base64_bytes = base64.b64encode(imageFile.read())
+            base64_image_file_text = base64_bytes.decode('ascii')
+            infer_results.append("{} - {}".format(sample_file_name, infer(False, False, False, "bicycletypenet_tao",
+                                                                          "", 1, "bicycle,electric_bicycle",
+                                                                          False, "localhost:8000", "http",
+                                                                          "Classification",
+                                                                          "outputs",
+                                                                          [base64_image_file_text])))
+    for result in infer_results:
+        print("{}".format(result))

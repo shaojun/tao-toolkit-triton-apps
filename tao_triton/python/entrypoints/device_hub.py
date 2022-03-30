@@ -156,18 +156,12 @@ for event in consumer:
             # the last but one is the detected object image file with base64 encoded text,
             # and the section is prefixed with-> base64_image_data:
             cropped_base64_image_file_text = sections[len(sections) - 2][len("base64_image_data:")]
-            # infer_results = base64_tao_client.infer(FLAGS.infer_server_comm_output_verbose, FLAGS.async_set,
-            #                                           FLAGS.streaming,
-            #                                           FLAGS.infer_model_name, FLAGS.infer_model_version,
-            #                                           FLAGS.batch_size,
-            #                                           FLAGS.classes, FLAGS.scaling, FLAGS.infer_server_url,
-            #                                           FLAGS.infer_server_protocol,
-            #                                           [cropped_base64_image_file_text])
             infer_results = base64_tao_client.infer(FLAGS.verbose, FLAGS.streaming, FLAGS.model_name,
                                                     FLAGS.model_version, FLAGS.batch_size, FLAGS.class_list,
                                                     False, FLAGS.kafka_server_url, FLAGS.protocol, FLAGS.mode,
                                                     FLAGS.output_path,
                                                     [cropped_base64_image_file_text])
+            #sample: bicycle_000119_246ea26fff7fa53e_0_176.jpg - temp_infer_image_files/0.jpg, 0.9997(0)=bicycle, 0.0003(1)=electric_bicycle
             print("infer_results: {}".format(infer_results))
 
             # report an alarm to webservice
@@ -180,15 +174,3 @@ for event in consumer:
         elif "Vehicle|#|Bicycle" in obj:
             # detected Bicycle
             pass
-
-
-def infer_test(model_name: str, class_list: str, base64_image_file_text: str):
-    if not base64_image_file_text:
-        f = open("base64_image_sample_1.txt", "r")
-        base64_image_file_text = f.read()
-    infer_results = base64_tao_client.infer(True, False, model_name,
-                                            "", 1, class_list,
-                                            False, "dev-iot.ipos.biz:9092", "http", "Classification",
-                                            "outputs",
-                                            [base64_image_file_text])
-    print("infer_results: {}".format(infer_results))
