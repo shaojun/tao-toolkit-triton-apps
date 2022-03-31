@@ -1,6 +1,7 @@
 
 # this script is as a testing for tao-converted model running directly against TensorRT, I used it one time in
-# a case of classification model accurate turn to low in Triton (in training TAO all good).
+# a case of classification model accurate turn to low in Triton official client while in training TAO all good.
+# and finally confirmed should use tao client instead of standard client, some preprocessing need to be done.
 # the script is tested at docker:
 # docker run --runtime=nvidia -it --rm -v yourfolder:/workspace nvcr.io/nvidia/tao/tao-toolkit-tf:v3.21.11-tf1.15.5-py3 /bin/bash
 

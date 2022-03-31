@@ -26,7 +26,7 @@ import logging
 import os, shutil
 import sys
 
-sys.path.append(r'../../../../tao-toolkit-triton-apps')
+sys.path.append(r'../../..')
 from attrdict import AttrDict
 import numpy as np
 from PIL import Image

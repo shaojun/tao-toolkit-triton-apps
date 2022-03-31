@@ -26,16 +26,12 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
-from functools import partial
 import os
-import sys
 import base64_tao_client
 
 from kafka import KafkaConsumer
 import json
 import uuid
-import numpy as np
-from typing import List
 
 infer_server_url = None
 infer_server_protocol = None
@@ -67,7 +63,8 @@ if __name__ == '__main__':
     parser.add_argument('-m',
                         '--model-name',
                         type=str,
-                        required=True,
+                        required=False,
+                        default="bicycletypenet_tao",
                         help='Name of model')
     parser.add_argument('-x',
                         '--model-version',
@@ -86,7 +83,7 @@ if __name__ == '__main__':
                         choices=['Classification', "DetectNet_v2", "LPRNet", "YOLOv3", "Peoplesegnet", "Retinanet",
                                  "Multitask_classification"],
                         required=False,
-                        default='NONE',
+                        default='Classification',
                         help='Type of scaling to apply to image pixels. Default is NONE.')
     parser.add_argument('-u',
                         '--url',
@@ -101,21 +98,21 @@ if __name__ == '__main__':
                         default='HTTP',
                         help='Protocol (HTTP/gRPC) used to communicate with ' +
                              'the inference service. Default is HTTP.')
-    parser.add_argument('image_filename',
-                        type=str,
-                        nargs='?',
-                        default=None,
-                        help='Input image / Input folder')
+    # parser.add_argument('image_filename',
+    #                     type=str,
+    #                     nargs='?',
+    #                     default=None,
+    #                     help='Input image / Input folder')
     parser.add_argument('--class_list',
                         type=str,
-                        default="person,bag,face",
+                        default="bicycle,electric_bicycle",
                         help="Comma separated class names",
                         required=False)
     parser.add_argument('--output_path',
                         type=str,
                         default=os.path.join(os.getcwd(), "outputs"),
                         help="Path to where the inferenced outputs are stored.",
-                        required=True)
+                        required=False)
     parser.add_argument("--postprocessing_config",
                         type=str,
                         default="",
@@ -144,33 +141,42 @@ consumer.seek_to_end()
 
 for event in consumer:
     event_data = event.value
-    for obj in event_data["objects"]:
-        sections = obj.split('|')
-        if "Vehicle|#|DoorWarningSign" in obj:
-            # detected DoorSign
-            # report an alarm to webservice
-            # webservice.post(Priority.Info, "board with uniqueId: " + event_data['sensorId'] + " detected a doorsign, indicates the door is in closed state.")
-            pass
-        elif "Vehicle|#|TwoWheeler" in obj:
-            print("A suspect electric-bicycle is detected, will send to infer server to further make sure of it...")
-            # the last but one is the detected object image file with base64 encoded text,
-            # and the section is prefixed with-> base64_image_data:
-            cropped_base64_image_file_text = sections[len(sections) - 2][len("base64_image_data:")]
-            infer_results = base64_tao_client.infer(FLAGS.verbose, FLAGS.streaming, FLAGS.model_name,
-                                                    FLAGS.model_version, FLAGS.batch_size, FLAGS.class_list,
-                                                    False, FLAGS.kafka_server_url, FLAGS.protocol, FLAGS.mode,
-                                                    FLAGS.output_path,
-                                                    [cropped_base64_image_file_text])
-            #sample: bicycle_000119_246ea26fff7fa53e_0_176.jpg - temp_infer_image_files/0.jpg, 0.9997(0)=bicycle, 0.0003(1)=electric_bicycle
-            print("infer_results: {}".format(infer_results))
+    # make sure it's the object detection msg
+    if "objects" in event_data and "sensorId" in event_data:
+        sensorId = event_data["sensorId"]
+        for obj in event_data["objects"]:
+            sections = obj.split('|')
+            if "Vehicle|#|DoorWarningSign" in obj:
+                # detected DoorSign
+                # report an alarm to webservice
+                # webservice.post(Priority.Info, "board with uniqueId: " + event_data['sensorId'] + " detected a doorsign, indicates the door is in closed state.")
+                pass
+            elif "Vehicle|#|TwoWheeler" in obj:
+                print("A suspect electric-bicycle is detected, will send to infer server to further make sure of it...")
+                # the last but one is the detected object image file with base64 encoded text,
+                # and the section is prefixed with-> base64_image_data:
+                cropped_base64_image_file_text = sections[len(sections) - 2][len("base64_image_data:"):]
+                local_end_confidence = sections[len(sections) - 1]
+                infer_results = base64_tao_client.infer(FLAGS.verbose, FLAGS.async_set, FLAGS.streaming,
+                                                        FLAGS.model_name, FLAGS.model_version,
+                                                        FLAGS.batch_size, FLAGS.class_list,
+                                                        False, FLAGS.url, FLAGS.protocol, FLAGS.mode,
+                                                        FLAGS.output_path,
+                                                        [cropped_base64_image_file_text])
+                # sample: bicycle_000119_246ea26fff7fa53e_0_176.jpg - temp_infer_image_files/0.jpg, 0.9997(0)=bicycle, 0.0003(1)=electric_bicycle
+                print("(localConf:{})infer_results: {}".format(local_end_confidence, infer_results))
 
-            # report an alarm to webservice
-            # webservice.post(Priority.Error, "board with uniqueId: " + event_data['sensorId'] + " detected an electric-bicycle entering elevator, please keep the door opening")
-        elif "Person|#" in obj:
-            # detected Person
-            # report an alarm to webservice
-            # webservice.post(Priority.Info, "board with uniqueId: " + event_data['sensorId'] + " detected a person, indicates there's a people in elevator.")
-            pass
-        elif "Vehicle|#|Bicycle" in obj:
-            # detected Bicycle
-            pass
+                # report an alarm to webservice
+                # webservice.post(Priority.Error, "board with uniqueId: " + event_data['sensorId'] + " detected an electric-bicycle entering elevator, please keep the door opening")
+
+                # there're may have several electric_bicycle detected in single msg, for lower the cost of infer, here only detecting the first one.
+
+                break
+            elif "Person|#" in obj:
+                # detected Person
+                # report an alarm to webservice
+                # webservice.post(Priority.Info, "board with uniqueId: " + event_data['sensorId'] + " detected a person, indicates there's a people in elevator.")
+                pass
+            elif "Vehicle|#|Bicycle" in obj:
+                # detected Bicycle
+                pass
