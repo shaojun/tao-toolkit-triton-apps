@@ -26,18 +26,26 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
+import datetime
+import time
 import os
+from typing import List
+
 import base64_tao_client
 
 from kafka import KafkaConsumer
 import json
 import uuid
 
-infer_server_url = None
-infer_server_protocol = None
-infer_model_name = None
-infer_model_version = None
-infer_server_comm_output_verbose = None
+# infer_server_url = None
+# infer_server_protocol = None
+# infer_model_name = None
+# infer_model_version = None
+# infer_server_comm_output_verbose = None
+from python.device_hub import board_timeline
+from python.device_hub.board_timeline import BoardTimeline
+from python.device_hub.timeline_event_alarm import EventAlarmConsolePrintNotifier
+from python.device_hub.timeline_event_detectors import *
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -139,44 +147,35 @@ consumer.poll()
 # go to end of the stream
 consumer.seek_to_end()
 
+boards_timelines = []
+
 for event in consumer:
     event_data = event.value
-    # make sure it's the object detection msg
-    if "objects" in event_data and "sensorId" in event_data:
-        sensorId = event_data["sensorId"]
-        for obj in event_data["objects"]:
-            sections = obj.split('|')
-            if "Vehicle|#|DoorWarningSign" in obj:
-                # detected DoorSign
-                # report an alarm to webservice
-                # webservice.post(Priority.Info, "board with uniqueId: " + event_data['sensorId'] + " detected a doorsign, indicates the door is in closed state.")
-                pass
-            elif "Vehicle|#|TwoWheeler" in obj:
-                print("A suspect electric-bicycle is detected, will send to infer server to further make sure of it...")
-                # the last but one is the detected object image file with base64 encoded text,
-                # and the section is prefixed with-> base64_image_data:
-                cropped_base64_image_file_text = sections[len(sections) - 2][len("base64_image_data:"):]
-                local_end_confidence = sections[len(sections) - 1]
-                infer_results = base64_tao_client.infer(FLAGS.verbose, FLAGS.async_set, FLAGS.streaming,
-                                                        FLAGS.model_name, FLAGS.model_version,
-                                                        FLAGS.batch_size, FLAGS.class_list,
-                                                        False, FLAGS.url, FLAGS.protocol, FLAGS.mode,
-                                                        FLAGS.output_path,
-                                                        [cropped_base64_image_file_text])
-                # sample: bicycle_000119_246ea26fff7fa53e_0_176.jpg - temp_infer_image_files/0.jpg, 0.9997(0)=bicycle, 0.0003(1)=electric_bicycle
-                print("(localConf:{})infer_results: {}".format(local_end_confidence, infer_results))
+    if "sensorId" not in event_data or "@timestamp" not in event_data:
+        continue
+    board_msg_id = event_data["id"]
+    board_msg_original_timestamp = event_data["@timestamp"]
+    board_id = event_data["sensorId"]
+    cur_board_timeline = [t for t in boards_timelines if
+                          t.board_id == board_id]
+    if not cur_board_timeline:
+        cur_board_timeline = BoardTimeline(board_id, [],
+                                           [ElectricBicycleEnteringEventDetector(),
+                                            BlockingDoorEventDetector(),
+                                            PeopleStuckEventDetector()], [EventAlarmConsolePrintNotifier()])
+        boards_timelines.append(cur_board_timeline)
+    else:
+        cur_board_timeline = cur_board_timeline[0]
+    # indicates it's the object detection msg
+    if "objects" in event_data:
+        for obj_data in event_data["objects"]:
+            new_timeline_item = TimelineItem(TimelineItemType.OBJECT_DETECT, board_msg_original_timestamp, board_msg_id,
+                                             obj_data)
+            cur_board_timeline.add_item(new_timeline_item)
 
-                # report an alarm to webservice
-                # webservice.post(Priority.Error, "board with uniqueId: " + event_data['sensorId'] + " detected an electric-bicycle entering elevator, please keep the door opening")
+    # indicates it's the sensor data reading msg
+    elif "sensors" in event_data and "sensorId" in event_data:
+        board_id = event_data["sensorId"]
 
-                # there're may have several electric_bicycle detected in single msg, for lower the cost of infer, here only detecting the first one.
-
-                break
-            elif "Person|#" in obj:
-                # detected Person
-                # report an alarm to webservice
-                # webservice.post(Priority.Info, "board with uniqueId: " + event_data['sensorId'] + " detected a person, indicates there's a people in elevator.")
-                pass
-            elif "Vehicle|#|Bicycle" in obj:
-                # detected Bicycle
-                pass
+    # for timeline in boards_timelines:
+    #     board_timeline_handler.handle(FLAGS, timeline)
