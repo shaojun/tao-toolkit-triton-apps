@@ -21,19 +21,21 @@ class EventAlarm:
 
 
 class EventAlarmNotifierBase:
-    def __init__(self):
-        pass
+    def __init__(self, logging):
+        self.logger = logging.getLogger(__name__)
 
     def notify(self, alarms: List[EventAlarm]):
         pass
 
 
-class EventAlarmConsolePrintNotifier:
-    def __init__(self):
-        pass
+class EventAlarmDummyNotifier:
+    def __init__(self, logging):
+        self.logger = logging.getLogger(__name__)
 
     def notify(self, alarms: List[EventAlarm]):
         if not alarms:
             return
         for a in alarms:
-            print("alarm with priority:{} - {}".format(a.priority, a.description))
+            self.logger.info(
+                "Notifying alarm from board: {} with priority:{} - {}"
+                    .format(a.get_board_id(), a.priority, a.description))

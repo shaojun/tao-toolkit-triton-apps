@@ -32,7 +32,9 @@ import os
 from typing import List
 
 import base64_tao_client
-
+import logging
+import logging.config
+import yaml
 from kafka import KafkaConsumer
 import json
 import uuid
@@ -44,10 +46,19 @@ import uuid
 # infer_server_comm_output_verbose = None
 from python.device_hub import board_timeline
 from python.device_hub.board_timeline import BoardTimeline
-from python.device_hub.timeline_event_alarm import EventAlarmConsolePrintNotifier
+from python.device_hub.timeline_event_alarm import EventAlarmDummyNotifier
 from python.device_hub.timeline_event_detectors import *
 
 if __name__ == '__main__':
+    with open('log_config.yaml', 'r') as f:
+        config = yaml.safe_load(f.read())
+        logging.config.dictConfig(config)
+
+    logger = logging.getLogger(__name__)
+    logger.info('%s is starting...', 'device_hub')
+    # except Exception as e:
+    # logging.error("Exception occurred", exc_info=True)
+    # or logging.exception("descriptive msg")  trace will be autoly appended
     parser = argparse.ArgumentParser()
     parser.add_argument('-v',
                         '--verbose',
@@ -131,51 +142,78 @@ if __name__ == '__main__':
                         default='dev-iot.ipos.biz:9092',
                         help='kafka server URL. Default is xxx:9092.')
     FLAGS = parser.parse_args()
+try:
+    consumer = KafkaConsumer(
+        bootstrap_servers=FLAGS.kafka_server_url,
+        auto_offset_reset='latest',
+        enable_auto_commit=True,
+        group_id=str(uuid.uuid1()),
+        value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+    )
 
-consumer = KafkaConsumer(
-    bootstrap_servers=FLAGS.kafka_server_url,
-    auto_offset_reset='latest',
-    enable_auto_commit=True,
-    group_id=str(uuid.uuid1()),
-    value_deserializer=lambda x: json.loads(x.decode('utf-8'))
-)
+    consumer.subscribe(pattern=".*")
+    # do a dummy poll to retrieve some message
+    consumer.poll()
 
-consumer.subscribe(pattern=".*")
-# do a dummy poll to retrieve some message
-consumer.poll()
+    # go to end of the stream
+    consumer.seek_to_end()
 
-# go to end of the stream
-consumer.seek_to_end()
+    boards_timelines = []
 
-boards_timelines = []
-
-for event in consumer:
-    event_data = event.value
-    if "sensorId" not in event_data or "@timestamp" not in event_data:
-        continue
-    board_msg_id = event_data["id"]
-    board_msg_original_timestamp = event_data["@timestamp"]
-    board_id = event_data["sensorId"]
-    cur_board_timeline = [t for t in boards_timelines if
-                          t.board_id == board_id]
-    if not cur_board_timeline:
-        cur_board_timeline = BoardTimeline(board_id, [],
-                                           [ElectricBicycleEnteringEventDetector(),
-                                            BlockingDoorEventDetector(),
-                                            PeopleStuckEventDetector()], [EventAlarmConsolePrintNotifier()])
-        boards_timelines.append(cur_board_timeline)
-    else:
-        cur_board_timeline = cur_board_timeline[0]
-    # indicates it's the object detection msg
-    if "objects" in event_data:
-        for obj_data in event_data["objects"]:
-            new_timeline_item = TimelineItem(TimelineItemType.OBJECT_DETECT, board_msg_original_timestamp, board_msg_id,
-                                             obj_data)
-            cur_board_timeline.add_item(new_timeline_item)
-
-    # indicates it's the sensor data reading msg
-    elif "sensors" in event_data and "sensorId" in event_data:
+    for event in consumer:
+        event_data = event.value
+        if "sensorId" not in event_data or "@timestamp" not in event_data:
+            continue
+        board_msg_id = event_data["id"]
+        board_msg_original_timestamp = event_data["@timestamp"]
         board_id = event_data["sensorId"]
+        cur_board_timeline = [t for t in boards_timelines if
+                              t.board_id == board_id]
+        if not cur_board_timeline:
+            cur_board_timeline = \
+                BoardTimeline(board_id, [],
+                              [DoorStateChangedEventDetector(logging),
+                               ElectricBicycleEnteringEventDetector(logging),
+                               BlockingDoorEventDetector(logging),
+                               PeopleStuckEventDetector(logging)],
+                              [EventAlarmDummyNotifier(logging)])
+            boards_timelines.append(cur_board_timeline)
+        else:
+            cur_board_timeline = cur_board_timeline[0]
+        # indicates it's the object detection msg
+        if "objects" in event_data:
+            for obj_data in event_data["objects"]:
+                new_timeline_item = \
+                    TimelineItem(TimelineItemType.OBJECT_DETECT,
+                                 board_msg_original_timestamp,
+                                 board_msg_id,
+                                 obj_data)
+                cur_board_timeline.add_item(new_timeline_item)
 
-    # for timeline in boards_timelines:
-    #     board_timeline_handler.handle(FLAGS, timeline)
+        # indicates it's the sensor data reading msg
+        elif "sensors" in event_data and "sensorId" in event_data:
+            for obj_data in event_data["sensors"]:
+                if "speed" in obj_data:
+                    new_timeline_item \
+                        = TimelineItem(TimelineItemType.SENSOR_READ_SPEED,
+                                       board_msg_original_timestamp,
+                                       board_msg_id,
+                                       obj_data)
+                    cur_board_timeline.add_item(new_timeline_item)
+                elif "pressure" in obj_data:
+                    new_timeline_item \
+                        = TimelineItem(TimelineItemType.SENSOR_READ_PRESSURE,
+                                       board_msg_original_timestamp,
+                                       board_msg_id,
+                                       obj_data)
+                    cur_board_timeline.add_item(new_timeline_item)
+                elif "ACCELERATOR" in obj_data:
+                    new_timeline_item \
+                        = TimelineItem(TimelineItemType.SENSOR_READ_ACCELERATOR,
+                                       board_msg_original_timestamp,
+                                       board_msg_id,
+                                       obj_data)
+                    cur_board_timeline.add_item(new_timeline_item)
+
+except:
+    logger.exception("Major error caused by unhandled exception:")
