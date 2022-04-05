@@ -15,6 +15,7 @@ class EventAlarm:
     def __init__(self, priority: EventAlarmPriority, description: str):
         self.priority = priority
         self.description = description
+        self.board_id = None
 
     def get_board_id(self):
         return self.board_id

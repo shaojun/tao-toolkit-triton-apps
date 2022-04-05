@@ -10,17 +10,29 @@ from python.device_hub.timeline_event_alarm import EventAlarm, EventAlarmPriorit
 
 
 class TimelineItemType:
+    # the item is sent by object detect app
     OBJECT_DETECT = 1
+    # the item is sent by speed sensor
     SENSOR_READ_SPEED = 2
     SENSOR_READ_PRESSURE = 3
     SENSOR_READ_ACCELERATOR = 4
     SENSOR_READ_PEOPLE_DETECT = 5
 
+    # the item is autoly generated from local, used for case of remote side muted(connection broken? remote app crash?)
+    LOCAL_IDLE_LOOP = 99
+
 
 class TimelineItem:
-    def __init__(self, type: TimelineItemType, original_timestamp: str, board_msg_id: str, raw_data: str):
+    def __init__(self, type: TimelineItemType, original_timestamp_str: str, board_msg_id: str, raw_data: str):
         self.type = type
-        self.original_timestamp = original_timestamp
+        # the time from object detect app mostly use utc ZONE 0 time, like 2022-04-05T02:42:02.392Z
+        self.original_timestamp_str = original_timestamp_str
+        # to datetime type
+        self.original_timestamp \
+            = datetime.datetime.fromisoformat(original_timestamp_str.replace("Z", "+00:00"))
+        # the server side time when received this msg
+        self.local_timestamp = datetime.datetime.fromisoformat(datetime.datetime.now(
+            datetime.timezone.utc).astimezone().isoformat())
         self.board_msg_id = board_msg_id
         self.raw_data = raw_data
         self.consumed = False
@@ -36,7 +48,7 @@ class EventDetectorBase:
 
         return None
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
 
 
@@ -54,11 +66,11 @@ class DoorStateChangedEventDetector(EventDetectorBase):
     #
     #     return filter
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         if "Vehicle|#|DoorWarningSign" in filtered_timeline_items[-1].raw_data:
-            return EventAlarm(EventAlarmPriority.INFO, "Door is in CLOSE state")
-        else:
-            return EventAlarm(EventAlarmPriority.INFO, "Door is in OPEN state")
+            return [EventAlarm(EventAlarmPriority.INFO, "Door is in CLOSE state")]
+
+        # how to know the door is in OPEN state?
 
 
 #
@@ -67,7 +79,7 @@ class BlockingDoorEventDetector(EventDetectorBase):
     def __init__(self, logging):
         self.logger = logging.getLogger(__name__)
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
 
 
@@ -77,7 +89,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
     def __init__(self, logging):
         self.logger = logging.getLogger(__name__)
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         # "Person|#"
         # return EventAlarm(EventAlarmPriority.Error, "detected PeopleStuckEvent")
         return None
@@ -97,19 +109,19 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
         return filter
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
-        minimal_handle_interval_by_second = 10
-        last_handled_original_datetime_in_msg = datetime.datetime.fromisoformat(
-            '1999-02-07T05:01:06.354Z'.replace("Z", "+00:00"))
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
+        event_alarms = []
+        # minimal_handle_interval_by_second = 10
+        # # init with a very old time
+        # last_handled_original_timestamp_in_msg: datetime = datetime.datetime.fromisoformat(
+        #     '1999-01-01T00:00:00.354+00:00')
         for item in filtered_timeline_items:
             item.consumed = True
-            current_original_datetime_in_msg = datetime.datetime.fromisoformat(
-                item.original_timestamp.replace("Z", "+00:00"))
-            if (current_original_datetime_in_msg - last_handled_original_datetime_in_msg).total_seconds() \
-                    <= minimal_handle_interval_by_second:
-                continue
-            last_handled_original_datetime_in_msg = datetime.datetime.fromisoformat(
-                item.original_timestamp.replace("Z", "+00:00"))
+            # if (item.original_timestamp - last_handled_original_timestamp_in_msg).total_seconds() \
+            #         <= minimal_handle_interval_by_second:
+            #     # there are may have many e-bicycle detected in one batch, here avoid raise event too freq
+            #     continue
+            # last_handled_original_timestamp_in_msg = item.original_timestamp
             sections = item.raw_data.split('|')
             self.logger.info(
                 "A suspect electric-bicycle is detected, will send to infer server to further make sure of it...")
@@ -134,9 +146,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # which is less than 50%, so it's a bicycle, should not trigger alarm.
             self.logger.info("(localConf:{})infer_results: {}".format(edge_board_confidence, infer_results))
 
-            return EventAlarm(EventAlarmPriority.ERROR, "detected a case of electric-bicycle entering elevator")
+            event_alarms.append(
+                EventAlarm(EventAlarmPriority.ERROR, "detected a case of electric-bicycle entering elevator"))
 
             # there're may have several electric_bicycle detected in single msg, for lower the cost of infer, here only detecting the first one.
+
+        return event_alarms
 
 
 #
@@ -151,7 +166,7 @@ class ElevatorOverspeedEventDetector(EventDetectorBase):
                     i.type == TimelineItemType.SENSOR_READ_SPEED and
                     not i.consumed and "xxxxxx" in i.raw_data]
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
 
 
@@ -167,7 +182,7 @@ class ElevatorDoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                     i.type == TimelineItemType.SENSOR_READ_SPEED and
                     not i.consumed and "xxxxxx" in i.raw_data]
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
 
 
@@ -183,7 +198,7 @@ class PassagerVigorousExerciseEventDetector(EventDetectorBase):
                     i.type == TimelineItemType.SENSOR_READ_SPEED and
                     not i.consumed and "xxxxxx" in i.raw_data]
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
 
 
@@ -199,7 +214,7 @@ class DoorOpeningAtMovingEventDetector(EventDetectorBase):
                     i.type == TimelineItemType.SENSOR_READ_SPEED and
                     not i.consumed and "xxxxxx" in i.raw_data]
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
 
 
@@ -215,7 +230,7 @@ class ElevatorSuddenlyStoppedEventDetector(EventDetectorBase):
                     i.type == TimelineItemType.SENSOR_READ_SPEED and
                     not i.consumed and "xxxxxx" in i.raw_data]
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
 
 
@@ -231,7 +246,7 @@ class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
                     i.type == TimelineItemType.SENSOR_READ_SPEED and
                     not i.consumed and "xxxxxx" in i.raw_data]
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
 
 
@@ -247,5 +262,5 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
                     i.type == TimelineItemType.SENSOR_READ_SPEED and
                     not i.consumed and "xxxxxx" in i.raw_data]
 
-    def detect(self, filtered_timeline_items: List[TimelineItem]):
+    def detect(self, filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None

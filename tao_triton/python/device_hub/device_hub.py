@@ -38,7 +38,7 @@ import yaml
 from kafka import KafkaConsumer
 import json
 import uuid
-
+from threading import Timer
 # infer_server_url = None
 # infer_server_protocol = None
 # infer_model_name = None
@@ -49,13 +49,52 @@ from python.device_hub.board_timeline import BoardTimeline
 from python.device_hub.timeline_event_alarm import EventAlarmDummyNotifier
 from python.device_hub.timeline_event_detectors import *
 
-if __name__ == '__main__':
-    with open('log_config.yaml', 'r') as f:
-        config = yaml.safe_load(f.read())
-        logging.config.dictConfig(config)
+with open('log_config.yaml', 'r') as f:
+    config = yaml.safe_load(f.read())
+    logging.config.dictConfig(config)
 
+
+class RepeatTimer(Timer):
+    def run(self):
+        while not self.finished.wait(self.interval):
+            self.function(*self.args, **self.kwargs)
+
+
+def create_boardtimeline(board_id: str):
+    return BoardTimeline(logging, board_id, [],
+                         [DoorStateChangedEventDetector(logging),
+                          ElectricBicycleEnteringEventDetector(logging),
+                          BlockingDoorEventDetector(logging),
+                          PeopleStuckEventDetector(logging)],
+                         [EventAlarmDummyNotifier(logging)])
+
+
+def create_boardtimeline_from_web_service() -> List[BoardTimeline]:
+    return []
+
+
+BOARD_TIMELINES = None
+
+
+def pipe_in_local_idle_loop_item_to_board_timelines():
+    if BOARD_TIMELINES:
+        for tl in BOARD_TIMELINES:
+            local_idle_loop_item = \
+                TimelineItem(TimelineItemType.LOCAL_IDLE_LOOP,
+                             datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
+                             str(uuid.uuid4()),
+                             "")
+            tl.add_item(local_idle_loop_item)
+
+
+# duration is in seconds
+timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(10, pipe_in_local_idle_loop_item_to_board_timelines)
+if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     logger.info('%s is starting...', 'device_hub')
+
+    BOARD_TIMELINES = create_boardtimeline_from_web_service()
+    timely_pipe_in_local_idle_loop_msg_timer.start()
     # except Exception as e:
     # logging.error("Exception occurred", exc_info=True)
     # or logging.exception("descriptive msg")  trace will be autoly appended
@@ -158,8 +197,6 @@ try:
     # go to end of the stream
     consumer.seek_to_end()
 
-    boards_timelines = []
-
     for event in consumer:
         event_data = event.value
         if "sensorId" not in event_data or "@timestamp" not in event_data:
@@ -167,17 +204,11 @@ try:
         board_msg_id = event_data["id"]
         board_msg_original_timestamp = event_data["@timestamp"]
         board_id = event_data["sensorId"]
-        cur_board_timeline = [t for t in boards_timelines if
+        cur_board_timeline = [t for t in BOARD_TIMELINES if
                               t.board_id == board_id]
         if not cur_board_timeline:
-            cur_board_timeline = \
-                BoardTimeline(board_id, [],
-                              [DoorStateChangedEventDetector(logging),
-                               ElectricBicycleEnteringEventDetector(logging),
-                               BlockingDoorEventDetector(logging),
-                               PeopleStuckEventDetector(logging)],
-                              [EventAlarmDummyNotifier(logging)])
-            boards_timelines.append(cur_board_timeline)
+            cur_board_timeline = create_boardtimeline(board_id)
+            BOARD_TIMELINES.append(cur_board_timeline)
         else:
             cur_board_timeline = cur_board_timeline[0]
         # indicates it's the object detection msg
