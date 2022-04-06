@@ -45,9 +45,8 @@ from threading import Timer
 # infer_model_version = None
 # infer_server_comm_output_verbose = None
 from python.device_hub import board_timeline
-from python.device_hub.board_timeline import BoardTimeline
-from python.device_hub.timeline_event_alarm import EventAlarmDummyNotifier
-from python.device_hub.timeline_event_detectors import *
+from python.device_hub.board_timeline import *
+from python.device_hub.event_detectors import *
 
 with open('log_config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
@@ -62,10 +61,12 @@ class RepeatTimer(Timer):
 
 def create_boardtimeline(board_id: str):
     return BoardTimeline(logging, board_id, [],
-                         [DoorStateChangedEventDetector(logging),
-                          ElectricBicycleEnteringEventDetector(logging),
-                          BlockingDoorEventDetector(logging),
-                          PeopleStuckEventDetector(logging)],
+                         [
+                             DoorStateChangedEventDetector(logging),
+                             ElectricBicycleEnteringEventDetector(logging),
+                             BlockingDoorEventDetector(logging),
+                             PeopleStuckEventDetector(logging)
+                         ],
                          [EventAlarmDummyNotifier(logging)])
 
 
@@ -79,16 +80,20 @@ BOARD_TIMELINES = None
 def pipe_in_local_idle_loop_item_to_board_timelines():
     if BOARD_TIMELINES:
         for tl in BOARD_TIMELINES:
-            local_idle_loop_item = \
-                TimelineItem(TimelineItemType.LOCAL_IDLE_LOOP,
-                             datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
-                             str(uuid.uuid4()),
-                             "")
-            tl.add_item(local_idle_loop_item)
+            # a timeline wasn't fired for 5s, then pip in local idle loop item
+            if (datetime.datetime.fromisoformat(datetime.datetime.now(
+                    datetime.timezone.utc).astimezone().isoformat()) - tl.items[
+                    -1].local_utc_timestamp).total_seconds() >= 5:
+                local_idle_loop_item = \
+                    TimelineItem(tl.board_id, TimelineItemType.LOCAL_IDLE_LOOP,
+                                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
+                                 str(uuid.uuid4()),
+                                 "")
+                tl.add_item(local_idle_loop_item)
 
 
 # duration is in seconds
-timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(10, pipe_in_local_idle_loop_item_to_board_timelines)
+timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(2, pipe_in_local_idle_loop_item_to_board_timelines)
 if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     logger.info('%s is starting...', 'device_hub')
@@ -190,6 +195,7 @@ try:
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
 
+    # consumer.subscribe(pattern="suzhou_yang_testing_jtsn4g")
     consumer.subscribe(pattern=".*")
     # do a dummy poll to retrieve some message
     consumer.poll()
@@ -215,7 +221,7 @@ try:
         if "objects" in event_data:
             for obj_data in event_data["objects"]:
                 new_timeline_item = \
-                    TimelineItem(TimelineItemType.OBJECT_DETECT,
+                    TimelineItem(board_id, TimelineItemType.OBJECT_DETECT,
                                  board_msg_original_timestamp,
                                  board_msg_id,
                                  obj_data)
@@ -226,21 +232,21 @@ try:
             for obj_data in event_data["sensors"]:
                 if "speed" in obj_data:
                     new_timeline_item \
-                        = TimelineItem(TimelineItemType.SENSOR_READ_SPEED,
+                        = TimelineItem(board_id, TimelineItemType.SENSOR_READ_SPEED,
                                        board_msg_original_timestamp,
                                        board_msg_id,
                                        obj_data)
                     cur_board_timeline.add_item(new_timeline_item)
                 elif "pressure" in obj_data:
                     new_timeline_item \
-                        = TimelineItem(TimelineItemType.SENSOR_READ_PRESSURE,
+                        = TimelineItem(board_id, TimelineItemType.SENSOR_READ_PRESSURE,
                                        board_msg_original_timestamp,
                                        board_msg_id,
                                        obj_data)
                     cur_board_timeline.add_item(new_timeline_item)
                 elif "ACCELERATOR" in obj_data:
                     new_timeline_item \
-                        = TimelineItem(TimelineItemType.SENSOR_READ_ACCELERATOR,
+                        = TimelineItem(board_id, TimelineItemType.SENSOR_READ_ACCELERATOR,
                                        board_msg_original_timestamp,
                                        board_msg_id,
                                        obj_data)
