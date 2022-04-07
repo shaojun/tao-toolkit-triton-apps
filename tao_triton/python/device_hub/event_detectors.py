@@ -1,3 +1,4 @@
+import re
 from typing import List
 
 from python.device_hub.board_timeline import *
@@ -26,8 +27,20 @@ class DoorStateChangedEventDetector(EventDetectorBase):
             last_state_timestamp = last_state_obj["last_state_timestamp"]
             if "extra_data" in last_state_obj:
                 extra_data = last_state_obj["extra_data"]
+
+        # show how to retrieve other detector's state obj
+        if state_obj_wrapper and len(state_obj_wrapper) >= 2 and state_obj_wrapper[1]:
+            target_state_obj_dicts = [state_obj_dict for state_obj_dict in state_obj_wrapper[1] if
+                                      state_obj_dict[
+                                          "key"] == ElectricBicycleEnteringEventDetector.__name__]
+            if target_state_obj_dicts and target_state_obj_dicts[0]["value"]:
+                ElectricBicycleEnteringEventDetector_state_obj = target_state_obj_dicts[0]["value"]
+                if "last_infer_ebic_timestamp" in ElectricBicycleEnteringEventDetector_state_obj:
+                    last_infer_ebic_timestamp = ElectricBicycleEnteringEventDetector_state_obj[
+                        "last_infer_ebic_timestamp"]
+
         recent_items = [i for i in filtered_timeline_items if
-                        (datetime.datetime.now() - i.local_timestamp).total_seconds() <= 4]
+                        (datetime.datetime.now() - i.local_timestamp).total_seconds() <= 3]
         for ri in reversed(recent_items):
             if ri.type == TimelineItemType.LOCAL_IDLE_LOOP:
                 new_state_obj = {"last_door_state": "OPEN", "last_state_timestamp": str(datetime.datetime.now())}
@@ -108,11 +121,17 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # the `0.4476(1)=electric_bicycle`  means the infer server is 0.4476 sure the object is electric_bicycle
             # which is less than 50%, so it's a bicycle, should not trigger alarm.
             self.logger.info("      (localConf:{})infer_results: {}".format(edge_board_confidence, infer_results))
-
-            event_alarms.append(
-                EventAlarm(EventAlarmPriority.ERROR, "detected a case of electric-bicycle entering elevator"))
-
-            # there're may have several electric_bicycle detected in single msg, for lower the cost of infer, here only detecting the first one.
+            m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
+            if m and m.group(0):
+                infer_server_confid = float(m.group(0))
+                if infer_server_confid >= 0.5:
+                    event_alarms.append(
+                        EventAlarm(EventAlarmPriority.ERROR,
+                                   "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
+                                       edge_board_confidence, infer_server_confid)))
+                else:
+                    self.logger.info(
+                        "      sink this detect due to infer server give low confidence: {}".format(m.group(0)))
 
         return event_alarms
 

@@ -79,7 +79,7 @@ class BoardTimeline:
                 continue
             state_obj_dict_per_detector = [so for so in self.cached_state_objects if so["key"] == d.__class__.__name__]
             if state_obj_dict_per_detector:
-                wrapper_for_reference_pass_in = [state_obj_dict_per_detector[0]["value"]]
+                wrapper_for_reference_pass_in = [state_obj_dict_per_detector[0]["value"], self.cached_state_objects]
                 new_alarms = d.detect(wrapper_for_reference_pass_in, processing_items)
                 # store back
                 state_obj_dict_per_detector[0]["value"] = wrapper_for_reference_pass_in[0]
