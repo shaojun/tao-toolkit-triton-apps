@@ -46,7 +46,6 @@ from threading import Timer
 # infer_server_comm_output_verbose = None
 from python.device_hub import board_timeline
 from python.device_hub.board_timeline import *
-from python.device_hub.event_detectors import *
 
 with open('log_config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
@@ -67,7 +66,10 @@ def create_boardtimeline(board_id: str):
                              BlockingDoorEventDetector(logging),
                              PeopleStuckEventDetector(logging)
                          ],
-                         [EventAlarmDummyNotifier(logging)])
+                         [
+                             EventAlarmDummyNotifier(logging),
+                             EventAlarmWebServiceNotifier(logging)
+                         ])
 
 
 def create_boardtimeline_from_web_service() -> List[BoardTimeline]:

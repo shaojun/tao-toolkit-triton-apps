@@ -9,10 +9,13 @@ handlers:
     formatter: simple
     stream: ext://sys.stdout
   file_handler:
-    class: logging.FileHandler
+    class: logging.handlers.TimedRotatingFileHandler
     level: DEBUG
     formatter: simple
     filename: "log/main.log"
+    when: d
+    interval: 1
+    backupCount: 30
     encoding: utf8
 loggers:
   sampleLogger:
