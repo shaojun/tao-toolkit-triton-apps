@@ -44,8 +44,8 @@ from threading import Timer
 # infer_model_name = None
 # infer_model_version = None
 # infer_server_comm_output_verbose = None
-from python.device_hub import board_timeline
-from python.device_hub.board_timeline import *
+from tao_triton.python.device_hub import board_timeline
+from tao_triton.python.device_hub.board_timeline import *
 
 with open('log_config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
@@ -188,7 +188,7 @@ if __name__ == '__main__':
                         default='dev-iot.ipos.biz:9092',
                         help='kafka server URL. Default is xxx:9092.')
     FLAGS = parser.parse_args()
-try:
+
     consumer = KafkaConsumer(
         bootstrap_servers=FLAGS.kafka_server_url,
         auto_offset_reset='latest',
@@ -199,60 +199,63 @@ try:
 
     # consumer.subscribe(pattern="suzhou_yang_testing_jtsn4g")
     consumer.subscribe(pattern=".*")
-    # do a dummy poll to retrieve some message
-    consumer.poll()
 
-    # go to end of the stream
-    consumer.seek_to_end()
+while True:
+    try:
+        # do a dummy poll to retrieve some message
+        consumer.poll()
 
-    for event in consumer:
-        event_data = event.value
-        if "sensorId" not in event_data or "@timestamp" not in event_data:
-            continue
-        board_msg_id = event_data["id"]
-        board_msg_original_timestamp = event_data["@timestamp"]
-        board_id = event_data["sensorId"]
-        cur_board_timeline = [t for t in BOARD_TIMELINES if
-                              t.board_id == board_id]
-        if not cur_board_timeline:
-            cur_board_timeline = create_boardtimeline(board_id)
-            BOARD_TIMELINES.append(cur_board_timeline)
-        else:
-            cur_board_timeline = cur_board_timeline[0]
-        # indicates it's the object detection msg
-        if "objects" in event_data:
-            for obj_data in event_data["objects"]:
-                new_timeline_item = \
-                    TimelineItem(board_id, TimelineItemType.OBJECT_DETECT,
-                                 board_msg_original_timestamp,
-                                 board_msg_id,
-                                 obj_data)
-                cur_board_timeline.add_item(new_timeline_item)
-
-        # indicates it's the sensor data reading msg
-        elif "sensors" in event_data and "sensorId" in event_data:
-            for obj_data in event_data["sensors"]:
-                if "speed" in obj_data:
-                    new_timeline_item \
-                        = TimelineItem(board_id, TimelineItemType.SENSOR_READ_SPEED,
-                                       board_msg_original_timestamp,
-                                       board_msg_id,
-                                       obj_data)
-                    cur_board_timeline.add_item(new_timeline_item)
-                elif "pressure" in obj_data:
-                    new_timeline_item \
-                        = TimelineItem(board_id, TimelineItemType.SENSOR_READ_PRESSURE,
-                                       board_msg_original_timestamp,
-                                       board_msg_id,
-                                       obj_data)
-                    cur_board_timeline.add_item(new_timeline_item)
-                elif "ACCELERATOR" in obj_data:
-                    new_timeline_item \
-                        = TimelineItem(board_id, TimelineItemType.SENSOR_READ_ACCELERATOR,
-                                       board_msg_original_timestamp,
-                                       board_msg_id,
-                                       obj_data)
+        # go to end of the stream
+        consumer.seek_to_end()
+        for event in consumer:
+            event_data = event.value
+            if "sensorId" not in event_data or "@timestamp" not in event_data:
+                continue
+            board_msg_id = event_data["id"]
+            board_msg_original_timestamp = event_data["@timestamp"]
+            board_id = event_data["sensorId"]
+            cur_board_timeline = [t for t in BOARD_TIMELINES if
+                                  t.board_id == board_id]
+            if not cur_board_timeline:
+                cur_board_timeline = create_boardtimeline(board_id)
+                BOARD_TIMELINES.append(cur_board_timeline)
+            else:
+                cur_board_timeline = cur_board_timeline[0]
+            # indicates it's the object detection msg
+            if "objects" in event_data:
+                for obj_data in event_data["objects"]:
+                    new_timeline_item = \
+                        TimelineItem(board_id, TimelineItemType.OBJECT_DETECT,
+                                     board_msg_original_timestamp,
+                                     board_msg_id,
+                                     obj_data)
                     cur_board_timeline.add_item(new_timeline_item)
 
-except:
-    logger.exception("Major error caused by unhandled exception:")
+            # indicates it's the sensor data reading msg
+            elif "sensors" in event_data and "sensorId" in event_data:
+                for obj_data in event_data["sensors"]:
+                    if "speed" in obj_data:
+                        new_timeline_item \
+                            = TimelineItem(board_id, TimelineItemType.SENSOR_READ_SPEED,
+                                           board_msg_original_timestamp,
+                                           board_msg_id,
+                                           obj_data)
+                        cur_board_timeline.add_item(new_timeline_item)
+                    elif "pressure" in obj_data:
+                        new_timeline_item \
+                            = TimelineItem(board_id, TimelineItemType.SENSOR_READ_PRESSURE,
+                                           board_msg_original_timestamp,
+                                           board_msg_id,
+                                           obj_data)
+                        cur_board_timeline.add_item(new_timeline_item)
+                    elif "ACCELERATOR" in obj_data:
+                        new_timeline_item \
+                            = TimelineItem(board_id, TimelineItemType.SENSOR_READ_ACCELERATOR,
+                                           board_msg_original_timestamp,
+                                           board_msg_id,
+                                           obj_data)
+                        cur_board_timeline.add_item(new_timeline_item)
+
+    except:
+        logger.exception("Major error caused by exception:")
+        continue

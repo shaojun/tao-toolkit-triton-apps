@@ -13,7 +13,7 @@ handlers:
     level: DEBUG
     formatter: simple
     filename: "log/main.log"
-    when: d
+    when: D
     interval: 1
     backupCount: 30
     encoding: utf8

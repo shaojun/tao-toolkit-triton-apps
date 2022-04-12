@@ -82,3 +82,7 @@ zope.event==4.5.0
 zope.interface==5.4.0
 cytoolz==0.11.2
 scikit-image==0.19.2
+attrdict
+tritonclient
+kafka-python
+pyyaml
