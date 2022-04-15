@@ -86,3 +86,4 @@ attrdict
 tritonclient
 kafka-python
 pyyaml
+requests

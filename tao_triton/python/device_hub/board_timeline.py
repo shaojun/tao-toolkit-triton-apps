@@ -142,6 +142,13 @@ class EventAlarm:
 
 class EventDetectorBase:
     def __init__(self, logging):
+        self.event_listeners = []
+
+    def prepare(self, event_detectors: []):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
         pass
 
     def get_timeline_item_filter(self):
@@ -149,6 +156,32 @@ class EventDetectorBase:
             return None
 
         return None
+
+    def subscribe_on_property_changed(self, event_listener):
+        """
+        registering the caller as a subscriber to listen the inner property changed event
+        @param event_listener: the caller must has the function of on_property_changed_event_handler(..., ...).
+        """
+        self.event_listeners.append(event_listener)
+
+    def on_property_changed_event_handler(self, src_detector, property_name: str, data):
+        """
+        will be called if the inner property changed event get fired
+        @param src_detector: the detector who firing the inner property changed event
+        @param property_name: the name of the property has the data changed on
+        @param data: the data with the event
+        """
+        pass
+
+    def __fire_on_property_changed_event_to_subscribers__(self, property_name: str, data):
+        """
+        fire an inner property changed event to all subscribers
+        @param property_name: the name of the property has the data changed on
+        @param data: the data with the event
+        """
+        if self.event_listeners:
+            for el in self.event_listeners:
+                el.on_property_changed_event_handler(self, property_name, data)
 
     def detect(self, state_obj_wrapper: [], filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
@@ -222,7 +255,26 @@ class EventAlarmWebServiceNotifier:
 # 门的基本状态改变检测： 已开门， 已关门
 class DoorStateChangedEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        for ed in event_detectors:
+            if ed.__class__.__name__ == ElectricBicycleEnteringEventDetector.__name__:
+                ed.subscribe_on_property_changed(self)
+                break
+
+    def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
+        self.logger.debug(
+            "{} is notified by event from: {} for property: {} with data: {}".format(
+                self.__class__.__name__,
+                src_detector.__class__.__name__,
+                property_name,
+                str(data)))
+        if src_detector.__class__.__name__ == ElectricBicycleEnteringEventDetector.__name__:
+            # handle event from ElectricBicycleEnteringEventDetector
+            pass
 
     # def get_timeline_item_filter(self):
     #     def filter(timeline_items: List[TimelineItem]):
@@ -282,7 +334,12 @@ class DoorStateChangedEventDetector(EventDetectorBase):
 # 电动车检测告警（电动车入梯)
 class ElectricBicycleEnteringEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def get_timeline_item_filter(self):
         def filter(timeline_items: List[TimelineItem]):
@@ -317,6 +374,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             sections = item.raw_data.split('|')
             self.logger.debug(
                 "E-bic is detected at board: {}, re-infer it from triton...".format(item.board_id))
+            self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
+                                                                   {"detail": "there's a EB incoming"})
             # the last but one is the detected object image file with base64 encoded text,
             # and the section is prefixed with-> base64_image_data:
             cropped_base64_image_file_text = sections[len(sections) - 2][len("base64_image_data:"):]
@@ -356,7 +415,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 # 遮挡门告警	判断电梯发生遮挡门事件
 class BlockingDoorEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def detect(self, state_obj_wrapper: [], filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
@@ -366,7 +430,12 @@ class BlockingDoorEventDetector(EventDetectorBase):
 # 困人	判断电梯发生困人事件
 class PeopleStuckEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def detect(self, state_obj_wrapper: [], filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         # "Person|#"
@@ -378,7 +447,12 @@ class PeopleStuckEventDetector(EventDetectorBase):
 # 超速	判断电梯发生超速故障
 class ElevatorOverspeedEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def get_timeline_item_filter(self):
         def filter(timeline_items: List[TimelineItem]):
@@ -395,7 +469,12 @@ class ElevatorOverspeedEventDetector(EventDetectorBase):
 # 反复开关门	判断电梯发生反复开关门故障
 class ElevatorDoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def detect(self, state_obj_wrapper: [], filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
@@ -405,7 +484,12 @@ class ElevatorDoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
 # 剧烈运动	判断轿厢乘客剧烈运动
 class PassagerVigorousExerciseEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def detect(self, state_obj_wrapper: [], filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
@@ -415,7 +499,12 @@ class PassagerVigorousExerciseEventDetector(EventDetectorBase):
 # 运行中开门	判断电梯发生运行中开门故障
 class DoorOpeningAtMovingEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def detect(self, state_obj_wrapper: [], filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
@@ -425,7 +514,12 @@ class DoorOpeningAtMovingEventDetector(EventDetectorBase):
 # 急停	判断电梯发生急停故障
 class ElevatorSuddenlyStoppedEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def detect(self, state_obj_wrapper: [], filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
@@ -435,7 +529,12 @@ class ElevatorSuddenlyStoppedEventDetector(EventDetectorBase):
 # 长时间开门	门开着超过一定时间
 class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def detect(self, state_obj_wrapper: [], filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None
@@ -445,7 +544,12 @@ class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
 # 无人高频运行	轿厢内没人, 上上下下跑来跑去
 class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
     def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+
+    def prepare(self, event_detectors: List[EventDetectorBase]):
+        # super().prepare(event_detectors)
+        pass
 
     def detect(self, state_obj_wrapper: [], filtered_timeline_items: List[TimelineItem]) -> List[EventAlarm]:
         return None

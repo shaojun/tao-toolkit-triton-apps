@@ -59,13 +59,9 @@ class RepeatTimer(Timer):
 
 
 def create_boardtimeline(board_id: str):
+
     return BoardTimeline(logging, board_id, [],
-                         [
-                             DoorStateChangedEventDetector(logging),
-                             ElectricBicycleEnteringEventDetector(logging),
-                             BlockingDoorEventDetector(logging),
-                             PeopleStuckEventDetector(logging)
-                         ],
+                         event_detectors,
                          [
                              EventAlarmDummyNotifier(logging),
                              EventAlarmWebServiceNotifier(logging)
@@ -77,21 +73,24 @@ def create_boardtimeline_from_web_service() -> List[BoardTimeline]:
 
 
 BOARD_TIMELINES = None
+event_detectors = [ElectricBicycleEnteringEventDetector(logging), DoorStateChangedEventDetector(logging),
+                   BlockingDoorEventDetector(logging), PeopleStuckEventDetector(logging)]
 
 
 def pipe_in_local_idle_loop_item_to_board_timelines():
     if BOARD_TIMELINES:
         for tl in BOARD_TIMELINES:
-            # a timeline wasn't fired for 5s, then pip in local idle loop item
-            if (datetime.datetime.fromisoformat(datetime.datetime.now(
-                    datetime.timezone.utc).astimezone().isoformat()) - tl.items[
-                    -1].local_utc_timestamp).total_seconds() >= 5:
-                local_idle_loop_item = \
-                    TimelineItem(tl.board_id, TimelineItemType.LOCAL_IDLE_LOOP,
-                                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
-                                 str(uuid.uuid4()),
-                                 "")
-                tl.add_item(local_idle_loop_item)
+            if tl.items:
+                # a timeline wasn't fired for 5s, then pip in local idle loop item
+                if (datetime.datetime.fromisoformat(datetime.datetime.now(
+                        datetime.timezone.utc).astimezone().isoformat()) - tl.items[
+                        -1].local_utc_timestamp).total_seconds() >= 5:
+                    local_idle_loop_item = \
+                        TimelineItem(tl.board_id, TimelineItemType.LOCAL_IDLE_LOOP,
+                                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
+                                     str(uuid.uuid4()),
+                                     "")
+                    tl.add_item(local_idle_loop_item)
 
 
 # duration is in seconds
@@ -200,6 +199,8 @@ if __name__ == '__main__':
     # consumer.subscribe(pattern="suzhou_yang_testing_jtsn4g")
     consumer.subscribe(pattern=".*")
 
+    for d in event_detectors:
+        d.prepare(event_detectors)
 while True:
     try:
         # do a dummy poll to retrieve some message
