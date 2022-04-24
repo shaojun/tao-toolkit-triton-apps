@@ -98,12 +98,13 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                 break
 
     def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
-        self.logger.debug(
-            "{} is notified by event from: {} for property: {} with data: {}".format(
-                self.__class__.__name__,
-                src_detector.__class__.__name__,
-                property_name,
-                str(data)))
+        # self.logger.debug(
+        #     "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
+        #         self.timeline.board_id,
+        #         self.__class__.__name__,
+        #         src_detector.__class__.__name__,
+        #         property_name,
+        #         str(data)))
         if src_detector.__class__.__name__ == ElectricBicycleEnteringEventDetector.__name__:
             # handle event from ElectricBicycleEnteringEventDetector
             pass
@@ -200,26 +201,23 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
-        last_state_obj = self.state_obj
-        new_state_obj = None
 
         event_alarms = []
         for item in filtered_timeline_items:
             item.consumed = True
-            if last_state_obj and "last_infer_ebic_timestamp" in last_state_obj:
+            if self.state_obj and "last_infer_ebic_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_report_time_diff = (
-                        datetime.datetime.now() - last_state_obj["last_infer_ebic_timestamp"]).total_seconds()
-                if last_report_time_diff <= 10:
+                        datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
+                if last_report_time_diff <= 15:
                     continue
 
-            new_state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
+            self.state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
 
             sections = item.raw_data.split('|')
-            self.logger.debug(
-                "board: {}, E-bic is detected and re-infer it from triton...".format(item.timeline.board_id))
-            self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
-                                                                   {"detail": "there's a EB incoming"})
+            # self.logger.debug(
+            #     "board: {}, E-bic is detected and re-infer it from triton...".format(item.timeline.board_id))
+
             # the last but one is the detected object image file with base64 encoded text,
             # and the section is prefixed with-> base64_image_data:
             cropped_base64_image_file_text = sections[len(sections) - 2][len("base64_image_data:"):]
@@ -239,18 +237,24 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # sample: (localConf:0.850841)infer_results: temp_infer_image_files\0.jpg, 0.5524(0)=bicycle, 0.4476(1)=electric_bicycle
             # the `0.4476(1)=electric_bicycle`  means the infer server is 0.4476 sure the object is electric_bicycle
             # which is less than 50%, so it's a bicycle, should not trigger alarm.
-            self.logger.debug("      (localConf:{})infer_results: {}".format(edge_board_confidence, infer_results))
+            self.logger.debug("      board: {}, (localConf:{})infer_results: {}".format(
+                self.timeline.board_id,
+                edge_board_confidence, infer_results))
             m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
             if m and m.group(0):
                 infer_server_confid = float(m.group(0))
                 if infer_server_confid >= 0.5:
+                    self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
+                                                                           {"detail": "there's a EB incoming"})
                     event_alarms.append(
                         event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
                                                "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
                                                    edge_board_confidence, infer_server_confid)))
                 else:
                     self.logger.debug(
-                        "      sink this detect due to infer server give low confidence: {}".format(m.group(0)))
+                        "      board: {}, sink this detect due to infer server give low confidence: {}".format(
+                            self.timeline.board_id,
+                            m.group(0)))
 
         return event_alarms
 
@@ -352,6 +356,7 @@ class ElevatorOverspeedEventDetector(EventDetectorBase):
 class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
+        self.alarms_to_fire = []
         self.timeline = None
         self.logger = logging.getLogger(__name__)
 
@@ -369,20 +374,43 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                 break
 
     def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
-        self.logger.debug(
-            "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
-                self.timeline.board_id,
-                self.__class__.__name__,
-                src_detector.__class__.__name__,
-                property_name,
-                str(data)))
+        # self.logger.debug(
+        #     "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
+        #         self.timeline.board_id,
+        #         self.__class__.__name__,
+        #         src_detector.__class__.__name__,
+        #         property_name,
+        #         str(data)))
         if src_detector.__class__.__name__ == DoorStateChangedEventDetector.__name__:
             # handle event from DoorStateChangedEventDetector
             if property_name == "door_state":
-                # state values are: OPEN, CLOSE, None
-                data["last_state"]
-                data["new_state"]
-                pass
+                if self.state_obj and "last_state_changed_times" in self.state_obj:
+                    self.state_obj["last_state_changed_times"].append(datetime.datetime.now())
+                    last_state_changed_times: List[datetime] = self.state_obj["last_state_changed_times"]
+                    if len(last_state_changed_times) >= 3:
+                        total_time_gap = (last_state_changed_times[-1] - last_state_changed_times[-2]
+                                          + last_state_changed_times[-2] - last_state_changed_times[
+                                              -3]).total_seconds()
+                        if total_time_gap <= 15:
+                            self.state_obj["last_state_changed_times"] = []
+                            self.alarms_to_fire.append(event_alarm.EventAlarm(
+                                self,
+                                datetime.datetime.fromisoformat(
+                                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                event_alarm.EventAlarmPriority.ERROR,
+                                "反复开关门 - 判断电梯发生反复开关门故障,3次开关门的总间隔<=15秒,最近一、二、三次 开/关门 时间分别为: {}  {}  {}".format(
+                                    last_state_changed_times[-1].strftime("%d/%m/%Y %H:%M:%S"),
+                                    last_state_changed_times[-2].strftime("%H:%M:%S"),
+                                    last_state_changed_times[-3].strftime("%H:%M:%S"))))
+
+                        self.state_obj["last_state_changed_times"] = self.state_obj["last_state_changed_times"][-3:-1]
+
+                else:
+                    self.state_obj = {"last_state_changed_times": [datetime.datetime.now()]}
+                # door state values are: OPEN, CLOSE, None
+                # data["last_state"]
+                # data["new_state"]
+                # pass
 
     def detect(self, filtered_timeline_items):
         """
@@ -390,7 +418,9 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
-        return None
+        alarms = self.alarms_to_fire
+        self.alarms_to_fire = []
+        return alarms
 
 
 #
@@ -492,13 +522,13 @@ class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
                 break
 
     def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
-        self.logger.debug(
-            "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
-                self.timeline.board_id,
-                self.__class__.__name__,
-                src_detector.__class__.__name__,
-                property_name,
-                str(data)))
+        # self.logger.debug(
+        #     "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
+        #         self.timeline.board_id,
+        #         self.__class__.__name__,
+        #         src_detector.__class__.__name__,
+        #         property_name,
+        #         str(data)))
         if src_detector.__class__.__name__ == DoorStateChangedEventDetector.__name__:
             # handle event from DoorStateChangedEventDetector
             if property_name == "door_state":

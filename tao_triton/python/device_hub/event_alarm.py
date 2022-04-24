@@ -15,7 +15,8 @@ class EventAlarmPriority(Enum):
 
 
 class EventAlarm:
-    def __init__(self, event_detector, original_utc_timestamp: datetime, priority: EventAlarmPriority,
+    def __init__(self, event_detector: event_detector.EventDetectorBase, original_utc_timestamp: datetime,
+                 priority: EventAlarmPriority,
                  description: str):
         """
 
@@ -85,9 +86,10 @@ class EventAlarmWebServiceNotifier:
                             a.event_detector.__class__.__name__,
                             post_response.text[:500]))
                 else:
-                    self.logger.debug(
-                        "board: {}, Successfully notified an alarm from {}".format(a.event_detector.timeline.board_id,
-                                                                                   a.event_detector.__class__.__name__))
+                    pass
+                    # self.logger.debug(
+                    #     "board: {}, Successfully notified an alarm from {}".format(a.event_detector.timeline.board_id,
+                    # a.event_detector.__class__.__name__))
             except:
                 self.logger.exception(
                     "board: {}, Notify alarm from {} got exception.".format(
