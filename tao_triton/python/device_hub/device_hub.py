@@ -45,7 +45,9 @@ from threading import Timer
 # infer_model_version = None
 # infer_server_comm_output_verbose = None
 from tao_triton.python.device_hub import board_timeline
-from tao_triton.python.device_hub.board_timeline import *
+import board_timeline
+import event_alarm
+import event_detector
 
 with open('log_config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
@@ -59,22 +61,27 @@ class RepeatTimer(Timer):
 
 
 def create_boardtimeline(board_id: str):
+    # these detectors instances are shared by all timelines
+    event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
+                       event_detector.DoorStateChangedEventDetector(logging),
+                       event_detector.BlockingDoorEventDetector(logging),
+                       event_detector.PeopleStuckEventDetector(logging),
+                       event_detector.DoorOpenedForLongtimeEventDetector(logging),
+                       event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging)
+                       ]
+    return board_timeline.BoardTimeline(logging, board_id, [],
+                                        event_detectors,
+                                        [
+                                            event_alarm.EventAlarmDummyNotifier(logging),
+                                            event_alarm.EventAlarmWebServiceNotifier(logging)
+                                        ])
 
-    return BoardTimeline(logging, board_id, [],
-                         event_detectors,
-                         [
-                             EventAlarmDummyNotifier(logging),
-                             EventAlarmWebServiceNotifier(logging)
-                         ])
 
-
-def create_boardtimeline_from_web_service() -> List[BoardTimeline]:
+def create_boardtimeline_from_web_service() -> List[board_timeline.BoardTimeline]:
     return []
 
 
 BOARD_TIMELINES = None
-event_detectors = [ElectricBicycleEnteringEventDetector(logging), DoorStateChangedEventDetector(logging),
-                   BlockingDoorEventDetector(logging), PeopleStuckEventDetector(logging)]
 
 
 def pipe_in_local_idle_loop_item_to_board_timelines():
@@ -86,10 +93,9 @@ def pipe_in_local_idle_loop_item_to_board_timelines():
                         datetime.timezone.utc).astimezone().isoformat()) - tl.items[
                         -1].local_utc_timestamp).total_seconds() >= 5:
                     local_idle_loop_item = \
-                        TimelineItem(tl.board_id, TimelineItemType.LOCAL_IDLE_LOOP,
+                        board_timeline.TimelineItem(tl, board_timeline.TimelineItemType.LOCAL_IDLE_LOOP,
                                      datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
-                                     str(uuid.uuid4()),
-                                     "")
+                                     str(uuid.uuid4()), "")
                     tl.add_item(local_idle_loop_item)
 
 
@@ -196,11 +202,9 @@ if __name__ == '__main__':
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
 
-    # consumer.subscribe(pattern="suzhou_yang_testing_jtsn4g")
+    # consumer.subscribe(pattern="shaoLocalJsNxBoard")
     consumer.subscribe(pattern=".*")
 
-    for d in event_detectors:
-        d.prepare(event_detectors)
 while True:
     try:
         # do a dummy poll to retrieve some message
@@ -226,10 +230,8 @@ while True:
             if "objects" in event_data:
                 for obj_data in event_data["objects"]:
                     new_timeline_item = \
-                        TimelineItem(board_id, TimelineItemType.OBJECT_DETECT,
-                                     board_msg_original_timestamp,
-                                     board_msg_id,
-                                     obj_data)
+                        board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.OBJECT_DETECT, board_msg_original_timestamp,
+                                     board_msg_id, obj_data)
                     cur_board_timeline.add_item(new_timeline_item)
 
             # indicates it's the sensor data reading msg
@@ -237,24 +239,19 @@ while True:
                 for obj_data in event_data["sensors"]:
                     if "speed" in obj_data:
                         new_timeline_item \
-                            = TimelineItem(board_id, TimelineItemType.SENSOR_READ_SPEED,
+                            = board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.SENSOR_READ_SPEED,
                                            board_msg_original_timestamp,
-                                           board_msg_id,
-                                           obj_data)
+                                           board_msg_id, obj_data)
                         cur_board_timeline.add_item(new_timeline_item)
                     elif "pressure" in obj_data:
                         new_timeline_item \
-                            = TimelineItem(board_id, TimelineItemType.SENSOR_READ_PRESSURE,
-                                           board_msg_original_timestamp,
-                                           board_msg_id,
-                                           obj_data)
+                            = board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.SENSOR_READ_PRESSURE,
+                                           board_msg_original_timestamp, board_msg_id, obj_data)
                         cur_board_timeline.add_item(new_timeline_item)
                     elif "ACCELERATOR" in obj_data:
                         new_timeline_item \
-                            = TimelineItem(board_id, TimelineItemType.SENSOR_READ_ACCELERATOR,
-                                           board_msg_original_timestamp,
-                                           board_msg_id,
-                                           obj_data)
+                            = board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.SENSOR_READ_ACCELERATOR,
+                                           board_msg_original_timestamp, board_msg_id, obj_data)
                         cur_board_timeline.add_item(new_timeline_item)
 
     except:
