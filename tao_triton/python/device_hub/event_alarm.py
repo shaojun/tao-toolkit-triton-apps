@@ -15,7 +15,8 @@ class EventAlarmPriority(Enum):
 
 
 class EventAlarm:
-    def __init__(self, event_detector, original_utc_timestamp: datetime, priority: EventAlarmPriority,
+    def __init__(self, event_detector: event_detector.EventDetectorBase, original_utc_timestamp: datetime,
+                 priority: EventAlarmPriority,
                  description: str, code=""):
         """
 
@@ -67,7 +68,22 @@ class EventAlarmWebServiceNotifier:
                              "level": a.priority.value,
                              "data": {"description": a.description,
                                       "original_timestamp": str(a.original_utc_timestamp)}}
+            elif a.event_detector.__class__.__name__ == event_detector.GasTankEnteringEventDetector.__name__:
+                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "007",
+                             "level": a.priority.value,
+                             "data": {"description": a.description,
+                                      "original_timestamp": str(a.original_utc_timestamp)}}
             elif a.event_detector.__class__.__name__ == event_detector.DoorStateChangedEventDetector.__name__:
+                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "007",
+                             "level": a.priority.value,
+                             "data": {"description": a.description,
+                                      "original_timestamp": str(a.original_utc_timestamp)}}
+            elif a.event_detector.__class__.__name__ == event_detector.DoorOpenedForLongtimeEventDetector.__name__:
+                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "007",
+                             "level": a.priority.value,
+                             "data": {"description": a.description,
+                                      "original_timestamp": str(a.original_utc_timestamp)}}
+            elif a.event_detector.__class__.__name__ == event_detector.DoorRepeatlyOpenAndCloseEventDetector.__name__:
                 post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "007",
                              "level": a.priority.value,
                              "data": {"description": a.description,
@@ -77,7 +93,6 @@ class EventAlarmWebServiceNotifier:
                              "level": a.priority.value,
                              "data": {"description": a.description,
                                       "original_timestamp": str(a.original_utc_timestamp)}}
-
             try:
                 # level: Debug=0, Info=1, Warning=2, Error=3, Fatal=4
                 post_response = requests.post(EventAlarmWebServiceNotifier.URL,
@@ -91,9 +106,10 @@ class EventAlarmWebServiceNotifier:
                             a.event_detector.__class__.__name__,
                             post_response.text[:500]))
                 else:
-                    self.logger.debug(
-                        "board: {}, Successfully notified an alarm from {}".format(a.event_detector.timeline.board_id,
-                                                                                   a.event_detector.__class__.__name__))
+                    pass
+                    # self.logger.debug(
+                    #     "board: {}, Successfully notified an alarm from {}".format(a.event_detector.timeline.board_id,
+                    # a.event_detector.__class__.__name__))
             except:
                 self.logger.exception(
                     "board: {}, Notify alarm from {} got exception.".format(
