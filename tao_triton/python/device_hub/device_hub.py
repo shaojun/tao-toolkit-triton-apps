@@ -67,7 +67,13 @@ def create_boardtimeline(board_id: str):
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
                        event_detector.DoorOpenedForLongtimeEventDetector(logging),
-                       event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging)
+                       event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
+                       event_detector.ElevatorOverspeedEventDetector(logging),
+                       event_detector.TemperatureTooHighEventDetector(logging),
+                       event_detector.PassagerVigorousExerciseEventDetector(logging),
+                       event_detector.DoorOpeningAtMovingEventDetector(logging),
+                       event_detector.ElevatorSuddenlyStoppedEventDetector(logging),
+                       event_detector.ElevatorShockEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
@@ -204,6 +210,7 @@ if __name__ == '__main__':
 
     # consumer.subscribe(pattern="shaoLocalJsNxBoard")
     consumer.subscribe(pattern=".*")
+    # consumer.subscribe(pattern="shaoLocalJts2gBoard")
 
 while True:
     try:

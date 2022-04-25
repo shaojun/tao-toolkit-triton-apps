@@ -16,7 +16,7 @@ class EventAlarmPriority(Enum):
 
 class EventAlarm:
     def __init__(self, event_detector, original_utc_timestamp: datetime, priority: EventAlarmPriority,
-                 description: str):
+                 description: str, code=""):
         """
 
         @type event_detector: EventDetectorBase
@@ -26,6 +26,7 @@ class EventAlarm:
         self.description = description
         # the alarm may be triggered at remote(board) side, this timestamp is from remote(board)
         self.original_utc_timestamp = original_utc_timestamp
+        self.code = code
 
 
 class EventAlarmNotifierBase:
@@ -68,6 +69,11 @@ class EventAlarmWebServiceNotifier:
                                       "original_timestamp": str(a.original_utc_timestamp)}}
             elif a.event_detector.__class__.__name__ == event_detector.DoorStateChangedEventDetector.__name__:
                 post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "007",
+                             "level": a.priority.value,
+                             "data": {"description": a.description,
+                                      "original_timestamp": str(a.original_utc_timestamp)}}
+            else:
+                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": a.code,
                              "level": a.priority.value,
                              "data": {"description": a.description,
                                       "original_timestamp": str(a.original_utc_timestamp)}}
