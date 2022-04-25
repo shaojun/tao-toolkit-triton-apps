@@ -209,7 +209,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 # we don't want to report too freq
                 last_report_time_diff = (
                         datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
-                if last_report_time_diff <= 15:
+                if last_report_time_diff <= 30:
                     continue
 
             self.state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
@@ -252,9 +252,67 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                    edge_board_confidence, infer_server_confid)))
                 else:
                     self.logger.debug(
-                        "      board: {}, sink this detect due to infer server give low confidence: {}".format(
+                        "      board: {}, sink this detect due to infer server gives low confidence: {}".format(
                             self.timeline.board_id,
                             m.group(0)))
+
+        return event_alarms
+
+
+#
+# 煤气罐检测告警（煤气罐入梯)
+class GasTankEnteringEventDetector(EventDetectorBase):
+    def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
+        self.logger = logging.getLogger(__name__)
+
+    def prepare(self, timeline, event_detectors):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param timeline: BoardTimeline
+        @type event_detectors: List[EventDetectorBase]
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
+        self.timeline = timeline
+        pass
+
+    def get_timeline_item_filter(self):
+        def filter(timeline_items):
+            """
+
+            @param timeline_items: List[TimelineItem]
+            @return:
+            """
+            result = [i for i in timeline_items if
+                      not i.consumed
+                      # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
+                      and i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
+                      and "Vehicle|#|GasTank" in i.raw_data]
+            return result
+
+        return filter
+
+    def detect(self, filtered_timeline_items):
+        """
+
+        @param filtered_timeline_items: List[TimelineItem]
+        @return: List[EventAlarm]
+        """
+
+        event_alarms = []
+        for item in filtered_timeline_items:
+            item.consumed = True
+            if self.state_obj and "last_infer_timestamp" in self.state_obj:
+                # we don't want to report too freq
+                last_report_time_diff = (
+                        datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
+                if last_report_time_diff <= 30:
+                    continue
+
+            self.state_obj = {"last_infer_timestamp": datetime.datetime.now()}
+            event_alarms.append(
+                event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
+                                       "detected gas tank entering elevator"))
 
         return event_alarms
 
@@ -506,6 +564,7 @@ class ElevatorSuddenlyStoppedEventDetector(EventDetectorBase):
 class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
+        self.last_door_open_state_time = None
         self.logger = logging.getLogger(__name__)
 
     def prepare(self, timeline, event_detectors):
@@ -516,9 +575,9 @@ class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
         @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
         """
         self.timeline = timeline
-        for ed in event_detectors:
-            if ed.__class__.__name__ == DoorStateChangedEventDetector.__name__:
-                ed.subscribe_on_property_changed(self)
+        for det in event_detectors:
+            if det.__class__.__name__ == DoorStateChangedEventDetector.__name__:
+                det.subscribe_on_property_changed(self)
                 break
 
     def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
@@ -532,10 +591,11 @@ class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
         if src_detector.__class__.__name__ == DoorStateChangedEventDetector.__name__:
             # handle event from DoorStateChangedEventDetector
             if property_name == "door_state":
-                # state values are: OPEN, CLOSE, None
-                data["last_state"]
-                data["new_state"]
-                pass
+                # door state values are: OPEN, CLOSE, None
+                if data["new_state"] == "OPEN":
+                    self.last_door_open_state_time = datetime.datetime.now()
+                else:
+                    self.last_door_open_state_time = None
 
     def detect(self, filtered_timeline_items):
         """
@@ -543,6 +603,18 @@ class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
+        if self.last_door_open_state_time \
+                and (datetime.datetime.now() - self.last_door_open_state_time).total_seconds() >= 15:
+            alarms = [event_alarm.EventAlarm(
+                self,
+                datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.ERROR,
+                "长时间处于开门状态 - 门开着超过一定时间的故障, 最近一次门状态转变为'开'的时间为: {}, 且持续时间 >= {}秒".format(
+                    self.last_door_open_state_time.strftime("%d/%m/%Y %H:%M:%S"),
+                    (datetime.datetime.now() - self.last_door_open_state_time).total_seconds()))]
+            self.last_door_open_state_time = None
+            return alarms
         return None
 
 
