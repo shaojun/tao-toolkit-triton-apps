@@ -1,3 +1,4 @@
+from __future__ import annotations
 import datetime
 import time
 from enum import Enum
@@ -18,7 +19,8 @@ class TimelineItemType(Enum):
 
 
 class TimelineItem:
-    def __init__(self, timeline, item_type, original_timestamp_str: str, board_msg_id: str,
+    def __init__(self, timeline: BoardTimeline, item_type: TimelineItemType, original_timestamp_str: str,
+                 board_msg_id: str,
                  raw_data: str):
         """
 
@@ -42,7 +44,6 @@ class TimelineItem:
 
 
 class BoardTimeline:
-    import datetime
     # by seconds
     Timeline_Items_Max_Survive_Time = 120
 
@@ -58,9 +59,9 @@ class BoardTimeline:
         for d in event_detectors:
             d.prepare(self, event_detectors)
 
-    def add_item(self, item: TimelineItem):
-        # self.logger.debug("board: {} is adding TimelineItem...  type: {}".format(self.board_id, item.type.name))
-        self.items.append(item)
+    def add_items(self, items: List[TimelineItem]):
+        # self.logger.debug("board: {} is adding TimelineItem(s)...  type: {}".format(self.board_id, items[0].type.name))
+        self.items += items
         if len(self.items) % 5 == 0:
             self.__purge_items()
         event_alarms = []

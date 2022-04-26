@@ -100,9 +100,10 @@ def pipe_in_local_idle_loop_item_to_board_timelines():
                         -1].local_utc_timestamp).total_seconds() >= 5:
                     local_idle_loop_item = \
                         board_timeline.TimelineItem(tl, board_timeline.TimelineItemType.LOCAL_IDLE_LOOP,
-                                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
-                                     str(uuid.uuid4()), "")
-                    tl.add_item(local_idle_loop_item)
+                                                    datetime.datetime.now(
+                                                        datetime.timezone.utc).astimezone().isoformat(),
+                                                    str(uuid.uuid4()), "")
+                    tl.add_items([local_idle_loop_item])
 
 
 # duration is in seconds
@@ -208,7 +209,9 @@ if __name__ == '__main__':
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
 
+    # consumer.subscribe(pattern="1423820088517")
     # consumer.subscribe(pattern="shaoLocalJsNxBoard")
+    # consumer.subscribe(pattern="suzhou_yang_testing_jtsn4g")
     consumer.subscribe(pattern=".*")
     # consumer.subscribe(pattern="shaoLocalJts2gBoard")
 
@@ -235,31 +238,36 @@ while True:
                 cur_board_timeline = cur_board_timeline[0]
             # indicates it's the object detection msg
             if "objects" in event_data:
+                new_timeline_items = []
                 for obj_data in event_data["objects"]:
-                    new_timeline_item = \
-                        board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.OBJECT_DETECT, board_msg_original_timestamp,
-                                     board_msg_id, obj_data)
-                    cur_board_timeline.add_item(new_timeline_item)
+                    new_timeline_items.append(
+                        board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.OBJECT_DETECT,
+                                                    board_msg_original_timestamp,
+                                                    board_msg_id, obj_data))
+                cur_board_timeline.add_items(new_timeline_items)
 
             # indicates it's the sensor data reading msg
             elif "sensors" in event_data and "sensorId" in event_data:
                 for obj_data in event_data["sensors"]:
                     if "speed" in obj_data:
                         new_timeline_item \
-                            = board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.SENSOR_READ_SPEED,
-                                           board_msg_original_timestamp,
-                                           board_msg_id, obj_data)
-                        cur_board_timeline.add_item(new_timeline_item)
+                            = board_timeline.TimelineItem(cur_board_timeline,
+                                                          board_timeline.TimelineItemType.SENSOR_READ_SPEED,
+                                                          board_msg_original_timestamp,
+                                                          board_msg_id, obj_data)
+                        cur_board_timeline.add_items([new_timeline_item])
                     elif "pressure" in obj_data:
                         new_timeline_item \
-                            = board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.SENSOR_READ_PRESSURE,
-                                           board_msg_original_timestamp, board_msg_id, obj_data)
-                        cur_board_timeline.add_item(new_timeline_item)
+                            = board_timeline.TimelineItem(cur_board_timeline,
+                                                          board_timeline.TimelineItemType.SENSOR_READ_PRESSURE,
+                                                          board_msg_original_timestamp, board_msg_id, obj_data)
+                        cur_board_timeline.add_items([new_timeline_item])
                     elif "ACCELERATOR" in obj_data:
                         new_timeline_item \
-                            = board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.SENSOR_READ_ACCELERATOR,
-                                           board_msg_original_timestamp, board_msg_id, obj_data)
-                        cur_board_timeline.add_item(new_timeline_item)
+                            = board_timeline.TimelineItem(cur_board_timeline,
+                                                          board_timeline.TimelineItemType.SENSOR_READ_ACCELERATOR,
+                                                          board_msg_original_timestamp, board_msg_id, obj_data)
+                        cur_board_timeline.add_items([new_timeline_item])
 
     except:
         logger.exception("Major error caused by exception:")
