@@ -69,7 +69,7 @@ class EventAlarmWebServiceNotifier:
                              "data": {"description": a.description,
                                       "original_timestamp": str(a.original_utc_timestamp)}}
             elif a.event_detector.__class__.__name__ == event_detector.GasTankEnteringEventDetector.__name__:
-                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "007",
+                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "0021",
                              "level": a.priority.value,
                              "data": {"description": a.description,
                                       "original_timestamp": str(a.original_utc_timestamp)}}
@@ -79,12 +79,12 @@ class EventAlarmWebServiceNotifier:
                              "data": {"description": a.description,
                                       "original_timestamp": str(a.original_utc_timestamp)}}
             elif a.event_detector.__class__.__name__ == event_detector.DoorOpenedForLongtimeEventDetector.__name__:
-                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "007",
+                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "008",
                              "level": a.priority.value,
                              "data": {"description": a.description,
                                       "original_timestamp": str(a.original_utc_timestamp)}}
             elif a.event_detector.__class__.__name__ == event_detector.DoorRepeatlyOpenAndCloseEventDetector.__name__:
-                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "007",
+                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "004",
                              "level": a.priority.value,
                              "data": {"description": a.description,
                                       "original_timestamp": str(a.original_utc_timestamp)}}
