@@ -135,6 +135,8 @@ class DoorStateChangedEventDetector(EventDetectorBase):
 
         recent_items = [i for i in filtered_timeline_items if
                         (datetime.datetime.now() - i.local_timestamp).total_seconds() <= 3]
+        person_items = [i for i in filtered_timeline_items if "person|#" in i.raw_data]
+        hasPereson = "Y" if len(person_items) > 0 else "N"
         for ri in reversed(recent_items):
             if ri.item_type == board_timeline.TimelineItemType.LOCAL_IDLE_LOOP:
                 new_state_obj = {"last_door_state": "OPEN", "last_state_timestamp": str(datetime.datetime.now())}
@@ -154,11 +156,13 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                 "door_state",
                 {"last_state": "None" if last_state_obj is None else last_state_obj["last_door_state"],
                  "new_state": new_state_obj["last_door_state"]})
+            code = "DOOROPEN" if new_state_obj["last_door_state"] == "OPEN" else "DOORCLOSE"
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.INFO,
-                                       "Door state changed to: {}".format(new_state_obj["last_door_state"]))]
+                                       "Door state changed to: {},HumanInSide:{}".format(
+                                           new_state_obj["last_door_state"], hasPereson), code)]
         return None
 
 
@@ -1245,6 +1249,7 @@ class ElevatorMileageEventDetector(EventDetectorBase):
                 current_speed_item = speed_filtered_timeline_items[-1]
                 current_storey_item = storey_filtered_timeline_items[-1]
                 if last_state_obj:
+                    state_len = len(last_state_obj)
                     if len(last_state_obj) == 1:
                         if current_speed_item.raw_data["speed"] != 0:
                             last_state_obj.append({"speed": current_speed_item.raw_data["speed"],
@@ -1276,4 +1281,80 @@ class ElevatorMileageEventDetector(EventDetectorBase):
                 "TRIP"))
             last_state_obj = []
         self.state_obj["elevator_state"] = last_state_obj
+        return alarms
+
+
+#
+# 电梯运行状态 上行、下行 停止 所在楼层
+class ElevatorRunningStateEventDetector(EventDetectorBase):
+    def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
+        self.logger = logging.getLogger(__name__)
+        self.alarms_to_fire = []
+
+    def prepare(self, timeline, event_detectors):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param timeline: BoardTimeline
+        @type event_detectors: List[EventDetectorBase]
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
+        self.timeline = timeline
+
+    def get_timeline_item_filter(self):
+        def filter(timeline_items):
+            result = [i for i in timeline_items if
+                      not i.consumed
+                      and (datetime.datetime.now() - i.local_timestamp).total_seconds() <= 10
+                      # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
+                      and (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
+                           and "storey" in i.raw_data) or (
+                              i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
+                              and "speed" in i.raw_data) or (
+                              i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
+                              and "person|#" in i.raw_data
+                      )]
+            return result
+
+        return filter
+
+    def detect(self, filtered_timeline_items):
+        alarms = []
+        last_state_object = self.state_obj
+        # 下行时速度>0 上行时速度<0
+        if len(filtered_timeline_items) > 0:
+            person_timeline_items = [i for i in filtered_timeline_items if i.item_type ==
+                                     board_timeline.TimelineItemType.OBJECT_DETECT]
+            speed_timeline_items = [i for i in filtered_timeline_items if i.item_type ==
+                                    board_timeline.TimelineItemType.SENSOR_READ_SPEED]
+            storey_timeline_items = [i for i in filtered_timeline_items if i.item_type ==
+                                     board_timeline.TimelineItemType.SENSOR_READ_PRESSURE]
+            hasPerson = "Y" if len(person_timeline_items) > 0 else "N"
+            code = ""
+            if len(speed_timeline_items) > 2:
+                last_speed_object = speed_timeline_items[-1]
+                previous_speed_oject = speed_timeline_items[-2]
+                if abs(last_speed_object.raw_data["speed"]) < 0.1 and \
+                        abs(previous_speed_oject.raw_data["speed"]) < 0.1:
+                    code = "LIFTSTOP"
+                elif last_speed_object.raw_data["speed"] < 0:
+                    code = "LIFTUP"
+                else:
+                    code = "LIFTDOWN"
+            if len(storey_timeline_items) > 0:
+                storey = storey_timeline_items[-1].raw_data["storey"]
+            if code != "":
+                self.state_obj = {"code": code, "floor": storey, "hasPerson": hasPerson, "time_stamp": datetime.datetime.now()}
+                if last_state_object and last_state_object["code"] == code and last_state_object["floor"] ==\
+                    storey and last_state_object["hasPerson"] == hasPerson:
+                    report_diff = (datetime.datetime.now()-last_state_object["time_stamp"]).total_seconds()
+                    if report_diff < 5:
+                        return None
+                alarms.append(event_alarm.EventAlarm(
+                    self,
+                    datetime.datetime.fromisoformat(
+                        datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                    event_alarm.EventAlarmPriority.INFO,
+                    "HumanInSide:{},FloorNum:{}".format(hasPerson, storey),
+                    code))
         return alarms

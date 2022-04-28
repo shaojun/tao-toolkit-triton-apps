@@ -76,7 +76,8 @@ def create_boardtimeline(board_id: str):
                        event_detector.ElevatorShockEventDetector(logging),
                        event_detector.ElevatorMovingWithoutPeopleInEventDetector(logging),
                        event_detector.ElevatorJamsEventDetector(logging),
-                       event_detector.ElevatorMileageEventDetector(logging)
+                       event_detector.ElevatorMileageEventDetector(logging),
+                       event_detector.ElevatorRunningStateEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
