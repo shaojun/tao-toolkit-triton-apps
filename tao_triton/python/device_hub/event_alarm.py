@@ -17,7 +17,7 @@ class EventAlarmPriority(Enum):
 class EventAlarm:
     def __init__(self, event_detector: event_detector.EventDetectorBase, original_utc_timestamp: datetime,
                  priority: EventAlarmPriority,
-                 description: str, code=""):
+                 description: str, code="", data={}):
         """
 
         @type event_detector: EventDetectorBase
@@ -28,6 +28,7 @@ class EventAlarm:
         # the alarm may be triggered at remote(board) side, this timestamp is from remote(board)
         self.original_utc_timestamp = original_utc_timestamp
         self.code = code
+        self.data = data
 
 
 class EventAlarmNotifierBase:
@@ -64,30 +65,35 @@ class EventAlarmWebServiceNotifier:
         for a in alarms:
             post_data = None
             if a.event_detector.__class__.__name__ == event_detector.ElectricBicycleEnteringEventDetector.__name__:
-                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "007",
+                post_data = {"device_id": a.event_detector.timeline.board_id, "warning_type": "007",
                              "level": a.priority.value,
-                             "data": {"description": a.description,
-                                      "original_timestamp": str(a.original_utc_timestamp)}}
+                             "description": a.description,
+                             "original_timestamp": str(a.original_utc_timestamp),
+                             "data": a.data}
             elif a.event_detector.__class__.__name__ == event_detector.GasTankEnteringEventDetector.__name__:
-                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "0021",
+                post_data = {"device_id": a.event_detector.timeline.board_id, "warning_type": "0021",
                              "level": a.priority.value,
-                             "data": {"description": a.description,
-                                      "original_timestamp": str(a.original_utc_timestamp)}}
+                             "description": a.description,
+                             "original_timestamp": str(a.original_utc_timestamp),
+                             "data": a.data}
             elif a.event_detector.__class__.__name__ == event_detector.DoorOpenedForLongtimeEventDetector.__name__:
-                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "008",
+                post_data = {"device_id": a.event_detector.timeline.board_id, "warning_type": "008",
                              "level": a.priority.value,
-                             "data": {"description": a.description,
-                                      "original_timestamp": str(a.original_utc_timestamp)}}
+                             "description": a.description,
+                             "original_timestamp": str(a.original_utc_timestamp),
+                             "data": a.data}
             elif a.event_detector.__class__.__name__ == event_detector.DoorRepeatlyOpenAndCloseEventDetector.__name__:
-                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": "004",
+                post_data = {"device_id": a.event_detector.timeline.board_id, "warning_type": "004",
                              "level": a.priority.value,
-                             "data": {"description": a.description,
-                                      "original_timestamp": str(a.original_utc_timestamp)}}
+                             "description": a.description,
+                             "original_timestamp": str(a.original_utc_timestamp),
+                             "data": a.data}
             else:
-                post_data = {"deviceId": a.event_detector.timeline.board_id, "warningType": a.code,
+                post_data = {"device_id": a.event_detector.timeline.board_id, "warning_type": a.code,
                              "level": a.priority.value,
-                             "data": {"description": a.description,
-                                      "original_timestamp": str(a.original_utc_timestamp)}}
+                             "description": a.description,
+                             "original_timestamp": str(a.original_utc_timestamp),
+                             "data": a.data}
             try:
                 # level: Debug=0, Info=1, Warning=2, Error=3, Fatal=4
                 post_response = requests.post(EventAlarmWebServiceNotifier.URL,

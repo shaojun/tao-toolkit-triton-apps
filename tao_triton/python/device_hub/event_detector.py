@@ -162,7 +162,8 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.INFO,
                                        "Door state changed to: {},HumanInSide:{}".format(
-                                           new_state_obj["last_door_state"], hasPereson), code)]
+                                           new_state_obj["last_door_state"], hasPereson), code,
+                                       {"HumanInSide": hasPereson})]
         return None
 
 
@@ -977,9 +978,9 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
             result = [i for i in timeline_items if
                       not i.consumed
                       # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
-                      and (i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "Person|#" in i.raw_data) or
-                      (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
-                       and "storey" in i.raw_data)]
+                      and ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "Person|#" in i.raw_data)
+                           or (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
+                               and "storey" in i.raw_data))]
             return result
 
         return filter
@@ -1224,11 +1225,11 @@ class ElevatorMileageEventDetector(EventDetectorBase):
             result = [i for i in timeline_items if
                       not i.consumed
                       # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
-                      and (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
-                           and "storey" in i.raw_data) or (
-                              i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
-                              and "speed" in i.raw_data
-                      )]
+                      and ((i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
+                            and "storey" in i.raw_data) or (
+                                   i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
+                                   and "speed" in i.raw_data
+                           ))]
             return result
 
         return filter
@@ -1278,7 +1279,8 @@ class ElevatorMileageEventDetector(EventDetectorBase):
                 "floorCount:{},startDate:{},endDate:{}".format(floor_count,
                                                                last_state_obj[0]["timestamp"],
                                                                last_state_obj[2]["timestamp"]),
-                "TRIP"))
+                "TRIP", {"floorCount": str(floor_count), "startDate": last_state_obj[0]["timestamp"],
+                         "endDate": last_state_obj[2]["timestamp"]}))
             last_state_obj = []
         self.state_obj["elevator_state"] = last_state_obj
         return alarms
@@ -1305,15 +1307,15 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
         def filter(timeline_items):
             result = [i for i in timeline_items if
                       not i.consumed
-                      and (datetime.datetime.now() - i.local_timestamp).total_seconds() <= 10
+                      # and (datetime.datetime.now() - i.local_timestamp).total_seconds() <= 10
                       # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
-                      and (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
-                           and "storey" in i.raw_data) or (
-                              i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
-                              and "speed" in i.raw_data) or (
-                              i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
-                              and "person|#" in i.raw_data
-                      )]
+                      and ((i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
+                            and "storey" in i.raw_data) or (
+                                   i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
+                                   and "speed" in i.raw_data) or (
+                                   i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
+                                   and "person|#" in i.raw_data
+                           ))]
             return result
 
         return filter
@@ -1341,13 +1343,15 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                     code = "LIFTUP"
                 else:
                     code = "LIFTDOWN"
+            storey = 0
             if len(storey_timeline_items) > 0:
                 storey = storey_timeline_items[-1].raw_data["storey"]
             if code != "":
-                self.state_obj = {"code": code, "floor": storey, "hasPerson": hasPerson, "time_stamp": datetime.datetime.now()}
-                if last_state_object and last_state_object["code"] == code and last_state_object["floor"] ==\
-                    storey and last_state_object["hasPerson"] == hasPerson:
-                    report_diff = (datetime.datetime.now()-last_state_object["time_stamp"]).total_seconds()
+                self.state_obj = {"code": code, "floor": storey, "hasPerson": hasPerson,
+                                  "time_stamp": datetime.datetime.now()}
+                if last_state_object and last_state_object["code"] == code and last_state_object["floor"] == \
+                        storey and last_state_object["hasPerson"] == hasPerson:
+                    report_diff = (datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
                     if report_diff < 5:
                         return None
                 alarms.append(event_alarm.EventAlarm(
@@ -1356,5 +1360,5 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                         datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                     event_alarm.EventAlarmPriority.INFO,
                     "HumanInSide:{},FloorNum:{}".format(hasPerson, storey),
-                    code))
+                    code, {"HumanInSide": hasPerson, "FloorNum": str(storey)}))
         return alarms

@@ -252,28 +252,28 @@ while True:
 
             # indicates it's the sensor data reading msg
             elif "sensors" in event_data and "sensorId" in event_data:
-                new_timeline_items = []
+                new_items = []
                 for obj_data in event_data["sensors"]:
                     if "speed" in obj_data:
-                        new_timeline_items.append(
+                        new_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
                                                         board_timeline.TimelineItemType.SENSOR_READ_SPEED,
                                                         board_msg_original_timestamp,
                                                         board_msg_id, obj_data))
                         # cur_board_timeline.add_items([new_timeline_item])
                     elif "pressure" in obj_data:
-                        new_timeline_items.append(
+                        new_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
                                                         board_timeline.TimelineItemType.SENSOR_READ_PRESSURE,
                                                         board_msg_original_timestamp, board_msg_id, obj_data))
                         # cur_board_timeline.add_items([new_timeline_item])
                     elif "ACCELERATOR" in obj_data:
-                        new_timeline_items.append(
+                        new_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
                                                         board_timeline.TimelineItemType.SENSOR_READ_ACCELERATOR,
                                                         board_msg_original_timestamp, board_msg_id, obj_data))
                         # cur_board_timeline.add_items([new_timeline_item])
-                cur_board_timeline.add_items(new_timeline_items)
+                cur_board_timeline.add_items(new_items)
 
     except:
         logger.exception("Major error caused by exception:")
