@@ -161,9 +161,9 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.INFO,
-                                       "Door state changed to: {},HumanInSide:{}".format(
+                                       "Door state changed to: {},human_inside:{}".format(
                                            new_state_obj["last_door_state"], hasPereson), code,
-                                       {"HumanInSide": hasPereson})]
+                                       {"human_inside": hasPereson})]
         return None
 
 
@@ -1276,11 +1276,11 @@ class ElevatorMileageEventDetector(EventDetectorBase):
                 datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                 event_alarm.EventAlarmPriority.INFO,
-                "floorCount:{},startDate:{},endDate:{}".format(floor_count,
+                "floor_count:{},start_date:{},end_date:{}".format(floor_count,
                                                                last_state_obj[0]["timestamp"],
                                                                last_state_obj[2]["timestamp"]),
-                "TRIP", {"floorCount": str(floor_count), "startDate": last_state_obj[0]["timestamp"],
-                         "endDate": last_state_obj[2]["timestamp"]}))
+                "TRIP", {"floor_count": str(floor_count), "start_date": last_state_obj[0]["timestamp"],
+                         "end_date": last_state_obj[2]["timestamp"]}))
             last_state_obj = []
         self.state_obj["elevator_state"] = last_state_obj
         return alarms
@@ -1359,6 +1359,6 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                     datetime.datetime.fromisoformat(
                         datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                     event_alarm.EventAlarmPriority.INFO,
-                    "HumanInSide:{},FloorNum:{}".format(hasPerson, storey),
-                    code, {"HumanInSide": hasPerson, "FloorNum": str(storey)}))
+                    "human_inside:{},floor_num:{}".format(hasPerson, storey),
+                    code, {"human_inside": hasPerson, "floor_num": str(storey)}))
         return alarms
