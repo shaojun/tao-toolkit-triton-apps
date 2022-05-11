@@ -467,7 +467,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
             # handle event from DoorStateChangedEventDetector
             # 记录最近一次电梯门的状态，
             if src_detector.__class__.__name__ == DoorStateChangedEventDetector.__name__ and \
-                    property_name == "door_state" and data["new_state"] == "OPEN":
+                    property_name == "door_state":
                 self.state_obj["door_state"] = {"new_state": data["new_state"],
                                                 "last_state": data["last_state"],
                                                 "notify_time": datetime.datetime.now()}
