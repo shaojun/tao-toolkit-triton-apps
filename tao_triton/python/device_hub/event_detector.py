@@ -477,7 +477,8 @@ class PeopleStuckEventDetector(EventDetectorBase):
             return [i for i in timeline_items if
                     not i.consumed
                     and
-                    ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and ("Person|#" in i.raw_data in i.raw_data)) or
+                    ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and (
+                                "Person|#" in i.raw_data in i.raw_data)) or
                      (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED))]
 
         return filter
@@ -1290,8 +1291,8 @@ class ElevatorMileageEventDetector(EventDetectorBase):
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                 event_alarm.EventAlarmPriority.INFO,
                 "floor_count:{},start_date:{},end_date:{}".format(floor_count,
-                                                               last_state_obj[0]["timestamp"],
-                                                               last_state_obj[2]["timestamp"]),
+                                                                  last_state_obj[0]["timestamp"],
+                                                                  last_state_obj[2]["timestamp"]),
                 "TRIP", {"floor_count": str(floor_count), "start_date": last_state_obj[0]["timestamp"],
                          "end_date": last_state_obj[2]["timestamp"]}))
             last_state_obj = []
@@ -1359,6 +1360,10 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
             storey = 0
             if len(storey_timeline_items) > 0:
                 storey = storey_timeline_items[-1].raw_data["storey"]
+            if last_state_object and "code" in last_state_object:
+                if last_state_object["code"] == code and last_state_object["floor"] == storey and \
+                        last_state_object["hasPerson"] == hasPerson:
+                    return None
             if code != "":
                 self.state_obj = {"code": code, "floor": storey, "hasPerson": hasPerson,
                                   "time_stamp": datetime.datetime.now()}
