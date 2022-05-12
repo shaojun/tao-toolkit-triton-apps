@@ -549,7 +549,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
             if time_diff <= 90 and abs(item.raw_data["speed"]) > 0.1:
                 is_quiescent = False
         if is_quiescent:
-            new_state_obj = {"people_stuck": "stuck", "last_report_timestamp": str(datetime.datetime.now())}
+            new_state_obj = {"people_stuck": "stuck", "last_report_timestamp": datetime.datetime.now()}
         # store it back, and it will be passed in at next call
         self.state_obj["last_notify_timestamp"] = new_state_obj
         if new_state_obj:
@@ -557,7 +557,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.ERROR,
-                                       "有人困在电梯内", "001")]
+                                       "{}发现有人困在电梯内".format(new_state_obj["last_report_timestamp"].strftime("%d/%m/%Y %H:%M:%S")), "001")]
         return None
 
 
