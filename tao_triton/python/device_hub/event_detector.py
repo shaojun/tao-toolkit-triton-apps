@@ -2,7 +2,7 @@ import datetime
 import os
 import re
 from typing import List
-
+import shutil
 # from tao_triton.python.device_hub import base64_tao_client
 # from tao_triton.python.device_hub.board_timeline import TimelineItem, TimelineItemType
 import event_alarm
@@ -170,6 +170,11 @@ class DoorStateChangedEventDetector(EventDetectorBase):
 #
 # 电动车检测告警（电动车入梯)
 class ElectricBicycleEnteringEventDetector(EventDetectorBase):
+    # input object inferred as class: EBIKE and with confidence <= value will save the sample to a dedicated folder for manually review
+    # the higher, the more image samples will be saved.
+    SAVE_EBIC_IMAGE_SAMPLE_CONFID_THRESHOLD = 0.95
+    SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH = "ebic_image_samples"
+
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
@@ -247,21 +252,28 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 edge_board_confidence, infer_results))
             m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
             if m and m.group(0):
-                infer_server_confid = float(m.group(0))
-                if infer_server_confid >= 0.5:
+                infer_server_ebic_confid = float(m.group(0))
+                if infer_server_ebic_confid >= 0.6:
                     self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
                                                                            {"detail": "there's a EB incoming"})
                     event_alarms.append(
                         event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
                                                "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
-                                                   edge_board_confidence, infer_server_confid)))
+                                                   edge_board_confidence, infer_server_ebic_confid)))
                 else:
                     self.logger.debug(
                         "      board: {}, sink this detect due to infer server gives low confidence: {}".format(
                             self.timeline.board_id,
                             m.group(0)))
+                if infer_server_ebic_confid <= ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_CONFID_THRESHOLD:
+                    if not os.path.exists(ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH):
+                        os.makedirs(ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH)
+                    shutil.copyfile(os.path.join("temp_infer_image_files","0.jpg"),
+                        os.path.join(ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
+                            str(infer_server_ebic_confid)+"___"+self.timeline.board_id+"___"+str(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))+".jpg"))
 
         return event_alarms
+
 
 
 #
