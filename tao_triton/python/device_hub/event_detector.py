@@ -663,7 +663,7 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
             if property_name == "door_state":
                 if self.state_obj and "last_state_changed_times" in self.state_obj:
                     self.state_obj["last_state_changed_times"].append(datetime.datetime.now())
-                    last_state_changed_times: List[datetime] = self.state_obj["last_state_changed_times"]
+                    last_state_changed_times: List[datetime.datetime] = self.state_obj["last_state_changed_times"]
                     if len(last_state_changed_times) >= 3:
                         total_time_gap = (last_state_changed_times[-1] - last_state_changed_times[-2]
                                           + last_state_changed_times[-2] - last_state_changed_times[

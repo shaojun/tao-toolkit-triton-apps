@@ -82,7 +82,7 @@ def create_boardtimeline(board_id: str):
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
                                         [
-                                            event_alarm.EventAlarmDummyNotifier(logging),
+                                            # event_alarm.EventAlarmDummyNotifier(logging),
                                             event_alarm.EventAlarmWebServiceNotifier(logging)
                                         ])
 
