@@ -134,10 +134,22 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                     "last_infer_ebic_timestamp"]
 
         recent_items = [i for i in filtered_timeline_items if
+                        not i.consumed and
+                        i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
                         (datetime.datetime.now() - i.local_timestamp).total_seconds() <= 3]
-        person_items = [i for i in filtered_timeline_items if "person|#" in i.raw_data]
+        target_msg_id = -1 if len(recent_items) == 0 else recent_items[-1].board_msg_id
+        person_items = [i for i in filtered_timeline_items if "Person|#" in i.raw_data and i.board_msg_id == target_msg_id]
+
+        target_items = [i for i in filtered_timeline_items if i.board_msg_id == target_msg_id]
+        self.logger.debug("total length of current items:{}".format(len(recent_items)))
+        for item in reversed(recent_items):
+            self.logger.debug(
+                "item in door state detect,board_msg_id:{}, item type:{},raw_data:{}".format(item.board_msg_id,
+                                                                                             item.item_type,
+                                                                                             item.raw_data))
+
         hasPereson = "Y" if len(person_items) > 0 else "N"
-        for ri in reversed(recent_items):
+        for ri in reversed(target_items):
             if ri.item_type == board_timeline.TimelineItemType.LOCAL_IDLE_LOOP:
                 new_state_obj = {"last_door_state": "OPEN", "last_state_timestamp": str(datetime.datetime.now())}
                 break
@@ -268,12 +280,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 if infer_server_ebic_confid <= ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_CONFID_THRESHOLD:
                     if not os.path.exists(ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH):
                         os.makedirs(ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH)
-                    shutil.copyfile(os.path.join("temp_infer_image_files","0.jpg"),
-                        os.path.join(ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
-                            str(infer_server_ebic_confid)+"___"+self.timeline.board_id+"___"+str(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))+".jpg"))
+                    shutil.copyfile(os.path.join("temp_infer_image_files", "0.jpg"),
+                                    os.path.join(
+                                        ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
+                                        str(infer_server_ebic_confid) + "___" + self.timeline.board_id + "___" + str(
+                                            datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")) + ".jpg"))
 
         return event_alarms
-
 
 
 #
@@ -490,7 +503,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
                     not i.consumed
                     and
                     ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and (
-                                "Person|#" in i.raw_data in i.raw_data)) or
+                            "Person|#" in i.raw_data in i.raw_data)) or
                      (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED))]
 
         return filter
@@ -557,7 +570,9 @@ class PeopleStuckEventDetector(EventDetectorBase):
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.ERROR,
-                                       "{}发现有人困在电梯内".format(new_state_obj["last_report_timestamp"].strftime("%d/%m/%Y %H:%M:%S")), "001")]
+                                       "{}发现有人困在电梯内".format(
+                                           new_state_obj["last_report_timestamp"].strftime("%d/%m/%Y %H:%M:%S")),
+                                       "001")]
         return None
 
 
@@ -664,12 +679,22 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                 if self.state_obj and "last_state_changed_times" in self.state_obj:
                     self.state_obj["last_state_changed_times"].append(datetime.datetime.now())
                     last_state_changed_times: List[datetime.datetime] = self.state_obj["last_state_changed_times"]
+                    self.logger.debug("total len of last_state_changed item:{}".format(len(last_state_changed_times)))
+
                     if len(last_state_changed_times) >= 3:
                         total_time_gap = (last_state_changed_times[-1] - last_state_changed_times[-2]
                                           + last_state_changed_times[-2] - last_state_changed_times[
                                               -3]).total_seconds()
+                        # self.logger.debug("total_time_gap:{}".format(total_time_gap))
                         if total_time_gap <= 15:
                             self.state_obj["last_state_changed_times"] = []
+                            last_report_time = None if not ("last_report_time" in self.state_obj) else self.state_obj["last_report_time"]
+                            if last_report_time:
+                                report_time_diff = (datetime.datetime.now()-last_report_time).total_seconds()
+                                if report_time_diff < 20:
+                                    self.logger.debug("last report time:{},time_diff:{}".format(last_report_time, report_time_diff))
+                                    return
+                            self.state_obj["last_report_time"] = datetime.datetime.now()
                             self.alarms_to_fire.append(event_alarm.EventAlarm(
                                 self,
                                 datetime.datetime.fromisoformat(
@@ -679,11 +704,11 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                                     last_state_changed_times[-1].strftime("%d/%m/%Y %H:%M:%S"),
                                     last_state_changed_times[-2].strftime("%H:%M:%S"),
                                     last_state_changed_times[-3].strftime("%H:%M:%S"))))
-
-                        self.state_obj["last_state_changed_times"] = self.state_obj["last_state_changed_times"][-3:-1]
-
+                        if len(self.state_obj["last_state_changed_times"]) > 3:
+                            self.state_obj["last_state_changed_times"] = self.state_obj["last_state_changed_times"][-3:]
                 else:
                     self.state_obj = {"last_state_changed_times": [datetime.datetime.now()]}
+                    self.logger.debug("total len of last_state_changed item:{}".format(len(self.state_obj)))
                 # door state values are: OPEN, CLOSE, None
                 # data["last_state"]
                 # data["new_state"]
@@ -1340,7 +1365,7 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                                    i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
                                    and "speed" in i.raw_data) or (
                                    i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
-                                   and "person|#" in i.raw_data
+                                   and "Person|#" in i.raw_data
                            ))]
             return result
 
