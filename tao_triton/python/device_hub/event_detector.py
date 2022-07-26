@@ -5,6 +5,8 @@ from typing import List
 import shutil
 # from tao_triton.python.device_hub import base64_tao_client
 # from tao_triton.python.device_hub.board_timeline import TimelineItem, TimelineItemType
+from kafka import KafkaProducer
+
 import event_alarm
 import board_timeline
 from tao_triton.python.device_hub import base64_tao_client
@@ -138,7 +140,8 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                         i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
                         (datetime.datetime.now() - i.local_timestamp).total_seconds() <= 3]
         target_msg_id = -1 if len(recent_items) == 0 else recent_items[-1].board_msg_id
-        person_items = [i for i in filtered_timeline_items if "Person|#" in i.raw_data and i.board_msg_id == target_msg_id]
+        person_items = [i for i in filtered_timeline_items if
+                        "Person|#" in i.raw_data and i.board_msg_id == target_msg_id]
 
         target_items = [i for i in filtered_timeline_items if i.board_msg_id == target_msg_id]
         self.logger.debug("total length of current items:{}".format(len(recent_items)))
@@ -250,10 +253,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             #                                         False, FLAGS.url, FLAGS.protocol, FLAGS.mode,
             #                                         FLAGS.output_path,
             #                                         [cropped_base64_image_file_text])
+            # 推理服务器36.153.41.18:18000
             infer_results = base64_tao_client.infer(False, False, False,
                                                     "bicycletypenet_tao", "",
                                                     1, "bicycle,electric_bicycle",
-                                                    False, "36.153.41.18:18000", "HTTP", "Classification",
+                                                    False, "192.168.66.149:8000", "HTTP", "Classification",
                                                     os.path.join(os.getcwd(), "outputs"),
                                                     [cropped_base64_image_file_text])
             # sample: (localConf:0.850841)infer_results: temp_infer_image_files\0.jpg, 0.5524(0)=bicycle, 0.4476(1)=electric_bicycle
@@ -272,6 +276,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
                                                "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
                                                    edge_board_confidence, infer_server_ebic_confid)))
+                    producer = KafkaProducer(bootstrap_servers='msg.glfiot.com')
+                    confirmedmsg = item.raw_data + "|TwoWheeler|confirmed"
+                    producer.send(self.timeline.board_id, bytes(confirmedmsg, 'utf-8'))
+                    producer.flush(5)
+                    producer.close()
                 else:
                     self.logger.debug(
                         "      board: {}, sink this detect due to infer server gives low confidence: {}".format(
@@ -285,7 +294,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                         ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
                                         str(infer_server_ebic_confid) + "___" + self.timeline.board_id + "___" + str(
                                             datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")) + ".jpg"))
-
         return event_alarms
 
 
@@ -688,11 +696,13 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                         # self.logger.debug("total_time_gap:{}".format(total_time_gap))
                         if total_time_gap <= 15:
                             self.state_obj["last_state_changed_times"] = []
-                            last_report_time = None if not ("last_report_time" in self.state_obj) else self.state_obj["last_report_time"]
+                            last_report_time = None if not ("last_report_time" in self.state_obj) else self.state_obj[
+                                "last_report_time"]
                             if last_report_time:
-                                report_time_diff = (datetime.datetime.now()-last_report_time).total_seconds()
+                                report_time_diff = (datetime.datetime.now() - last_report_time).total_seconds()
                                 if report_time_diff < 20:
-                                    self.logger.debug("last report time:{},time_diff:{}".format(last_report_time, report_time_diff))
+                                    self.logger.debug(
+                                        "last report time:{},time_diff:{}".format(last_report_time, report_time_diff))
                                     return
                             self.state_obj["last_report_time"] = datetime.datetime.now()
                             self.alarms_to_fire.append(event_alarm.EventAlarm(
@@ -1238,7 +1248,8 @@ class ElevatorJamsEventDetector(EventDetectorBase):
             return None
         latest_person_object = filtered_timeline_items[-1]
 
-        target_persons = [i for i in filtered_timeline_items if i.board_msg_id == latest_person_object.board_msg_id]
+        target_persons = [i for i in filtered_timeline_items if i.board_msg_id == latest_person_object.board_msg_id
+                          and i.original_timestamp_str == latest_person_object.original_timestamp_str]
         # store it back, and it will be passed in at next call
         if len(target_persons) > 10:
             if not self.state_obj:
@@ -1332,7 +1343,8 @@ class ElevatorMileageEventDetector(EventDetectorBase):
                                                                   last_state_obj[2]["timestamp"]),
                 "TRIP", {"floor_count": str(floor_count), "start_date": last_state_obj[0]["timestamp"],
                          "end_date": last_state_obj[2]["timestamp"]}))
-            last_state_obj = []
+            last_state_obj.pop(0)
+            last_state_obj.pop(0)
         self.state_obj["elevator_state"] = last_state_obj
         return alarms
 
@@ -1416,4 +1428,231 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                     event_alarm.EventAlarmPriority.INFO,
                     "human_inside:{},floor_num:{}".format(hasPerson, storey),
                     code, {"human_inside": hasPerson, "floor_num": str(storey)}))
+        return alarms
+
+
+#
+# 陀螺仪故障 1，获取不到加速度 2，连续5次读到的加速度值相同（正常情况下，即使不动每次读取的值也不一样）
+class GyroscopeFaultEventDetector(EventDetectorBase):
+    def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
+        self.logger = logging.getLogger(__name__)
+        self.alarms_to_fire = []
+
+    def prepare(self, timeline, event_detectors):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param timeline: BoardTimeline
+        @type event_detectors: List[EventDetectorBase]
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
+        self.timeline = timeline
+
+    def get_timeline_item_filter(self):
+        def filter(timeline_items):
+            result = [i for i in timeline_items if
+                      not i.consumed
+                      and i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
+                      and "raw_acceleration" in i.raw_data]
+            return result
+
+        return filter
+
+    def detect(self, filtered_timeline_items):
+        alarms = []
+        last_state_object = self.state_obj
+        new_state_object = None
+        if not len(filtered_timeline_items) > 4:
+            return None
+        if last_state_object:
+            last_report_time_diff = (
+                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+            if last_report_time_diff < 120:
+                return None
+        target_timeline_items = filtered_timeline_items[-5:]
+        # 如果读取到的加速度值一直是零/相同
+        latest_raw_acceleration = target_timeline_items[-1].raw_data["raw_acceleration"]
+        result_timeline_items = [i for i in target_timeline_items if i.raw_data["raw_acceleration"] ==
+                                 latest_raw_acceleration]
+        if len(result_timeline_items) == 5:
+            msg = "获取不到加速度" if latest_raw_acceleration == 0.000 else "连续五次获取到的加速度值相同"
+            self.state_obj = {"code": "TLYJG", "message": msg, "time_stamp": datetime.datetime.now()}
+            alarms.append(event_alarm.EventAlarm(
+                self,
+                datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.WARNING,
+                msg,
+                "TLYJG"))
+        return alarms
+
+
+#
+# 陀螺仪故障 1，获取不到温度值/气压值 2，连续5次读到的气压值相同（正常情况下，即使不动每次读取的值也不一样）
+# 3，收到光电信号时，气压值连续3次不在1楼标定的气压范围内
+class PressureFaultEventDetector(EventDetectorBase):
+    def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
+        self.logger = logging.getLogger(__name__)
+        self.alarms_to_fire = []
+
+    def prepare(self, timeline, event_detectors):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param timeline: BoardTimeline
+        @type event_detectors: List[EventDetectorBase]
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
+        self.timeline = timeline
+
+    def get_timeline_item_filter(self):
+        def filter(timeline_items):
+            result = [i for i in timeline_items if
+                      not i.consumed
+                      and i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE]
+            return result
+
+        return filter
+
+    def detect(self, filtered_timeline_items):
+        alarms = []
+        last_state_object = self.state_obj
+        new_state_object = None
+        if not len(filtered_timeline_items) > 4:
+            return None
+        if last_state_object:
+            last_report_time_diff = (
+                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+            if last_report_time_diff < 120:
+                return None
+        target_timeline_items = filtered_timeline_items[-5:]
+        # 如果读取到的气压值一直是零/相同
+        latest_raw_pressure = target_timeline_items[-1].raw_data["pressure"]
+        result_timeline_items = [i for i in target_timeline_items if i.raw_data["pressure"] ==
+                                 latest_raw_pressure]
+        if len(result_timeline_items) == 5:
+            msg = "获取不到气压值" if latest_raw_pressure == 0.000 else "连续五次获取到的气压值相同"
+            new_state_object = {"code": "TLYJG", "message": msg, "time_stamp": datetime.datetime.now()}
+        result_timeline_items = [i for i in target_timeline_items if i.raw_data["temperature"] == 0.00]
+        if len(result_timeline_items) == 5:
+            msg = "气压计获取不到温度"
+            if new_state_object:
+                new_state_object["message"] = new_state_object["message"] + ";" + msg
+            else:
+                new_state_object = {"code": "QYJGZ", "message": msg, "time_stamp": datetime.datetime.now()}
+
+        if new_state_object:
+            self.state_obj = new_state_object
+            alarms.append(event_alarm.EventAlarm(
+                self,
+                datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.WARNING,
+                new_state_object["message"],
+                "QYJGZ"))
+        return alarms
+
+
+# 边缘计算超过1天时长获取的光电感信号一直为1
+# 光电感应故障，直接在边缘端判断
+class ElectricSwitchFaultEventDetector(EventDetectorBase):
+    def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
+        self.logger = logging.getLogger(__name__)
+        self.alarms_to_fire = []
+
+    def prepare(self, timeline, event_detectors):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param timeline: BoardTimeline
+        @type event_detectors: List[EventDetectorBase]
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
+        self.timeline = timeline
+
+    def get_timeline_item_filter(self):
+        def filter(timeline_items):
+            result = [i for i in timeline_items if
+                      not i.consumed
+                      and i.item_type == board_timeline.TimelineItemType.SENSOR_READ_ELECTRIC_SWITCH]
+            return result
+
+        return filter
+
+    def detect(self, filtered_timeline_items):
+        alarms = []
+        last_state_object = self.state_obj
+        new_state_object = None
+        if not len(filtered_timeline_items) > 0:
+            return None
+        target_timeline_item = filtered_timeline_items[-1]
+        if last_state_object:
+            last_report_time_diff = (
+                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+            if last_report_time_diff < 120:
+                target_timeline_item.consumed = True
+                return None
+        target_timeline_item.consumed = True
+        new_state_object = {"code": "GDGXSYC", "message": "光电感已超过1天未触发", "time_stamp": datetime.datetime.now()}
+
+        if new_state_object:
+            self.state_obj = new_state_object
+            alarms.append(event_alarm.EventAlarm(
+                self,
+                datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.WARNING,
+                new_state_object["message"],
+                "GDGXSYC"))
+        return alarms
+
+
+# 边缘板子软件包更新结果
+class UpdateResultEventDetector(EventDetectorBase):
+    def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
+        self.logger = logging.getLogger(__name__)
+        self.alarms_to_fire = []
+
+    def prepare(self, timeline, event_detectors):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param timeline: BoardTimeline
+        @type event_detectors: List[EventDetectorBase]
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
+        self.timeline = timeline
+
+    def get_timeline_item_filter(self):
+        def filter(timeline_items):
+            result = [i for i in timeline_items if
+                      not i.consumed
+                      and i.item_type == board_timeline.TimelineItemType.UPDATE_RESULT]
+            return result
+
+        return filter
+
+    def detect(self, filtered_timeline_items):
+        alarms = []
+        last_state_object = self.state_obj
+        new_state_object = None
+        if not len(filtered_timeline_items) > 0:
+            return None
+        target_timeline_item = filtered_timeline_items[-1]
+        target_timeline_item.consumed = True
+        if target_timeline_item.raw_data['update']:
+            return None
+        new_state_object = {"code": "UPGRADEERROR",
+                            "message": target_timeline_item.raw_data['description'],
+                            "time_stamp": datetime.datetime.now()}
+
+        if new_state_object:
+            self.state_obj = new_state_object
+            alarms.append(event_alarm.EventAlarm(
+                self,
+                datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.ERROR,
+                new_state_object["message"],
+                new_state_object["code"]))
         return alarms
