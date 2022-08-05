@@ -61,7 +61,9 @@ source $config_path
 docker build -f "${tao_triton_root}/docker/Dockerfile" \
              -t ${tao_triton_server_docker}:${tao_triton_server_tag} ${tao_triton_root}
 
-mkdir ${default_model_download_path} && cd ${default_model_download_path}
+#mkdir ${default_model_download_path} && cd ${default_model_download_path}
+cd ${default_model_download_path}
+
 # wget --content-disposition ${ngc_peoplenet} -O ${default_model_download_path}/peoplenet_${peoplenet_version}.zip && \
 #      unzip ${default_model_download_path}/peoplenet_${peoplenet_version}.zip -d ${default_model_download_path}/peoplenet_model/
 # wget --content-disposition ${ngc_dashcamnet} -O ${default_model_download_path}/dashcamnet_${dashcamnet_version}.zip && \
