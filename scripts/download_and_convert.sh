@@ -25,16 +25,16 @@
 #               -e /model_repository/dashcamnet_tao/1/model.plan
 
 # Generate a vehicletypnet model.
-echo "Converting the VehicleTypeNet model"
-mkdir -p /model_repository/vehicletypenet_tao/1
-tao-converter /tao_models/vehicletypenet_model/resnet18_vehicletypenet_pruned.etlt \
-              -k tlt_encode \
-              -c /tao_models/vehicletypenet_model/vehicletypenet_int8.txt  \
-              -d 3,224,224 \
-              -o predictions/Softmax \
-              -t int8 \
-              -m 16 \
-              -e /model_repository/vehicletypenet_tao/1/model.plan
+# echo "Converting the VehicleTypeNet model"
+# mkdir -p /model_repository/vehicletypenet_tao/1
+# tao-converter /tao_models/vehicletypenet_model/resnet18_vehicletypenet_pruned.etlt \
+#               -k tlt_encode \
+#               -c /tao_models/vehicletypenet_model/vehicletypenet_int8.txt  \
+#               -d 3,224,224 \
+#               -o predictions/Softmax \
+#               -t int8 \
+#               -m 16 \
+#               -e /model_repository/vehicletypenet_tao/1/model.plan
 
 # Generate a BicycleTypeNet model.
 echo "Converting the BicycleTypeNet model"
