@@ -29,7 +29,8 @@ get_ngc_key_from_environment() {
 }
 
 check_ngc_cli_installation
-NGC_API_KEY="$(get_ngc_key_from_environment)"
+#NGC_API_KEY="$(get_ngc_key_from_environment)"
+NGC_API_KEY="bGltdmJsb3BlZXFvb2pjcDg3MnZsdjFsMDo4ZjMzNDliNy1iMjQwLTQwODktOWEwNi03YTE2NzgyMThmZTQ"
 if [ -z "$NGC_API_KEY" ]; then
     echo -e 'Did not find environment variable "$NGC_API_KEY"'
     read -sp 'Please enter API key for ngc.nvidia.com: ' NGC_API_KEY
@@ -65,8 +66,8 @@ mkdir ${default_model_download_path} && cd ${default_model_download_path}
 #      unzip ${default_model_download_path}/peoplenet_${peoplenet_version}.zip -d ${default_model_download_path}/peoplenet_model/
 # wget --content-disposition ${ngc_dashcamnet} -O ${default_model_download_path}/dashcamnet_${dashcamnet_version}.zip && \
 #      unzip ${default_model_download_path}/dashcamnet_${dashcamnet_version}.zip -d ${default_model_download_path}/dashcamnet_model/
-wget --content-disposition ${ngc_vehicletypenet} -O ${default_model_download_path}/vehicletypenet_${vehicletypenet_version}.zip && \
-     unzip ${default_model_download_path}/vehicletypenet_${vehicletypenet_version}.zip -d ${default_model_download_path}/vehicletypenet_model/
+# wget --content-disposition ${ngc_vehicletypenet} -O ${default_model_download_path}/vehicletypenet_${vehicletypenet_version}.zip && \
+#     unzip ${default_model_download_path}/vehicletypenet_${vehicletypenet_version}.zip -d ${default_model_download_path}/vehicletypenet_model/
 # wget --content-disposition ${ngc_lprnet} -O ${default_model_download_path}/lprnet_pruned_v1.0.zip && \
 #      unzip ${default_model_download_path}/lprnet_pruned_v1.0.zip -d ${default_model_download_path}/lprnet_model/
 # wget --content-disposition ${ngc_yolov3} -O ${default_model_download_path}/models.zip && \
