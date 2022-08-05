@@ -164,7 +164,7 @@ This sample walks through setting up instances of inferencing the following mode
 Simply run the quick start script:
 
  ```sh
- bash scripts/start_server.sh
+ sudo bash scripts/start_server.sh
  ```
 
 ### Running the client samples
