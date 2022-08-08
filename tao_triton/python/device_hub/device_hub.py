@@ -36,6 +36,7 @@ import logging
 import logging.config
 import yaml
 from kafka import KafkaConsumer
+from kafka import KafkaProducer
 import json
 import uuid
 from threading import Timer
@@ -77,7 +78,11 @@ def create_boardtimeline(board_id: str):
                        event_detector.ElevatorMovingWithoutPeopleInEventDetector(logging),
                        event_detector.ElevatorJamsEventDetector(logging),
                        event_detector.ElevatorMileageEventDetector(logging),
-                       event_detector.ElevatorRunningStateEventDetector(logging)
+                       event_detector.ElevatorRunningStateEventDetector(logging),
+                       event_detector.UpdateResultEventDetector(logging),
+                       event_detector.GyroscopeFaultEventDetector(logging),
+                       event_detector.PressureFaultEventDetector(logging),
+                       event_detector.ElectricSwitchFaultEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
@@ -201,7 +206,7 @@ if __name__ == '__main__':
     parser.add_argument('--kafka-server-url',
                         type=str,
                         required=False,
-                        default='dev-iot.ipos.biz:9092',
+                        default='msg.glfiot.com:9092',
                         help='kafka server URL. Default is xxx:9092.')
     FLAGS = parser.parse_args()
 
@@ -273,7 +278,18 @@ while True:
                                                         board_timeline.TimelineItemType.SENSOR_READ_ACCELERATOR,
                                                         board_msg_original_timestamp, board_msg_id, obj_data))
                         # cur_board_timeline.add_items([new_timeline_item])
+                    elif "switchFault" in obj_data:
+                        new_items.append(
+                            board_timeline.TimelineItem(cur_board_timeline,
+                                                        board_timeline.TimelineItemType.SENSOR_READ_ELECTRIC_SWITCH,
+                                                        board_msg_original_timestamp, board_msg_id, obj_data))
                 cur_board_timeline.add_items(new_items)
+            elif "update" in event_data:
+                new_update_timeline_items = [board_timeline.TimelineItem(cur_board_timeline,
+                                                                         board_timeline.TimelineItemType.UPDATE_RESULT,
+                                                                         board_msg_original_timestamp, board_msg_id,
+                                                                         event_data)]
+                cur_board_timeline.add_items(new_update_timeline_items)
 
     except:
         logger.exception("Major error caused by exception:")

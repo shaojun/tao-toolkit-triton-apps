@@ -1,3 +1,23 @@
+# Start directly
+```
+cd tao-toolkit-triton-apps
+sudo bash scripts/start_server.sh
+```
+
+when you see below, indicates start is succeed:
+
+> ...
+> 
+> ...
+> 
+> I0805 02:27:43.408351 57 grpc_server.cc:4117] Started GRPCInferenceService at 0.0.0.0:8001
+> 
+> I0805 02:27:43.408499 57 http_server.cc:2815] Started HTTPService at 0.0.0.0:8000
+> 
+> I0805 02:27:43.450334 57 http_server.cc:167] Started Metrics Service at 0.0.0.0:8002
+
+
+
 # TAO Toolkit Triton Apps
 
 - [Quick Start Instructions](#quick-start-instructions)
@@ -164,7 +184,7 @@ This sample walks through setting up instances of inferencing the following mode
 Simply run the quick start script:
 
  ```sh
- bash scripts/start_server.sh
+ sudo bash scripts/start_server.sh
  ```
 
 ### Running the client samples
