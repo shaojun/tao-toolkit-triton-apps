@@ -98,11 +98,11 @@ class EventAlarmWebServiceNotifier:
                              "data": a.data}
             try:
                 self.logger.info(
-                "board: {}, Notifying alarm(by {}) with priority: {} -> {}".format(
+                "board: {}, Notifying alarm(by {}) with priority: {} at: {} -> {}".format(
                     a.event_detector.timeline.board_id, 
                     a.event_detector.__class__.__name__, 
-                    a.priority, a.description))
-                    
+                    a.priority, str(a.original_utc_timestamp),a.description))
+
                 # level: Debug=0, Info=1, Warning=2, Error=3, Fatal=4
                 post_response = requests.post(EventAlarmWebServiceNotifier.URL,
                                               headers=EventAlarmWebServiceNotifier.HEADERS,
