@@ -2,3 +2,5 @@
 *.log
 *.txt
 *.jpg
+.vscode/launch.json
+.vscode/settings.json

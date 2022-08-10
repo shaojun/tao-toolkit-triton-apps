@@ -6,7 +6,9 @@ import shutil
 # from tao_triton.python.device_hub import base64_tao_client
 # from tao_triton.python.device_hub.board_timeline import TimelineItem, TimelineItemType
 from kafka import KafkaProducer
-
+from PIL import Image
+import base64
+import io
 import event_alarm
 import board_timeline
 from tao_triton.python.device_hub import base64_tao_client
@@ -167,7 +169,7 @@ class DoorStateChangedEventDetector(EventDetectorBase):
         # store it back
         self.state_obj = new_state_obj
         if (last_state_obj and last_state_obj["last_door_state"] != new_state_obj[
-            "last_door_state"]) or last_state_obj is None:
+                "last_door_state"]) or last_state_obj is None:
             self.__fire_on_property_changed_event_to_subscribers__(
                 "door_state",
                 {"last_state": "None" if last_state_obj is None else last_state_obj["last_door_state"],
@@ -176,10 +178,10 @@ class DoorStateChangedEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.INFO,
-                                       "Door state changed to: {},human_inside:{}".format(
-                                           new_state_obj["last_door_state"], hasPereson), code,
-                                       {"human_inside": hasPereson})]
+                    event_alarm.EventAlarmPriority.INFO,
+                    "Door state changed to: {},human_inside:{}".format(
+                    new_state_obj["last_door_state"], hasPereson), code,
+                    {"human_inside": hasPereson})]
         return None
 
 
@@ -234,7 +236,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if self.state_obj and "last_infer_ebic_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_report_time_diff = (
-                        datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
+                    datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
                 if last_report_time_diff <= 30:
                     continue
 
@@ -244,9 +246,15 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # self.logger.debug(
             #     "board: {}, E-bic is detected and re-infer it from triton...".format(item.timeline.board_id))
 
-            # the last but one is the detected object image file with base64 encoded text,
+            # the last but one is the detected and cropped object image file with base64 encoded text,
             # and the section is prefixed with-> base64_image_data:
             cropped_base64_image_file_text = sections[len(sections) - 2][len("base64_image_data:"):]
+
+            # the last but two is the OPTIONAL, full image file with base64 encoded text,
+            # and the section is prefixed with-> full_base64_image_data:
+            # upload the full image to cloud is for debug purpose, it's controlled and cofigurable from edge board local side.
+            full_base64_image_file_text = sections[len(sections) - 3][len("full_base64_image_data:"):]
+
             edge_board_confidence = sections[len(sections) - 1]
             # infer_results = base64_tao_client.infer(FLAGS.verbose, FLAGS.async_set, FLAGS.streaming,
             #                                         FLAGS.model_name, FLAGS.model_version,
@@ -290,11 +298,18 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 if infer_server_ebic_confid <= ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_CONFID_THRESHOLD:
                     if not os.path.exists(ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH):
                         os.makedirs(ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH)
+                    file_name_timestamp_str = str(datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
                     shutil.copyfile(os.path.join("temp_infer_image_files", "0.jpg"),
                                     os.path.join(
                                         ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
-                                        str(infer_server_ebic_confid) + "___" + self.timeline.board_id + "___" + str(
-                                            datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")) + ".jpg"))
+                                        str(infer_server_ebic_confid) + "___" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
+                    
+                    if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
+                        temp_full_image = Image.open(io.BytesIO(
+                            base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
+                        temp_full_image.save(os.path.join(
+                                        ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
+                                        str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
         return event_alarms
 
 
@@ -344,7 +359,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             if self.state_obj and "last_infer_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_report_time_diff = (
-                        datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
+                    datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
                 if last_report_time_diff <= 30:
                     continue
 
@@ -467,8 +482,8 @@ class BlockingDoorEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.ERROR,
-                                       "电梯门被遮挡", "002")]
+                    event_alarm.EventAlarmPriority.ERROR,
+                    "电梯门被遮挡", "002")]
 
         return None
 
@@ -517,7 +532,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
                     not i.consumed
                     and
                     ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and (
-                            "Person|#" in i.raw_data in i.raw_data)) or
+                        "Person|#" in i.raw_data in i.raw_data)) or
                      (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED))]
 
         return filter
@@ -549,7 +564,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         new_state_obj = None
         if last_state_obj and "last_report_timestamp" in last_state_obj:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_obj["last_report_timestamp"]).total_seconds()
+                datetime.datetime.now() - last_state_obj["last_report_timestamp"]).total_seconds()
             # 如果短时间内上报过
             if last_report_time_diff <= 60:
                 return None
@@ -816,8 +831,8 @@ class PassagerVigorousExerciseEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.ERROR,
-                                       "剧烈运动，当前加速度: {}".format(new_state_obj["acceleration"]), "005")]
+                    event_alarm.EventAlarmPriority.ERROR,
+                    "剧烈运动，当前加速度: {}".format(new_state_obj["acceleration"]), "005")]
         return None
 
 
