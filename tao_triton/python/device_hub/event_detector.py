@@ -363,9 +363,12 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                     continue
 
             self.state_obj = {"last_infer_timestamp": datetime.datetime.now()}
+
+            sections = item.raw_data.split('|')
+            edge_board_confidence = sections[len(sections) - 1]
             event_alarms.append(
                 event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
-                                       "detected gas tank entering elevator"))
+                                       "detected gas tank entering elevator with board confid: {}".format(edge_board_confidence)))
 
         return event_alarms
 
