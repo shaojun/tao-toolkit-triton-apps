@@ -67,6 +67,7 @@ def create_boardtimeline(board_id: str):
                        event_detector.DoorStateChangedEventDetector(logging),
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
+                       event_detector.GasTankEnteringEventDetector(logging),
                        event_detector.DoorOpenedForLongtimeEventDetector(logging),
                        event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
                        event_detector.ElevatorOverspeedEventDetector(logging),
