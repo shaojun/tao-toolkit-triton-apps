@@ -140,7 +140,7 @@ class DoorStateChangedEventDetector(EventDetectorBase):
         recent_items = [i for i in filtered_timeline_items if
                         not i.consumed and
                         i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
-                        (datetime.datetime.now() - i.local_timestamp).total_seconds() <= 3]
+                        (datetime.datetime.now() - i.local_timestamp).total_seconds() < 4]
 
         target_msg_original_timestamp_str = "" if len(recent_items) == 0 else recent_items[-1].original_timestamp_str
         person_items = [i for i in filtered_timeline_items if
@@ -362,7 +362,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                     datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
                 if last_report_time_diff <= 30:
                     continue
-
+            self.logger.debug("timeline_item in gas tank detect raw data:{}".format(item.raw_data))
             self.state_obj = {"last_infer_timestamp": datetime.datetime.now()}
 
             sections = item.raw_data.split('|')
@@ -907,7 +907,7 @@ class DoorOpeningAtMovingEventDetector(EventDetectorBase):
 
             door_open_speed_time_diff = (datetime.datetime.now() -
                                          door_state["time"]).total_seconds()
-            if temp_speed > 0.8 and door_open_speed_time_diff <= 5:
+            if temp_speed > 1 and door_open_speed_time_diff <= 5:
                 new_state_obj = datetime.datetime.now()
             break
         # 将报警时间存入状态字典
@@ -973,7 +973,7 @@ class ElevatorSuddenlyStoppedEventDetector(EventDetectorBase):
         if abs(speed_change_time_diff) > 3:
             None
         if latest_speed_item and abs(latest_speed_item.raw_data["speed"]) < 0.1 \
-                and previous_speed_item and abs(previous_speed_item.raw_data["speed"]) > 1:
+                and previous_speed_item and abs(previous_speed_item.raw_data["speed"]) > 1.1:
             new_state_obj = {"current_speed": latest_speed_item.raw_data["speed"],
                              "previous_speed": previous_speed_item.raw_data["speed"],
                              "last_notify_timestamp": datetime.datetime.now()}
@@ -1427,16 +1427,21 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                                      board_timeline.TimelineItemType.SENSOR_READ_PRESSURE]
             hasPerson = "Y" if len(person_timeline_items) > 0 else "N"
             code = ""
-            if len(speed_timeline_items) > 2:
+            speed = 0.00
+            # LIFTUP LIFTDOWN
+            if len(speed_timeline_items) > 4:
                 last_speed_object = speed_timeline_items[-1]
                 previous_speed_oject = speed_timeline_items[-2]
+                speed = last_speed_object.raw_data["speed"]
                 if abs(last_speed_object.raw_data["speed"]) < 0.1 and \
                         abs(previous_speed_oject.raw_data["speed"]) < 0.1:
                     code = "LIFTSTOP"
-                elif last_speed_object.raw_data["speed"] < 0:
-                    code = "LIFTUP"
-                else:
-                    code = "LIFTDOWN"
+                #如果电梯在运动，比较楼层的变化判断向上、向下
+                elif not (abs(last_speed_object.raw_data["speed"]) < 0.1):
+                    storey_latest = storey_timeline_items[-1].raw_data["storey"]
+                    storey_last_fifth = storey_timeline_items[-5].raw_data["storey"]
+                    code = "LIFTDOWN" if storey_latest < storey_last_fifth else "LIFTUP"
+
             storey = 0
             if len(storey_timeline_items) > 0:
                 storey = storey_timeline_items[-1].raw_data["storey"]
@@ -1452,13 +1457,15 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                     report_diff = (datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
                     if report_diff < 5:
                         return None
+                data = {"human_inside": hasPerson, "floor_num": str(storey)} if code == "LIFTSTOP" \
+            else {"human_inside": hasPerson, "floor_num": str(storey), "speed": str(speed)}
                 alarms.append(event_alarm.EventAlarm(
                     self,
                     datetime.datetime.fromisoformat(
                         datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                     event_alarm.EventAlarmPriority.INFO,
-                    "human_inside:{},floor_num:{}".format(hasPerson, storey),
-                    code, {"human_inside": hasPerson, "floor_num": str(storey)}))
+                    "human_inside:{},floor_num:{},speed:{}".format(hasPerson, storey,speed),
+                    code, data))
         return alarms
 
 
