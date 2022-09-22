@@ -83,7 +83,8 @@ def create_boardtimeline(board_id: str):
                        event_detector.UpdateResultEventDetector(logging),
                        event_detector.GyroscopeFaultEventDetector(logging),
                        event_detector.PressureFaultEventDetector(logging),
-                       event_detector.ElectricSwitchFaultEventDetector(logging)
+                       event_detector.ElectricSwitchFaultEventDetector(logging),
+                       event_detector.DeviceOfflineEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
