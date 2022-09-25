@@ -757,8 +757,8 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                                 datetime.datetime.fromisoformat(
                                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                 event_alarm.EventAlarmPriority.ERROR,
-                                "反复开关门 - 判断电梯发生反复开关门故障,3次开关门的总间隔<=30秒,最近一、二、三次 开/关门 时间分别为: {}  {}  {}".format(
-                                    last_state_changed_times[-1].strftime("%d/%m/%Y %H:%M:%S"),
+                                "反复开关门 - 判断电梯发生反复开关门故障,3次开关门的总间隔<=30秒,最近三次 开/关门 从近到远时间分别为: {}  {}  {}".format(
+                                    last_state_changed_times[-1].strftime("%H:%M:%S"),
                                     last_state_changed_times[-3].strftime("%H:%M:%S"),
                                     last_state_changed_times[-5].strftime("%H:%M:%S"))))
                             self.state_obj["last_state_changed_times"] = []
