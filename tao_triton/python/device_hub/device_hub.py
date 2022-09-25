@@ -84,7 +84,8 @@ def create_boardtimeline(board_id: str):
                        event_detector.GyroscopeFaultEventDetector(logging),
                        event_detector.PressureFaultEventDetector(logging),
                        event_detector.ElectricSwitchFaultEventDetector(logging),
-                       event_detector.DeviceOfflineEventDetector(logging)
+                       event_detector.DeviceOfflineEventDetector(logging),
+                       event_detector.DetectPersonOnTopEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
@@ -238,8 +239,11 @@ while True:
             if "sensorId" not in event_data or "@timestamp" not in event_data:
                 continue
             board_msg_id = event_data["id"]
+
             board_msg_original_timestamp = event_data["@timestamp"]
             board_id = event_data["sensorId"]
+            # if board_id != "IamTheSimulator":
+            #    continue
             cur_board_timeline = [t for t in BOARD_TIMELINES if
                                   t.board_id == board_id]
             if not cur_board_timeline:
@@ -284,6 +288,11 @@ while True:
                         new_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
                                                         board_timeline.TimelineItemType.SENSOR_READ_ELECTRIC_SWITCH,
+                                                        board_msg_original_timestamp, board_msg_id, obj_data))
+                    elif "detectPerson" in obj_data:
+                        new_items.append(
+                            board_timeline.TimelineItem(cur_board_timeline,
+                                                        board_timeline.TimelineItemType.SENSOR_READ_PEOPLE_DETECT,
                                                         board_msg_original_timestamp, board_msg_id, obj_data))
                 cur_board_timeline.add_items(new_items)
             elif "update" in event_data:
