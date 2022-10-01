@@ -56,7 +56,8 @@ class EventAlarmDummyNotifier(EventAlarmNotifierBase):
 
 class EventAlarmWebServiceNotifier:
     # URL = "http://49.235.97.14:8801/warning"
-    URL = "http://36.138.48.162:8801/warning"
+    # URL = "http://36.138.48.162:8801/warning"
+    URL = "https://api.glfiot.com/warning"
     HEADERS = {'Content-type': 'application/json', 'Accept': 'application/json'}
 
     def __init__(self, logging):
