@@ -16,6 +16,7 @@ class TimelineItemType(Enum):
     SENSOR_READ_ELECTRIC_SWITCH = 6
     # the item is sent by watch dog
     UPDATE_RESULT = 7
+    CAMERA_BLOCKED = 8
 
     # the item is autoly generated from local, used for case of remote side muted(connection broken? remote app crash?)
     LOCAL_IDLE_LOOP = 99

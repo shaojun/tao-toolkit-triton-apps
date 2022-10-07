@@ -155,7 +155,7 @@ class DoorStateChangedEventDetector(EventDetectorBase):
             if count < 3:
                 target_items.append(item)
 
-        #target_items_last = [i for i in filtered_timeline_items if
+        # target_items_last = [i for i in filtered_timeline_items if
         #                     i.original_timestamp_str == target_msg_original_timestamp_str]
 
         # target_items = recent_items
@@ -808,6 +808,7 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
         latest_person_item = filtered_timeline_items[-1]
         detect_person_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
                                    latest_person_item.original_timestamp).total_seconds()
+        self.logger.debug("反复开关门判断中出现人：{},raw:{}".format(latest_person_item.original_timestamp_str, latest_person_item.raw_data))
         # 最近一次识别到人类已经有一段时间，那么可以认为电梯内没人
         if detect_person_time_diff > 3:
             self.alarms_to_fire = []
@@ -1027,7 +1028,7 @@ class ElevatorSuddenlyStoppedEventDetector(EventDetectorBase):
         if abs(speed_change_time_diff) > 3:
             None
         if latest_speed_item and abs(latest_speed_item.raw_data["speed"]) < 0.1 \
-                and previous_speed_item and abs(previous_speed_item.raw_data["speed"]) > 1.1:
+                and previous_speed_item and abs(previous_speed_item.raw_data["speed"]) > 1.5:
             new_state_obj = {"current_speed": latest_speed_item.raw_data["speed"],
                              "current_time": latest_speed_item.original_timestamp_str,
                              "previous_speed": previous_speed_item.raw_data["speed"],
@@ -1868,15 +1869,21 @@ class DetectPersonOnTopEventDetector(EventDetectorBase):
         alarms = []
         last_state_object = self.state_obj
         new_state_object = None
-        if not len(filtered_timeline_items) > 0:
+        if not len(filtered_timeline_items) > 1:
             return None
-        target_timeline_item = filtered_timeline_items[-1]
-        target_timeline_item.consumed = True
-        detect_person = "N"
-        description = "未检测到轿顶有人"
-        if "detectPerson" in target_timeline_item.raw_data:
-            detect_person = "Y" if target_timeline_item.raw_data["detectPerson"] == True else "N"
-            description = "未检测到轿顶有人" if detect_person == "N" else "检测到轿顶有人进入"
+        # target_timeline_item = filtered_timeline_items[-1]
+        # target_timeline_item.consumed = True
+        detect_person = "Y"
+        description = "{}测到轿顶有人".format(datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+        for item in reversed(filtered_timeline_items):
+            item.consumed = True
+            if "detectPerson" in item.raw_data and not item.raw_data["detectPerson"]:
+                detect_person = "N"
+                description = "{}未检测到轿顶有人".format(datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+
+        # if "detectPerson" in target_timeline_item.raw_data:
+        #    detect_person = "Y" if target_timeline_item.raw_data["detectPerson"] else "N"
+        #    description = "未检测到轿顶有人" if detect_person == "N" else "检测到轿顶有人进入"
         new_state_object = {"code": "HUMANONTOP", "detectPerson": detect_person, "message": description,
                             "time_stamp": datetime.datetime.now()}
         if last_state_object:
@@ -1895,4 +1902,61 @@ class DetectPersonOnTopEventDetector(EventDetectorBase):
                 event_alarm.EventAlarmPriority.WARNING,
                 new_state_object["message"],
                 "HUMANONTOP", {"human_on_top": detect_person}))
+        return alarms
+
+
+# ISAP 检测到摄像头被遮挡事件
+class DetectCameraBlockedEventDetector(EventDetectorBase):
+    def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
+        self.logger = logging.getLogger(__name__)
+        self.alarms_to_fire = []
+
+    def prepare(self, timeline, event_detectors):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param timeline: BoardTimeline
+        @type event_detectors: List[EventDetectorBase]
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
+        self.timeline = timeline
+
+    def get_timeline_item_filter(self):
+        def filter(timeline_items):
+            result = [i for i in timeline_items if
+                      not i.consumed
+                      and i.item_type == board_timeline.TimelineItemType.CAMERA_BLOCKED]
+            return result
+
+        return filter
+
+    def detect(self, filtered_timeline_items):
+        alarms = []
+        last_state_object = self.state_obj
+        new_state_object = None
+        if not len(filtered_timeline_items) > 0:
+            return None
+        target_timeline_item = filtered_timeline_items[-1]
+        target_timeline_item.consumed = True
+        if "cameraBlocked" in target_timeline_item.raw_data:
+            if target_timeline_item.raw_data["cameraBlocked"]:
+                description = "摄像头被遮挡，检测到的时间为：{}".format(
+                    target_timeline_item.local_utc_timestamp.strftime("%d/%m/%Y %H:%M:%S"))
+                new_state_object = {"code": "009", "cameraBlocked": True, "message": description,
+                                    "time_stamp": datetime.datetime.now()}
+        if last_state_object:
+            last_report_time_diff = (
+                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+            # 检测顶部有人5分钟报一次
+            if last_report_time_diff < 300:
+                return None
+        if new_state_object:
+            self.state_obj = new_state_object
+            alarms.append(event_alarm.EventAlarm(
+                self,
+                datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.WARNING,
+                new_state_object["message"],
+                "009"))
         return alarms
