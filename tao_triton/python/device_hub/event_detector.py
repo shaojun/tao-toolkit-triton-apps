@@ -593,7 +593,11 @@ class PeopleStuckEventDetector(EventDetectorBase):
                                           i.raw_data
                                           and (door_state["notify_time"] - i.original_timestamp).total_seconds() < 0]
         # 电梯内没人
-        if person_filtered_timeline_items and not (len(person_filtered_timeline_items) > 0):
+        if len(person_filtered_timeline_items) == 0:
+            return None
+        # object_person = None
+        object_person = person_filtered_timeline_items[0]
+        if (datetime.datetime.now(datetime.timezone.utc) - object_person.original_timestamp).total_seconds() < 20:
             return None
         object_person = None
         for person in reversed(person_filtered_timeline_items):
@@ -603,6 +607,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
             if latest_time_diff < 3 and person_door_close_time_diff < 0:
                 object_person = person
             break
+
         # 如果在3秒内没有发现有人，那么不认为有困人
         if not object_person:
             return None
@@ -612,7 +617,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         # speed
         speed_filtered_timeline_items = [i for i in filtered_timeline_items if i.item_type ==
                                          board_timeline.TimelineItemType.SENSOR_READ_SPEED]
-        if speed_filtered_timeline_items and len(speed_filtered_timeline_items) <= 0:
+        if len(speed_filtered_timeline_items) == 0:
             return None
         is_quiescent = True
         for item in speed_filtered_timeline_items:
@@ -803,16 +808,26 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
         """
         # 电梯内没有人 不判断反复开关
         if not len(filtered_timeline_items) > 0:
-            self.alarms_to_fire = []
+            self.alarms_to_fire.clear()
             return None
         latest_person_item = filtered_timeline_items[-1]
         detect_person_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
                                    latest_person_item.original_timestamp).total_seconds()
-        self.logger.debug("反复开关门判断中出现人：{},raw:{}".format(latest_person_item.original_timestamp_str, latest_person_item.raw_data))
         # 最近一次识别到人类已经有一段时间，那么可以认为电梯内没人
         if detect_person_time_diff > 3:
-            self.alarms_to_fire = []
+            self.alarms_to_fire.clear()
             return None
+        if len(self.alarms_to_fire) > 0:
+            alarm = self.alarms_to_fire[0]
+            target_persons = [i for i in filtered_timeline_items if (alarm.original_utc_timestamp - i.original_timestamp
+                                                                     ).total_seconds() > 5 and
+                              (alarm.original_utc_timestamp - i.original_timestamp).total_seconds() < 10]
+            if len(target_persons) == 0:
+                self.alarms_to_fire.clear()
+                return None
+            self.logger.debug(
+                "反复开关门判断中出现人：{},raw:{}".format(target_persons[-1].original_timestamp_str, target_persons[-1].raw_data))
+
         alarms = self.alarms_to_fire
         self.alarms_to_fire = []
         return alarms
@@ -1407,7 +1422,7 @@ class ElevatorMileageEventDetector(EventDetectorBase):
                             and "storey" in i.raw_data) or (
                                    i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
                                    and "speed" in i.raw_data
-                           ))]
+                           ) or (i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "Person|#" in i.raw_data))]
             return result
 
         return filter
@@ -1449,15 +1464,25 @@ class ElevatorMileageEventDetector(EventDetectorBase):
                                        "timestamp": datetime.datetime.now(datetime.timezone.utc)}]
         if last_state_obj and len(last_state_obj) == 3:
             floor_count = abs(last_state_obj[0]["storey"] - last_state_obj[2]["storey"])
+            passenger_count = 0
+            persons = [i for i in filtered_timeline_items if i.item_type ==
+                                             board_timeline.TimelineItemType.OBJECT_DETECT and
+                       (datetime.datetime.now(datetime.timezone.utc)-i.original_timestamp).total_seconds()<3]
+            if len(persons) > 0:
+                latest_person_item = persons[-1]
+                targets = [i for i in persons if i.original_timestamp_str == latest_person_item.original_timestamp_str]
+                passenger_count = len(targets)
             alarms.append(event_alarm.EventAlarm(
                 self,
                 datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                 event_alarm.EventAlarmPriority.INFO,
-                "floor_count:{},start_date:{},end_date:{}".format(floor_count,
+                "floor_count:{},passenger_count:{},start_date:{},end_date:{}".format(floor_count, passenger_count,
                                                                   last_state_obj[0]["timestamp"],
                                                                   last_state_obj[2]["timestamp"]),
-                "TRIP", {"floor_count": str(floor_count), "start_date": str(last_state_obj[0]["timestamp"]),
+                "TRIP", {"floor_count": str(floor_count),
+                         "passenger_count": str(passenger_count),
+                         "start_date": str(last_state_obj[0]["timestamp"]),
                          "end_date": str(last_state_obj[2]["timestamp"])}))
             last_state_obj.pop(0)
             last_state_obj.pop(0)
@@ -1869,7 +1894,7 @@ class DetectPersonOnTopEventDetector(EventDetectorBase):
         alarms = []
         last_state_object = self.state_obj
         new_state_object = None
-        if not len(filtered_timeline_items) > 1:
+        if not len(filtered_timeline_items) > 3:
             return None
         # target_timeline_item = filtered_timeline_items[-1]
         # target_timeline_item.consumed = True
