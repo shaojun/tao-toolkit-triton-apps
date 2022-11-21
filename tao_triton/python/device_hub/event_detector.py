@@ -305,6 +305,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence, full_base64_image_file_text, infer_results, enable_save_sample_image=True):
         event_alarms = []
+        infer_server_ebic_confid = 0
         # triton infer model classes list is defined as : classes = ['background', 'bicycle', 'electric_bicycle', 'people']
         # sample: (localConf:0.850841)infer_results: temp_infer_image_files\0.jpg, 0.5524(1)=bicycle, 0.4476(2)=electric_bicycle
         # the `0.4476(2)=electric_bicycle`  means the infer server is 0.4476 sure the object is electric_bicycle
