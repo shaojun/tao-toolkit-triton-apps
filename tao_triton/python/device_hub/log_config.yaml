@@ -15,7 +15,7 @@ handlers:
     filename: "log/main.log"
     when: S
     interval: 86400
-    backupCount: 50
+    backupCount: 120
     maxBytes: 20240000
     encoding: utf8
 loggers:
