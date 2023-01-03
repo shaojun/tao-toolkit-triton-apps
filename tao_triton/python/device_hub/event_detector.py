@@ -140,7 +140,7 @@ class DoorStateChangedEventDetector(EventDetectorBase):
         recent_items = [i for i in filtered_timeline_items if
                         not i.consumed and
                         i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
-                        (datetime.datetime.now() - i.local_timestamp).total_seconds() < 4]
+                        (datetime.datetime.now() - i.local_timestamp).total_seconds() < 3]
 
         target_msg_original_timestamp_str = "" if len(
             recent_items) == 0 else recent_items[-1].original_timestamp_str
@@ -620,12 +620,14 @@ class PeopleStuckEventDetector(EventDetectorBase):
                                           i.raw_data
                                           and (door_state["notify_time"] - i.original_timestamp).total_seconds() < 0]
         # 电梯内没人
-        if len(person_filtered_timeline_items) == 0:
+        if len(person_filtered_timeline_items) < 6:
             return None
         # object_person = None
         object_person = person_filtered_timeline_items[0]
         if (datetime.datetime.now(datetime.timezone.utc) - object_person.original_timestamp).total_seconds() < 20:
             return None
+        self.logger.debug("困人检测中共发现{}人，最早目标出现在:{}".format(len(person_filtered_timeline_items),
+                                                          object_person.original_timestamp_str))
         object_person = None
         for person in reversed(person_filtered_timeline_items):
             latest_time_diff = (
