@@ -15,14 +15,14 @@ handlers:
     filename: "log/main.log"
     when: S
     interval: 86400
-    backupCount: 120
-    maxBytes: 20240000
+    backupCount: 1200
+    maxBytes: 40240000
     encoding: utf8
 loggers:
   sampleLogger:
     level: DEBUG
-    handlers: [ console ]
+    handlers: []
     propagate: no
 root:
   level: DEBUG
-  handlers: [ file_handler,console ]
+  handlers: [ file_handler ]
