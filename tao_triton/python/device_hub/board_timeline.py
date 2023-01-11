@@ -68,6 +68,8 @@ class BoardTimeline:
         self.items += items
         if len(self.items) % 5 == 0:
             self.__purge_items()
+        if len(items) == 1 and items[0].raw_data == '':
+            return
         event_alarms = []
         for d in self.event_detectors:
             t0 = time.time()
