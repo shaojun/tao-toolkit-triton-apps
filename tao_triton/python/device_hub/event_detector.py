@@ -280,14 +280,17 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             #                                         FLAGS.output_path,
             #                                         [cropped_base64_image_file_text])
             # 推理服务器36.153.41.18:18000
-            infer_results = base64_tao_client.infer(False, False, False,
-                                                    "elenet_four_classes_tao", "",
-                                                    1, "",
-                                                    False, "192.168.66.149:8000", "HTTP", "Classification",
-                                                    os.path.join(
-                                                        os.getcwd(), "outputs"),
-                                                    [cropped_base64_image_file_text])
-
+            try:
+                infer_results = base64_tao_client.infer(False, False, False,
+                                                        "elenet_four_classes_tao", "",
+                                                        1, "",
+                                                        False, "192.168.66.149:8000", "HTTP", "Classification",
+                                                        os.path.join(
+                                                            os.getcwd(), "outputs"),
+                                                        [cropped_base64_image_file_text])
+            except:
+                self.logger.exception("base64_tao_client.infer(...) rasised an exception:")
+                return
             self.logger.debug("      board: {}, (localConf:{})infer_results: {}".format(
                 self.timeline.board_id,
                 edge_board_confidence, infer_results))
