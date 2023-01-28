@@ -1086,7 +1086,7 @@ class ElevatorSuddenlyStoppedEventDetector(EventDetectorBase):
         speed_change_time_diff = (previous_speed_item.original_timestamp -
                                   latest_speed_item.original_timestamp).total_seconds()
         if abs(speed_change_time_diff) > 3:
-            None
+            return None
         if latest_speed_item and abs(latest_speed_item.raw_data["speed"]) < 0.1 \
                 and previous_speed_item and abs(previous_speed_item.raw_data["speed"]) > 1.5:
             new_state_obj = {"current_speed": latest_speed_item.raw_data["speed"],
