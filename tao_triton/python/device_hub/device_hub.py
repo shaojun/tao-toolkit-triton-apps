@@ -243,8 +243,8 @@ while True:
 
             board_msg_original_timestamp = event_data["@timestamp"]
             board_id = event_data["sensorId"]
-            # if board_id == "default_empty_id_please_manual_set_rv1126":
-            #    continue
+            if board_id == "default_empty_id_please_manual_set_rv1126":
+                continue
             # if board_id != "E1603343797129842689":
             #    continue
             cur_board_timeline = [t for t in BOARD_TIMELINES if

@@ -244,18 +244,19 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
-
+        self.logger.debug(
+            "ElectricBicycleEnteringEventDetector object len:{},board:{}".format(len(filtered_timeline_items),
+                                                                                 self.timeline.board_id))
+        eb_entering_event_alarms = []
         for item in filtered_timeline_items:
             item.consumed = True
             if self.state_obj and "last_infer_ebic_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_report_time_diff = (
                         datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
-                if last_report_time_diff <= 30:
+                self.logger.debug("last_report_time_diff:{}".format(last_report_time_diff))
+                if last_report_time_diff <= 10:
                     continue
-
-            self.state_obj = {
-                "last_infer_ebic_timestamp": datetime.datetime.now()}
 
             sections = item.raw_data.split('|')
             # self.logger.debug(
@@ -291,8 +292,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             self.logger.debug("      board: {}, (localConf:{})infer_results: {}".format(
                 self.timeline.board_id,
                 edge_board_confidence, infer_results))
-            eb_entering_event_alarms = self.__process_infer_result__(
+            temp = self.__process_infer_result__(
                 item.original_timestamp, edge_board_confidence, full_base64_image_file_text, infer_results, True)
+            eb_entering_event_alarms.extend(temp)
+            if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
+                self.state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
             # if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com')
             # confirmedmsg = item.raw_data + "|TwoWheeler|confirmed"
@@ -314,7 +318,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
         if m and m.group(0):
             infer_server_ebic_confid = float(m.group(0))
-            if infer_server_ebic_confid >= 0.55:
+            if infer_server_ebic_confid >= 0.19:
                 self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
                                                                        {"detail": "there's a EB incoming"})
                 event_alarms.append(
@@ -482,7 +486,7 @@ class BlockingDoorEventDetector(EventDetectorBase):
         door_open_time_diff = (datetime.datetime.now(
         ) - door_state["notify_time"]).total_seconds()
         # 如果收到的开门状态时间还很短，那么不作遮挡判断
-        if abs(door_open_time_diff) < 20:
+        if abs(door_open_time_diff) < 30:
             return None
         person_timeline_items = [i for i in filtered_timeline_items if
                                  i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
@@ -1173,7 +1177,7 @@ class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
         if len(filtered_timeline_items) == 0:
             return None
         if self.last_door_open_state_time \
-                and (datetime.datetime.now() - self.last_door_open_state_time).total_seconds() >= 15:
+                and (datetime.datetime.now() - self.last_door_open_state_time).total_seconds() >= 30:
             alarms = [event_alarm.EventAlarm(
                 self,
                 datetime.datetime.fromisoformat(
