@@ -232,8 +232,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             result = [i for i in timeline_items if
                       not i.consumed
                       # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
-                      and i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
-                      and "Vehicle|#|TwoWheeler" in i.raw_data]
+                      and ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
+                            and "Vehicle|#|TwoWheeler" in i.raw_data) or
+                           (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
+                            and "storey" in i.raw_data
+                            and abs((datetime.datetime.now(
+                                       datetime.timezone.utc) - i.original_timestamp).total_seconds()) < 6))]
             return result
 
         return filter
@@ -244,20 +248,34 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
-        self.logger.debug(
-            "ElectricBicycleEnteringEventDetector object len:{},board:{}".format(len(filtered_timeline_items),
-                                                                                 self.timeline.board_id))
         eb_entering_event_alarms = []
-        for item in filtered_timeline_items:
+        object_filtered_timeline_items = [i for i in filtered_timeline_items if
+                                          i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT]
+        story_filtered_timeline_items = [i for i in filtered_timeline_items if
+                                         i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE]
+        current_story = 0
+        if len(story_filtered_timeline_items) > 0:
+            current_story = story_filtered_timeline_items[-1].raw_data["storey"]
+        self.logger.debug(
+            "ElectricBicycleEnteringEventDetector object len:{},board:{},current_story:{}".format(
+                len(object_filtered_timeline_items),
+                self.timeline.board_id, current_story))
+        for item in object_filtered_timeline_items:
             item.consumed = True
             if self.state_obj and "last_infer_ebic_timestamp" in self.state_obj:
                 # we don't want to report too freq
-                last_report_time_diff = (
+                last_infer_time_diff = (
                         datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
-                self.logger.debug("last_report_time_diff:{}".format(last_report_time_diff))
-                if last_report_time_diff <= 10:
+                self.logger.debug("last_infer_time_diff:{}".format(last_infer_time_diff))
+                if last_infer_time_diff <= 4:
                     continue
-
+            if self.state_obj and "last_report_timestamp" in self.state_obj:
+                # we don't want to report too freq
+                last_report_time_diff = (
+                        datetime.datetime.now() - self.state_obj["last_report_timestamp"]).total_seconds()
+                self.logger.debug("last_report_time_diff:{}".format(last_report_time_diff))
+                if last_report_time_diff <= 90:
+                    continue
             sections = item.raw_data.split('|')
             # self.logger.debug(
             #     "board: {}, E-bic is detected and re-infer it from triton...".format(item.timeline.board_id))
@@ -296,9 +314,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.timeline.board_id,
                 edge_board_confidence, infer_results))
             temp = self.__process_infer_result__(
-                item.original_timestamp, edge_board_confidence, full_base64_image_file_text, infer_results, True)
+                item.original_timestamp, edge_board_confidence, full_base64_image_file_text, infer_results, True,
+                current_story)
             eb_entering_event_alarms.extend(temp)
             if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
+                self.state_obj = {"last_report_timestamp": datetime.datetime.now()}
+            else:
                 self.state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
             # if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com')
@@ -311,7 +332,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         return eb_entering_event_alarms
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
-                                 full_base64_image_file_text, infer_results, enable_save_sample_image=True):
+                                 full_base64_image_file_text, infer_results, enable_save_sample_image=True, story=0):
         event_alarms = []
         infer_server_ebic_confid = 0
         # triton infer model classes list is defined as : classes = ['background', 'bicycle', 'electric_bicycle', 'people']
@@ -321,7 +342,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
         if m and m.group(0):
             infer_server_ebic_confid = float(m.group(0))
-            if infer_server_ebic_confid >= 0.19:
+            if infer_server_ebic_confid >= 0.4 and abs(story) == 1:
                 self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
                                                                        {"detail": "there's a EB incoming"})
                 event_alarms.append(
@@ -330,9 +351,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                edge_board_confidence, infer_server_ebic_confid)))
             else:
                 self.logger.debug(
-                    "      board: {}, sink this eb detect due to infer server gives low confidence: {}".format(
+                    "      board: {}, sink this eb detect due to infer server gives low confidence: {}, "
+                    "or the elevator is not in story 1 or -1, current storey is:{} ".format(
                         self.timeline.board_id,
-                        infer_results))
+                        infer_results, story))
         else:
             self.logger.debug(
                 "      board: {}, sink this eb detect due to infer server treat as non-eb class at all: {}".format(
@@ -636,7 +658,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if (datetime.datetime.now(datetime.timezone.utc) - object_person.original_timestamp).total_seconds() < 20:
             return None
         self.logger.debug("困人检测中共发现{}人，最早目标出现在:{}".format(len(person_filtered_timeline_items),
-                                                          object_person.original_timestamp_str))
+                                                                          object_person.original_timestamp_str))
         object_person = None
         for person in reversed(person_filtered_timeline_items):
             latest_time_diff = (
@@ -877,7 +899,8 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                 self.alarms_to_fire.clear()
                 return None
             self.logger.debug(
-                "反复开关门判断中出现人：{},raw:{}".format(target_persons[-1].original_timestamp_str, target_persons[-1].raw_data))
+                "反复开关门判断中出现人：{},raw:{}".format(target_persons[-1].original_timestamp_str,
+                                                          target_persons[-1].raw_data))
 
         alarms = self.alarms_to_fire
         self.alarms_to_fire = []
@@ -1347,7 +1370,8 @@ class TemperatureTooHighEventDetector(EventDetectorBase):
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.WARNING,
-                                       "电梯温度异常，当前温度: {}".format(new_state_obj["last_temperature_state"]), "0013")]
+                                       "电梯温度异常，当前温度: {}".format(new_state_obj["last_temperature_state"]),
+                                       "0013")]
         return None
 
 
