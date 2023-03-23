@@ -71,7 +71,7 @@ def create_boardtimeline(board_id: str):
                        event_detector.DoorOpenedForLongtimeEventDetector(logging),
                        event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
                        event_detector.ElevatorOverspeedEventDetector(logging),
-                       event_detector.TemperatureTooHighEventDetector(logging),
+                       # event_detector.TemperatureTooHighEventDetector(logging),
                        event_detector.PassagerVigorousExerciseEventDetector(logging),
                        event_detector.DoorOpeningAtMovingEventDetector(logging),
                        event_detector.ElevatorSuddenlyStoppedEventDetector(logging),
@@ -232,7 +232,7 @@ while True:
     try:
         # do a dummy poll to retrieve some message
         consumer.poll()
-
+        logger.debug("consumer.poll messages")
         # go to end of the stream
         consumer.seek_to_end()
         for event in consumer:
@@ -243,7 +243,9 @@ while True:
 
             board_msg_original_timestamp = event_data["@timestamp"]
             board_id = event_data["sensorId"]
-            # if board_id != "202209000004":
+            if board_id == "default_empty_id_please_manual_set_rv1126":
+                continue
+            # if board_id != "E1603343797129842689":
             #    continue
             cur_board_timeline = [t for t in BOARD_TIMELINES if
                                   t.board_id == board_id]
@@ -255,6 +257,11 @@ while True:
             # indicates it's the object detection msg
             if "objects" in event_data:
                 new_timeline_items = []
+                if len(event_data["objects"]) == 0:
+                    new_timeline_items.append(
+                        board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.OBJECT_DETECT,
+                                                    board_msg_original_timestamp,
+                                                    board_msg_id, ""))
                 for obj_data in event_data["objects"]:
                     new_timeline_items.append(
                         board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.OBJECT_DETECT,
