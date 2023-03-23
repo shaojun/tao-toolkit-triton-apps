@@ -211,6 +211,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
+        eb_logger = logging.getLogger("electricBicycleEnteringEventDetectorLogger")
+        eb_logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
 
     def prepare(self, timeline, event_detectors):
         """
