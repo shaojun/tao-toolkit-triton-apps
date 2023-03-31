@@ -22,7 +22,7 @@ if __name__ == '__main__':
                         required=False)
     parser.add_argument('--input-images-folder-path',
                         type=str,
-                        default=os.path.join(os.getcwd(), "/home/kevin/Pictures/data/electric_bicycle/val"),
+                        default=os.path.join(os.getcwd(), "/home/shao/Downloads/val"),
                         help="Path to the folder of images for classifying, if -r enabled, the single folder",
                         required=False)
     parser.add_argument('--output-image-classes-folder-path',
@@ -33,6 +33,9 @@ if __name__ == '__main__':
                         required=False)
     FLAGS = parser.parse_args()
     FLAGS.enable_random_input_and_visualize_output_mode
+
+    #3060GPU machine ip:  36.153.41.18:18000
+    infer_server_url = "localhost:8000"
     classes = ['background', 'bicycle', 'electric_bicycle', 'people']
     elenet_four_classes_model_statistics = {}
     if FLAGS.enable_assess_mode:
@@ -41,7 +44,8 @@ if __name__ == '__main__':
         for classfolder in list(classfolders):
             files_count = 0
             classfoldername = os.path.basename(classfolder)
-            elenet_four_classes_model_statistics[classfoldername] = {'classfoldername': classfolder, 'files_count': 0}
+            elenet_four_classes_model_statistics[classfoldername] = {'classfoldername': classfolder, 'files_count': 0,
+                                                                     'total_infer_times_by_seconds': 0}
             # statistics[classfolder][] = 0
             for file in os.listdir(classfolder):
                 with open(os.path.join(classfolder, file), "rb") as image_file:
@@ -49,14 +53,18 @@ if __name__ == '__main__':
                     encoded_string = base64.b64encode(image_file.read())
                     full_image_base64_encoded_text = encoded_string.decode(
                         'ascii')
+                    t0 = datetime.datetime.now()
                     # 推理服务器36.153.41.18:18000
                     infer_results = base64_tao_client.infer(False, False, False,
-                                                            "elenet_four_classes_tao", "",
+                                                            "elenet_four_classes_230330_tao", "",
                                                             1, "",
-                                                            False, "localhost:8000", "HTTP", "Classification",
+                                                            False, infer_server_url, "HTTP", "Classification",
                                                             os.path.join(
                                                                 os.getcwd(), "outputs"),
                                                             [full_image_base64_encoded_text])
+                    infer_used_time = (datetime.datetime.now() - t0).total_seconds()
+                    elenet_four_classes_model_statistics[classfoldername][
+                        'total_infer_times_by_seconds'] += infer_used_time
                     # sample: (localConf:0.850841)infer_results: temp_infer_image_files\0.jpg, 0.5524(0)=bicycle, 0.4476(1)=electric_bicycle
                     # the `0.4476(1)=electric_bicycle`  means the infer server is 0.4476 sure the object is electric_bicycle
                     # which is less than 50%, so it's a bicycle, should not trigger alarm.
@@ -89,7 +97,7 @@ if __name__ == '__main__':
                     infer_results = base64_tao_client.infer(False, False, False,
                                                             "bicycletypenet_tao", "",
                                                             1, "",
-                                                            False, "localhost:8000", "HTTP", "Classification",
+                                                            False, infer_server_url, "HTTP", "Classification",
                                                             os.path.join(
                                                                 os.getcwd(), "outputs11"),
                                                             [full_image_base64_encoded_text])
@@ -114,12 +122,16 @@ if __name__ == '__main__':
             if key not in folderStats.keys():
                 positive_count = 0
             else:
-                positive_count=folderStats[key]
+                positive_count = folderStats[key]
             print(
-                '   accurate: {}, detail: {}'.format(int(positive_count) / int(folderStats['files_count']), folderStats))
+                '   accurate: {}, detail: {}'.format(int(positive_count) / int(folderStats['files_count']),
+                                                     folderStats))
         print('')
         print('elenet_four_classes_model_statistics:')
         for key in elenet_four_classes_model_statistics.keys():
             folderStats = elenet_four_classes_model_statistics[key]
             print(
-                '   accurate: {}, detail: {}'.format(int(folderStats[key]) / int(folderStats['files_count']), folderStats))
+                '   accurate: {}, detail: {}, total_infer_times_by_ms: {}'.format(
+                    int(folderStats[key]) / int(folderStats['files_count']),
+                    folderStats,
+                    1000*int(folderStats['total_infer_times_by_seconds']) / int(folderStats['files_count'])))

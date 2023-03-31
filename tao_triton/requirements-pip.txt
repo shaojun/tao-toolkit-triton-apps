@@ -87,3 +87,7 @@ tritonclient
 kafka-python
 pyyaml
 requests
+scikit-image
+scikit-learn 
+scipy 
+matplotlib
