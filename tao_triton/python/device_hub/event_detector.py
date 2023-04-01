@@ -12,6 +12,7 @@ import io
 import event_alarm
 import board_timeline
 from tao_triton.python.device_hub import base64_tao_client
+from json import dumps
 
 
 class EventDetectorBase:
@@ -163,13 +164,20 @@ class DoorStateChangedEventDetector(EventDetectorBase):
         self.logger.debug(
             "total length of recent items:{}, target items:{}".format(len(recent_items), len(target_items)))
         for item in target_items:
-            self.logger.debug(
-                "item in door state detect,board:{},board_msg_id:{}, item type:{},raw_data:{},original time:{}".format(
-                    item.timeline.board_id,
-                    item.board_msg_id,
-                    item.item_type,
-                    item.raw_data,
+            if "Vehicle|#|TwoWheeler" in item.raw_data or "|TwoWheeler|confirmed" in item.raw_data:
+                self.logger.debug("Item in door state detect. e-bike. original time:{}".format(
                     item.original_timestamp_str))
+            elif "Vehicle|#|gastank" in item.raw_data:
+                self.logger.debug("Item in door state detect. gastank. original time:{}".format(
+                    item.original_timestamp_str))
+            else:
+                self.logger.debug(
+                    "item in door state detect,board:{},board_msg_id:{}, item type:{},raw_data:{},original time:{}".format(
+                        item.timeline.board_id,
+                        item.board_msg_id,
+                        item.item_type,
+                        item.raw_data,
+                        item.original_timestamp_str))
         hasPereson = "Y" if len(person_items) > 0 else "N"
         for ri in target_items:
             if ri.item_type == board_timeline.TimelineItemType.LOCAL_IDLE_LOOP:
@@ -210,7 +218,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        self.logger = logging.getLogger(__name__)
+        # self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("electricBicycleEnteringEventDetectorLogger")
+        # self.logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
 
     def prepare(self, timeline, event_detectors):
         """
@@ -220,6 +230,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
         """
         self.timeline = timeline
+        self.ebike_state = {"enter_time": "", "exit_time": "", "latest_infer_success": ""}
         pass
 
     def get_timeline_item_filter(self):
@@ -233,11 +244,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                       not i.consumed
                       # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
                       and ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
-                            and "Vehicle|#|TwoWheeler" in i.raw_data) or
+                            and "Vehicle|#|TwoWheeler" in i.raw_data and "|TwoWheeler|confirmed" not in i.raw_data) or
                            (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
-                            and "storey" in i.raw_data
-                            and abs((datetime.datetime.now(
-                                       datetime.timezone.utc) - i.original_timestamp).total_seconds()) < 6))]
+                            and "storey" in i.raw_data))]
+            # and abs((datetime.datetime.now(
+            #           datetime.timezone.utc) - i.original_timestamp).total_seconds()) < 100))]
             return result
 
         return filter
@@ -257,24 +268,32 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         if len(story_filtered_timeline_items) > 0:
             current_story = story_filtered_timeline_items[-1].raw_data["storey"]
         self.logger.debug(
-            "ElectricBicycleEnteringEventDetector object len:{},board:{},current_story:{}".format(
+            "ElectricBicycleEnteringEventDetector object len:{},story_length:{},board:{},current_story:{}".format(
                 len(object_filtered_timeline_items),
+                len(story_filtered_timeline_items),
                 self.timeline.board_id, current_story))
+        if len(object_filtered_timeline_items) == 0:
+            self.raiseTheAlarm(0)
         for item in object_filtered_timeline_items:
             item.consumed = True
             if self.state_obj and "last_infer_ebic_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_infer_time_diff = (
                         datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
-                self.logger.debug("last_infer_time_diff:{}".format(last_infer_time_diff))
-                if last_infer_time_diff <= 4:
+                # self.logger.debug("last_infer_time_diff:{}".format(last_infer_time_diff))
+                # if last_infer_time_diff < 2:
+                self.state_obj = {}
+                self.logger.debug("skip one ebike object due to last failure result")
+                if last_infer_time_diff < 2:
+                    self.logger.debug(
+                        "skip one ebike object due to last failure result:{}".format(last_infer_time_diff))
                     continue
             if self.state_obj and "last_report_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_report_time_diff = (
                         datetime.datetime.now() - self.state_obj["last_report_timestamp"]).total_seconds()
                 self.logger.debug("last_report_time_diff:{}".format(last_report_time_diff))
-                if last_report_time_diff <= 90:
+                if last_report_time_diff <= 45:
                     continue
             sections = item.raw_data.split('|')
             # self.logger.debug(
@@ -301,7 +320,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # 推理服务器36.153.41.18:18000
             try:
                 infer_results = base64_tao_client.infer(False, False, False,
-                                                        "elenet_four_classes_tao", "",
+                                                        "elenet_four_classes_230330_tao", "",
                                                         1, "",
                                                         False, "192.168.66.149:8000", "HTTP", "Classification",
                                                         os.path.join(
@@ -319,15 +338,14 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             eb_entering_event_alarms.extend(temp)
             if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
                 self.state_obj = {"last_report_timestamp": datetime.datetime.now()}
-            else:
-                self.state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
-            # if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
-            # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com')
-            # confirmedmsg = item.raw_data + "|TwoWheeler|confirmed"
-            # producer.send(self.timeline.board_id,
-            #              bytes(confirmedmsg, 'utf-8'))
-            # producer.flush(5)
-            # producer.close()
+            # else:
+            #    self.state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
+
+            """
+            if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
+                confirmedmsg = item.raw_data + "|TwoWheeler|confirmed"
+                self.sendMessageToKafka(confirmedmsg)
+            """
 
         return eb_entering_event_alarms
 
@@ -342,7 +360,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
         if m and m.group(0):
             infer_server_ebic_confid = float(m.group(0))
-            if infer_server_ebic_confid >= 0.4 and abs(story) == 1:
+            # if self.raiseTheAlarm(infer_server_ebic_confid) and abs(story) == 1:
+            if infer_server_ebic_confid >= 0.25 and abs(story) == 1:
                 self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
                                                                        {"detail": "there's a EB incoming"})
                 event_alarms.append(
@@ -355,6 +374,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     "or the elevator is not in story 1 or -1, current storey is:{} ".format(
                         self.timeline.board_id,
                         infer_results, story))
+                # self.sendMessageToKafka("sink this eb detect. infer server gives low confidence:[]".format(
+                # infer_server_ebic_confid))
+
         else:
             self.logger.debug(
                 "      board: {}, sink this eb detect due to infer server treat as non-eb class at all: {}".format(
@@ -378,6 +400,56 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
                     str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
         return event_alarms
+
+    def raiseTheAlarm(self, infer_result):
+        result = False
+        # 推理结果是电车，更新成功判断为电车的时间，如果enter_time 跟exit_time都有值时说明是新一轮的电车入梯
+        # 如果enter_time有值而exit_time无值则认为是同一轮,只更新latest_infer_success
+        if infer_result >= 0.25:
+            self.ebike_state["latest_infer_success"] = datetime.datetime.now()
+
+            if self.ebike_state["enter_time"] != "" and self.ebike_state["exit_time"] == "":
+                result = False
+                self.logger.info(
+                    "board: {}, sink this eb detect due to it is the same ebike, enter_time:{}, infer_result:{}".format(
+                        self.timeline.board_id, self.ebike_state["enter_time"],
+                        infer_result))
+            else:
+                self.ebike_state["enter_time"] = datetime.datetime.now()
+                self.ebike_state["exit_time"] = ""
+                result = True
+                self.logger.info("board: {}, ebike entering at:{},latest_infer_success:{}".
+                                 format(self.timeline.board_id,
+                                        self.ebike_state["enter_time"],
+                                        self.ebike_state["latest_infer_success"]))
+        # 推理为非电车，如果距上次推理成功已有一段时间，那么则认为电动车出梯了
+        else:
+            temp_time = datetime.datetime.now()
+            if self.ebike_state["latest_infer_success"] == "":
+                self.ebike_state["enter_time"] = ""
+                self.ebike_state["exit_time"] = ""
+            elif self.ebike_state["latest_infer_success"] != "" and (
+                    temp_time - self.ebike_state["latest_infer_success"]).total_seconds() > 5:
+                self.ebike_state["latest_infer_success"] = ""
+                self.ebike_state["exit_time"] = temp_time
+                self.logger.info("board: {},ebike exit at:{}".format(self.timeline.board_id, temp_time))
+        return result
+
+    def sendMessageToKafka(self, message):
+        try:
+            producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
+                                     value_serializer=lambda x: dumps(x).encode('utf-8'))
+            obj_info_list = []
+            obj_info_list.append(message)
+            producer.send(self.timeline.board_id, {
+                'version': '4.1',
+                'id': 1913,
+                '@timestamp': '{}'.format(datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                'sensorId': '{}'.format(self.timeline.board_id), 'objects': obj_info_list})
+            producer.flush(5)
+            producer.close()
+        except:
+            self.logger.exception("send electric-bicycle confirmed message to kafka(...) rasised an exception:")
 
 
 #
@@ -442,7 +514,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                                        "detected gas tank entering elevator with board confid: {}".format(
                                            edge_board_confidence)))
 
-        return None
+        return event_alarms
 
 
 #
