@@ -1,2 +1,0 @@
-bicycle
-electric_bicycle
