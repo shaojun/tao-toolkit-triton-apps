@@ -30,7 +30,7 @@ get_ngc_key_from_environment() {
 
 check_ngc_cli_installation
 #NGC_API_KEY="$(get_ngc_key_from_environment)"
-NGC_API_KEY="bGltdmJsb3BlZXFvb2pjcDg3MnZsdjFsMDo4ZjMzNDliNy1iMjQwLTQwODktOWEwNi03YTE2NzgyMThmZTQ"
+NGC_API_KEY="bGltdmJsb3BlZXFvb2pjcDg3MnZsdjFsMDpiN2Y4Y2U4Mi1kZjI1LTQ1YjAtYTYwYi05NGJiNTFlODc1ZmM"
 if [ -z "$NGC_API_KEY" ]; then
     echo -e 'Did not find environment variable "$NGC_API_KEY"'
     read -sp 'Please enter API key for ngc.nvidia.com: ' NGC_API_KEY

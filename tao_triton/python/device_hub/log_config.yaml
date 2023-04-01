@@ -8,11 +8,21 @@ handlers:
     level: DEBUG
     formatter: simple
     stream: ext://sys.stdout
-  file_handler:
+  main_file_handler:
     class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
     filename: "log/main.log"
+    when: S
+    interval: 86400
+    backupCount: 1200
+    maxBytes: 40240000
+    encoding: utf8
+  electricBicycleEnteringEventDetector_file_handler:
+    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    level: DEBUG
+    formatter: simple
+    filename: "log/electricBicycleEnteringEventDetector.log"
     when: S
     interval: 86400
     backupCount: 1200
@@ -23,6 +33,10 @@ loggers:
     level: DEBUG
     handlers: []
     propagate: no
+  electricBicycleEnteringEventDetectorLogger:
+    level: DEBUG
+    handlers: [electricBicycleEnteringEventDetector_file_handler]
+    propagate: no
 root:
   level: DEBUG
-  handlers: [ file_handler ]
+  handlers: [ main_file_handler ]
