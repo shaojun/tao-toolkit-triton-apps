@@ -22,7 +22,7 @@ if __name__ == '__main__':
                         required=False)
     parser.add_argument('--input-images-folder-path',
                         type=str,
-                        default=os.path.join(os.getcwd(), "/home/kevin/Pictures/data/electric_bicycle/val"),
+                        default=os.path.join(os.getcwd(), "/home/shao/Downloads/val"),
                         help="Path to the folder of images for classifying, if -r enabled, the single folder",
                         required=False)
     parser.add_argument('--output-image-classes-folder-path',
@@ -33,6 +33,9 @@ if __name__ == '__main__':
                         required=False)
     FLAGS = parser.parse_args()
     FLAGS.enable_random_input_and_visualize_output_mode
+
+    #3060GPU machine ip:  36.153.41.18:18000
+    infer_server_url = "localhost:8000"
     classes = ['background', 'bicycle', 'electric_bicycle', 'people']
     elenet_four_classes_model_statistics = {}
     if FLAGS.enable_assess_mode:
@@ -55,7 +58,7 @@ if __name__ == '__main__':
                     infer_results = base64_tao_client.infer(False, False, False,
                                                             "elenet_four_classes_230330_tao", "",
                                                             1, "",
-                                                            False, "localhost:8000", "HTTP", "Classification",
+                                                            False, infer_server_url, "HTTP", "Classification",
                                                             os.path.join(
                                                                 os.getcwd(), "outputs"),
                                                             [full_image_base64_encoded_text])
@@ -94,7 +97,7 @@ if __name__ == '__main__':
                     infer_results = base64_tao_client.infer(False, False, False,
                                                             "bicycletypenet_tao", "",
                                                             1, "",
-                                                            False, "localhost:8000", "HTTP", "Classification",
+                                                            False, infer_server_url, "HTTP", "Classification",
                                                             os.path.join(
                                                                 os.getcwd(), "outputs11"),
                                                             [full_image_base64_encoded_text])

@@ -36,6 +36,7 @@ import logging
 import logging.config
 import yaml
 from kafka import KafkaConsumer
+from kafka import KafkaProducer
 import json
 import uuid
 from threading import Timer
@@ -66,10 +67,11 @@ def create_boardtimeline(board_id: str):
                        event_detector.DoorStateChangedEventDetector(logging),
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
+                       event_detector.GasTankEnteringEventDetector(logging),
                        event_detector.DoorOpenedForLongtimeEventDetector(logging),
                        event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
                        event_detector.ElevatorOverspeedEventDetector(logging),
-                       event_detector.TemperatureTooHighEventDetector(logging),
+                       # event_detector.TemperatureTooHighEventDetector(logging),
                        event_detector.PassagerVigorousExerciseEventDetector(logging),
                        event_detector.DoorOpeningAtMovingEventDetector(logging),
                        event_detector.ElevatorSuddenlyStoppedEventDetector(logging),
@@ -77,7 +79,14 @@ def create_boardtimeline(board_id: str):
                        event_detector.ElevatorMovingWithoutPeopleInEventDetector(logging),
                        event_detector.ElevatorJamsEventDetector(logging),
                        event_detector.ElevatorMileageEventDetector(logging),
-                       event_detector.ElevatorRunningStateEventDetector(logging)
+                       event_detector.ElevatorRunningStateEventDetector(logging),
+                       event_detector.UpdateResultEventDetector(logging),
+                       event_detector.GyroscopeFaultEventDetector(logging),
+                       event_detector.PressureFaultEventDetector(logging),
+                       event_detector.ElectricSwitchFaultEventDetector(logging),
+                       event_detector.DeviceOfflineEventDetector(logging),
+                       event_detector.DetectPersonOnTopEventDetector(logging),
+                       event_detector.DetectCameraBlockedEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
@@ -201,7 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--kafka-server-url',
                         type=str,
                         required=False,
-                        default='dev-iot.ipos.biz:9092',
+                        default='msg.glfiot.com:9092',
                         help='kafka server URL. Default is xxx:9092.')
     FLAGS = parser.parse_args()
 
@@ -223,7 +232,7 @@ while True:
     try:
         # do a dummy poll to retrieve some message
         consumer.poll()
-
+        logger.debug("consumer.poll messages")
         # go to end of the stream
         consumer.seek_to_end()
         for event in consumer:
@@ -231,8 +240,13 @@ while True:
             if "sensorId" not in event_data or "@timestamp" not in event_data:
                 continue
             board_msg_id = event_data["id"]
+
             board_msg_original_timestamp = event_data["@timestamp"]
             board_id = event_data["sensorId"]
+            if board_id == "default_empty_id_please_manual_set_rv1126":
+                continue
+            # if board_id != "E1603343797129842689":
+            #    continue
             cur_board_timeline = [t for t in BOARD_TIMELINES if
                                   t.board_id == board_id]
             if not cur_board_timeline:
@@ -243,6 +257,11 @@ while True:
             # indicates it's the object detection msg
             if "objects" in event_data:
                 new_timeline_items = []
+                if len(event_data["objects"]) == 0:
+                    new_timeline_items.append(
+                        board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.OBJECT_DETECT,
+                                                    board_msg_original_timestamp,
+                                                    board_msg_id, ""))
                 for obj_data in event_data["objects"]:
                     new_timeline_items.append(
                         board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.OBJECT_DETECT,
@@ -273,7 +292,28 @@ while True:
                                                         board_timeline.TimelineItemType.SENSOR_READ_ACCELERATOR,
                                                         board_msg_original_timestamp, board_msg_id, obj_data))
                         # cur_board_timeline.add_items([new_timeline_item])
+                    elif "switchFault" in obj_data:
+                        new_items.append(
+                            board_timeline.TimelineItem(cur_board_timeline,
+                                                        board_timeline.TimelineItemType.SENSOR_READ_ELECTRIC_SWITCH,
+                                                        board_msg_original_timestamp, board_msg_id, obj_data))
+                    elif "detectPerson" in obj_data:
+                        new_items.append(
+                            board_timeline.TimelineItem(cur_board_timeline,
+                                                        board_timeline.TimelineItemType.SENSOR_READ_PEOPLE_DETECT,
+                                                        board_msg_original_timestamp, board_msg_id, obj_data))
+                    elif "cameraBlocked" in obj_data:
+                        new_items.append(
+                            board_timeline.TimelineItem(cur_board_timeline,
+                                                        board_timeline.TimelineItemType.CAMERA_BLOCKED,
+                                                        board_msg_original_timestamp, board_msg_id, obj_data))
                 cur_board_timeline.add_items(new_items)
+            elif "update" in event_data:
+                new_update_timeline_items = [board_timeline.TimelineItem(cur_board_timeline,
+                                                                         board_timeline.TimelineItemType.UPDATE_RESULT,
+                                                                         board_msg_original_timestamp, board_msg_id,
+                                                                         event_data)]
+                cur_board_timeline.add_items(new_update_timeline_items)
 
     except:
         logger.exception("Major error caused by exception:")

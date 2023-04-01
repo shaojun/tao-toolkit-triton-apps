@@ -13,6 +13,10 @@ class TimelineItemType(Enum):
     SENSOR_READ_PRESSURE = 3
     SENSOR_READ_ACCELERATOR = 4
     SENSOR_READ_PEOPLE_DETECT = 5
+    SENSOR_READ_ELECTRIC_SWITCH = 6
+    # the item is sent by watch dog
+    UPDATE_RESULT = 7
+    CAMERA_BLOCKED = 8
 
     # the item is autoly generated from local, used for case of remote side muted(connection broken? remote app crash?)
     LOCAL_IDLE_LOOP = 99
@@ -64,6 +68,8 @@ class BoardTimeline:
         self.items += items
         if len(self.items) % 5 == 0:
             self.__purge_items()
+        if len(items) == 1 and items[0].raw_data == '':
+            return
         event_alarms = []
         for d in self.event_detectors:
             t0 = time.time()

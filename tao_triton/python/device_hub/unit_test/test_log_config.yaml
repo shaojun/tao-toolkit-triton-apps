@@ -1,0 +1,29 @@
+version: 1
+formatters:
+  simple:
+    format: '%(asctime)s-[%(levelname)s]%(message)s'
+    "datefmt": "%Y-%m-%d %H:%M:%S"
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: simple
+    stream: ext://sys.stdout
+  file_handler:
+    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    level: DEBUG
+    formatter: simple
+    filename: "tao_triton/python/device_hub/unit_test/log/main.log"
+    when: S
+    interval: 10
+    backupCount: 10
+    maxBytes: 1024
+    encoding: utf8
+loggers:
+  sampleLogger:
+    level: DEBUG
+    handlers: [ console ]
+    propagate: no
+root:
+  level: DEBUG
+  handlers: [ file_handler,console ]
