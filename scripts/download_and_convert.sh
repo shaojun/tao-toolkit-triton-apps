@@ -37,14 +37,44 @@
 #               -e /model_repository/vehicletypenet_tao/1/model.plan
 
 # Generate a BicycleTypeNet model.
-echo "Converting the BicycleTypeNet model"
-mkdir -p /model_repository/bicycletypenet_tao/1
-tao-converter /tao_models/bicycletypenet_model/bicycletypenet_resnet18_vehicletypenet_pruned.etlt \
+#echo "Converting the BicycleTypeNet model"
+#mkdir -p /model_repository/bicycletypenet_tao/1
+#tao-converter /tao_models/bicycletypenet_model/bicycletypenet_resnet18_vehicletypenet_pruned.etlt \
+#              -k nvidia_tlt \
+#              -d 3,224,224 \
+#              -o predictions/Softmax \
+#              -m 16 \
+#              -e /model_repository/bicycletypenet_tao/1/model.plan
+              
+# Generate a elenet_four_classes model.
+#echo "Converting the elenet_four_classes model"
+#mkdir -p /model_repository/elenet_four_classes_tao/1
+#tao-converter /tao_models/elenet_four_classes_model/elenet_resnet50_pruned_20230209.etlt \
+#              -k nvidia_tlt \
+#              -d 3,224,224 \
+#              -o predictions/Softmax \
+#              -m 16 \
+#              -e /model_repository/elenet_four_classes_tao/1/model.plan
+              
+# Generate a elenet_four_classes_230330 model.
+echo "Converting the elenet_four_classes_230330 model"
+mkdir -p /model_repository/elenet_four_classes_230330_tao/1
+tao-converter /tao_models/elenet_four_classes_230330_model/final_model.etlt \
               -k nvidia_tlt \
               -d 3,224,224 \
               -o predictions/Softmax \
               -m 16 \
-              -e /model_repository/bicycletypenet_tao/1/model.plan
+              -e /model_repository/elenet_four_classes_230330_tao/1/model.plan
+
+# Generate a elenet_four_classes_230331 model.
+echo "Converting the elenet_four_classes_230331 model"
+mkdir -p /model_repository/elenet_four_classes_230331_tao/1
+tao-converter /tao_models/elenet_four_classes_230331_model/final_model.etlt \
+              -k nvidia_tlt \
+              -d 3,224,224 \
+              -o predictions/Softmax \
+              -m 16 \
+              -e /model_repository/elenet_four_classes_230331_tao/1/model.plan
 
 # Generate an LPRnet model.
 # echo "Converting the LPRNet model"
