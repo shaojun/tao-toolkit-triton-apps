@@ -1,0 +1,19 @@
+{
+    "detectors": {
+        "ElectricBicycleEnteringEventDetector": {
+            "EnableSendConfirmedEbEnteringMsgToKafka": false
+        },
+        "GasTankEnteringEventDetector": {
+            "FeatureSwitchers": [
+                {
+                    "TargetBoardId": "E999993222_specific_board_for_special_control",
+                    "Enable": true
+                },
+                {
+                    "TargetBoardId": "*",
+                    "Enable": false
+                }
+            ]
+        }
+    }
+}
