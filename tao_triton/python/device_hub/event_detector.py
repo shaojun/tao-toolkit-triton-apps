@@ -214,12 +214,13 @@ class DoorStateChangedEventDetector(EventDetectorBase):
 #
 # 电动车检测告警（电动车入梯)
 class ElectricBicycleEnteringEventDetector(EventDetectorBase):
-    SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH = "ebic_image_samples"
+    SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = "ebic_image_samples"
 
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
         # self.logger = logging.getLogger(__name__)
-        self.logger = logging.getLogger("electricBicycleEnteringEventDetectorLogger")
+        self.logger = logging.getLogger(
+            "electricBicycleEnteringEventDetectorLogger")
         # self.logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
 
     def prepare(self, timeline, event_detectors):
@@ -230,7 +231,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
         """
         self.timeline = timeline
-        self.ebike_state = {"enter_time": "", "exit_time": "", "latest_infer_success": ""}
+        self.ebike_state = {"enter_time": "",
+                            "exit_time": "", "latest_infer_success": ""}
         pass
 
     def get_timeline_item_filter(self):
@@ -279,11 +281,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if self.state_obj and "last_infer_ebic_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_infer_time_diff = (
-                        datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
+                    datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
                 # self.logger.debug("last_infer_time_diff:{}".format(last_infer_time_diff))
                 # if last_infer_time_diff < 2:
                 self.state_obj = {}
-                self.logger.debug("skip one ebike object due to last failure result")
+                self.logger.debug(
+                    "skip one ebike object due to last failure result")
                 if last_infer_time_diff < 2:
                     self.logger.debug(
                         "skip one ebike object due to last failure result:{}".format(last_infer_time_diff))
@@ -291,8 +294,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if self.state_obj and "last_report_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_report_time_diff = (
-                        datetime.datetime.now() - self.state_obj["last_report_timestamp"]).total_seconds()
-                self.logger.debug("last_report_time_diff:{}".format(last_report_time_diff))
+                    datetime.datetime.now() - self.state_obj["last_report_timestamp"]).total_seconds()
+                self.logger.debug(
+                    "last_report_time_diff:{}".format(last_report_time_diff))
                 if last_report_time_diff <= 45:
                     continue
             sections = item.raw_data.split('|')
@@ -338,10 +342,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 current_story)
             eb_entering_event_alarms.extend(temp)
             if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
-                self.state_obj = {"last_report_timestamp": datetime.datetime.now()}
+                self.state_obj = {
+                    "last_report_timestamp": datetime.datetime.now()}
             # else:
             #    self.state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
-            
+
             # if util.read_fast_from_app_config_to_property(["detectors",ElectricBicycleEnteringEventDetector.__name__],'EnableSendConfirmedEbEnteringMsgToKafka')
             """
             if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
@@ -385,21 +390,22 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     self.timeline.board_id,
                     infer_results))
         if enable_save_sample_image:
-            if not os.path.exists(ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH):
-                os.makedirs(
-                    ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH)
+            image_sample_path = os.path.join(
+                ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
+            if not os.path.exists(image_sample_path):
+                os.makedirs(image_sample_path)
             file_name_timestamp_str = str(
                 datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
             shutil.copyfile(os.path.join("temp_infer_image_files", "0.jpg"),
                             os.path.join(
-                                ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
+                                image_sample_path,
                                 str(infer_server_ebic_confid) + "___" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
 
             if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
                 temp_full_image = Image.open(io.BytesIO(
                     base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
                 temp_full_image.save(os.path.join(
-                    ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
+                    image_sample_path,
                     str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
         return event_alarms
 
@@ -434,7 +440,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     temp_time - self.ebike_state["latest_infer_success"]).total_seconds() > 5:
                 self.ebike_state["latest_infer_success"] = ""
                 self.ebike_state["exit_time"] = temp_time
-                self.logger.info("board: {},ebike exit at:{}".format(self.timeline.board_id, temp_time))
+                self.logger.info("board: {},ebike exit at:{}".format(
+                    self.timeline.board_id, temp_time))
         return result
 
     def sendMessageToKafka(self, message):
@@ -451,7 +458,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             producer.flush(5)
             producer.close()
         except:
-            self.logger.exception("send electric-bicycle confirmed message to kafka(...) rasised an exception:")
+            self.logger.exception(
+                "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
 
 
 #
@@ -459,7 +467,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
 
 class GasTankEnteringEventDetector(EventDetectorBase):
-    SAVE_IMAGE_SAMPLE_FOLDER_PATH = "gastank_image_samples"
+    SAVE_IMAGE_SAMPLE_ROOT_FOLDER_PATH = "gastank_image_samples"
     Enable_SAVE_IMAGE_SAMPLE = True
 
     def __init__(self, logging):
@@ -517,9 +525,10 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             cropped_base64_image_file_text = sections[len(
                 sections) - 2][len("base64_image_data:"):]
             if self.Enable_SAVE_IMAGE_SAMPLE:
-                if not os.path.exists(GasTankEnteringEventDetector.SAVE_IMAGE_SAMPLE_FOLDER_PATH):
-                    os.makedirs(
-                        GasTankEnteringEventDetector.SAVE_IMAGE_SAMPLE_FOLDER_PATH)
+                image_sample_path = os.path.join(
+                    GasTankEnteringEventDetector.SAVE_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
+                if not os.path.exists(image_sample_path):
+                    os.makedirs(image_sample_path)
                 file_name_timestamp_str = str(
                     datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
                 # shutil.copyfile(os.path.join("temp_infer_image_files", "0.jpg"),
@@ -531,7 +540,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                     temp_cropped_image = Image.open(io.BytesIO(
                         base64.decodebytes(cropped_base64_image_file_text.encode('ascii'))))
                     temp_cropped_image.save(os.path.join(
-                        GasTankEnteringEventDetector.SAVE_IMAGE_SAMPLE_FOLDER_PATH,
+                        image_sample_path,
                         "crop_image___" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
 
             is_enabled = util.read_fast_from_app_config_to_board_control_level(
@@ -757,7 +766,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if (datetime.datetime.now(datetime.timezone.utc) - object_person.original_timestamp).total_seconds() < 20:
             return None
         self.logger.debug("困人检测中共发现{}人，最早目标出现在:{}".format(len(person_filtered_timeline_items),
-                                                                          object_person.original_timestamp_str))
+                                                          object_person.original_timestamp_str))
         object_person = None
         for person in reversed(person_filtered_timeline_items):
             latest_time_diff = (
@@ -999,7 +1008,7 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                 return None
             self.logger.debug(
                 "反复开关门判断中出现人：{},raw:{}".format(target_persons[-1].original_timestamp_str,
-                                                          target_persons[-1].raw_data))
+                                               target_persons[-1].raw_data))
 
         alarms = self.alarms_to_fire
         self.alarms_to_fire = []
