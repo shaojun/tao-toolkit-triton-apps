@@ -347,12 +347,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # else:
             #    self.state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
 
-            # if util.read_fast_from_app_config_to_property(["detectors",ElectricBicycleEnteringEventDetector.__name__],'EnableSendConfirmedEbEnteringMsgToKafka')
-            """
-            if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
-                confirmedmsg = item.raw_data + "|TwoWheeler|confirmed"
-                self.sendMessageToKafka(confirmedmsg)
-            """
+            if util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__], 'EnableSendConfirmedEbEnteringMsgToKafka'):
+                if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
+                    confirmedmsg = item.raw_data + "|TwoWheeler|confirmed"
+                    self.sendMessageToKafka(confirmedmsg)
 
         return eb_entering_event_alarms
 
@@ -389,7 +387,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 "      board: {}, sink this eb detect due to infer server treat as non-eb class at all: {}".format(
                     self.timeline.board_id,
                     infer_results))
-        if enable_save_sample_image:
+        if enable_save_sample_image and infer_server_ebic_confid >= 0.01:
             image_sample_path = os.path.join(
                 ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
             if not os.path.exists(image_sample_path):
