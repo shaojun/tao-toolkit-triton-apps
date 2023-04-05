@@ -512,7 +512,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                 # we don't want to report too freq
                 last_report_time_diff = (
                     datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
-                if last_report_time_diff <= 30:
+                if last_report_time_diff <= 60 * 60 * 24:
                     continue
             self.logger.debug(
                 "timeline_item in gas tank detect raw data:{}".format(item.raw_data))
