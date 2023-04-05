@@ -395,7 +395,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if not os.path.exists(image_sample_path):
                 os.makedirs(image_sample_path)
             file_name_timestamp_str = str(
-                datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+                datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")[:-3])
             shutil.copyfile(os.path.join("temp_infer_image_files", "0.jpg"),
                             os.path.join(
                                 image_sample_path,
@@ -530,7 +530,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                 if not os.path.exists(image_sample_path):
                     os.makedirs(image_sample_path)
                 file_name_timestamp_str = str(
-                    datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S"))
+                    datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")[:-3])
                 # shutil.copyfile(os.path.join("temp_infer_image_files", "0.jpg"),
                 #                 os.path.join(
                 #                     ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_FOLDER_PATH,
