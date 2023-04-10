@@ -1,6 +1,7 @@
 import datetime
 import os
 import re
+import time
 from typing import List
 import shutil
 # from tao_triton.python.device_hub import base64_tao_client
@@ -322,6 +323,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             #                                         FLAGS.output_path,
             #                                         [cropped_base64_image_file_text])
             # 推理服务器36.153.41.18:18000
+            t0 = time.time()
             try:
                 infer_results = base64_tao_client.infer(False, False, False,
                                                         "elenet_four_classes_230330_tao", "",
@@ -334,24 +336,28 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.logger.exception(
                     "base64_tao_client.infer(...) rasised an exception:")
                 return
-            self.logger.debug("      board: {}, (localConf:{})infer_results: {}".format(
-                self.timeline.board_id,
+            t1 = time.time()
+            infer_used_time = (t1 - t0) * 1000
+            self.logger.debug("      board: {}, time used for infer:{}(localConf:{})infer_results: {}".format(
+                self.timeline.board_id, infer_used_time,
                 edge_board_confidence, infer_results))
             temp = self.__process_infer_result__(
                 item.original_timestamp, edge_board_confidence, full_base64_image_file_text, infer_results, True,
                 current_story)
             eb_entering_event_alarms.extend(temp)
-            if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
-                self.state_obj = {
-                    "last_report_timestamp": datetime.datetime.now()}
+            #if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
+            #    self.state_obj = {
+            #       "last_report_timestamp": datetime.datetime.now()}
             # else:
             #    self.state_obj = {"last_infer_ebic_timestamp": datetime.datetime.now()}
 
-            if util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__], 'EnableSendConfirmedEbEnteringMsgToKafka'):
-                if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
-                    confirmedmsg = item.raw_data + "|TwoWheeler|confirmed"
-                    self.sendMessageToKafka(confirmedmsg)
-
+            # if util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__], 'EnableSendConfirmedEbEnteringMsgToKafka'):
+            if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
+                confirmedmsg = item.raw_data + "|TwoWheeler|confirmed"
+                self.sendMessageToKafka(confirmedmsg)
+            t2 = time.time()
+            after_infer_used_time = (t2 - t1) * 1000
+            self.logger.debug("board{},used time after infer{}".format(self.timeline.board_id, after_infer_used_time))
         return eb_entering_event_alarms
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
@@ -365,8 +371,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
         if m and m.group(0):
             infer_server_ebic_confid = float(m.group(0))
-            # if self.raiseTheAlarm(infer_server_ebic_confid) and abs(story) == 1:
-            if infer_server_ebic_confid >= 0.25 and abs(story) == 1:
+            # if infer_server_ebic_confid >= 0.25 and abs(story) == 1:
+            if self.raiseTheAlarm(infer_server_ebic_confid) and abs(story) == 1:
                 self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
                                                                        {"detail": "there's a EB incoming"})
                 event_alarms.append(
@@ -454,7 +460,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 '@timestamp': '{}'.format(datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                 'sensorId': '{}'.format(self.timeline.board_id), 'objects': obj_info_list})
             producer.flush(5)
-            producer.close()
+            # producer.close()
         except:
             self.logger.exception(
                 "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
