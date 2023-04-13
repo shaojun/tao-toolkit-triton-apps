@@ -245,8 +245,10 @@ while True:
             board_id = event_data["sensorId"]
             if board_id == "default_empty_id_please_manual_set_rv1126":
                 continue
-            # if board_id != "E1603343797129842689":
-            #    continue
+
+            if "_dh" in board_id:
+                continue
+
             cur_board_timeline = [t for t in BOARD_TIMELINES if
                                   t.board_id == board_id]
             if not cur_board_timeline:

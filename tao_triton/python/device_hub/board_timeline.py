@@ -1,8 +1,11 @@
 from __future__ import annotations
 import datetime
+from json import dumps
 import time
 from enum import Enum
 from typing import List
+
+from kafka import KafkaProducer
 
 
 class TimelineItemType(Enum):
@@ -59,6 +62,8 @@ class BoardTimeline:
         self.items = items
         self.event_detectors = event_detectors
         self.event_alarm_notifiers = event_alarm_notifiers
+        self.producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
+                                      value_serializer=lambda x: dumps(x).encode('utf-8'))
 
         for d in event_detectors:
             d.prepare(self, event_detectors)
@@ -70,6 +75,7 @@ class BoardTimeline:
             self.__purge_items()
         if len(items) == 1 and items[0].raw_data == '':
             return
+        self.foward_object_to_board(items)
         event_alarms = []
         for d in self.event_detectors:
             t0 = time.time()
@@ -108,5 +114,29 @@ class BoardTimeline:
     def __purge_items(self):
         survived = [item for item in self.items if
                     (datetime.datetime.now(datetime.timezone.utc) - item.original_timestamp)
-                        .total_seconds() <= BoardTimeline.Timeline_Items_Max_Survive_Time and not item.consumed]
+                    .total_seconds() <= BoardTimeline.Timeline_Items_Max_Survive_Time and not item.consumed]
         self.items = survived
+
+    def foward_object_to_board(self, items: List[TimelineItem]):
+        if len(items) == 0:
+            return
+        if items[0].item_type != TimelineItemType.OBJECT_DETECT:
+            return
+
+        message = ""
+        for item in items:
+            if "Vehicle|#|TwoWheeler" in item.raw_data:
+                message = "Vehicle|#|TwoWheeler"
+        try:
+            obj_info_list = []
+            obj_info_list.append(message)
+            self.producer.send(self.board_id + "_dh", {
+                'version': '4.1',
+                'id': 1913,
+                '@timestamp': '{}'.format(datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                'sensorId': '{}'.format(self.board_id + "_dh"), 'objects': obj_info_list})
+            self.producer.flush(5)
+            # producer.close()
+        except:
+            self.logger.exception(
+                "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
