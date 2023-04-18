@@ -225,7 +225,7 @@ if __name__ == '__main__':
     # consumer.subscribe(pattern="1423820088517")
     # consumer.subscribe(pattern="shaoLocalJsNxBoard")
     # consumer.subscribe(pattern="suzhou_yang_testing_jtsn4g")
-    consumer.subscribe(pattern=".*")
+    consumer.subscribe(pattern="^E[0-9]+$")
     # consumer.subscribe(pattern="shaoLocalJts2gBoard")
 
 while True:
@@ -245,6 +245,9 @@ while True:
             board_id = event_data["sensorId"]
             if board_id == "default_empty_id_please_manual_set_rv1126":
                 continue
+
+            # if board_id != "E1634085712737341441":
+            #    continue
 
             if "_dh" in board_id:
                 continue

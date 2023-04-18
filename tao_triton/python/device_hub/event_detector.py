@@ -326,7 +326,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             t0 = time.time()
             try:
                 infer_results = base64_tao_client.infer(False, False, False,
-                                                        "elenet_four_classes_230330_tao", "",
+                                                        "elenet_four_classes_230417_tao", "",
                                                         1, "",
                                                         False, "192.168.66.149:8000", "HTTP", "Classification",
                                                         os.path.join(
@@ -420,7 +420,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         result = False
         # 推理结果是电车，更新成功判断为电车的时间，如果enter_time 跟exit_time都有值时说明是新一轮的电车入梯
         # 如果enter_time有值而exit_time无值则认为是同一轮,只更新latest_infer_success
-        if infer_result >= 0.25:
+        ebike_confid = util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
+                                                          'ebic_confid')
+        if infer_result >= ebike_confid:
             self.ebike_state["latest_infer_success"] = datetime.datetime.now()
 
             if self.ebike_state["enter_time"] != "" and self.ebike_state["exit_time"] == "":
@@ -462,7 +464,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 'id': 1913,
                 '@timestamp': '{}'.format(datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                 'sensorId': '{}'.format(self.timeline.board_id + "_dh"), 'objects': obj_info_list})
-            self.timeline.producer.flush(5)
+            # self.timeline.producer.flush(5)
             # producer.close()
         except:
             self.logger.exception(
@@ -2080,7 +2082,7 @@ class DeviceOfflineEventDetector(EventDetectorBase):
 
         time_diff = (datetime.datetime.now(datetime.timezone.utc) - self.state_obj[
             "detect_device_time_stamp"]).total_seconds()
-        if time_diff < 600:
+        if time_diff < 6:
             return None
         new_state_object = {"code": "0023",
                             "message": "边缘设备离线，最近一次获取到边缘设备信息的时间为{}".format(

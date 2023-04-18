@@ -19,12 +19,13 @@ def read_fast_from_app_config(path: List[str]):
     if path is None:
         return lastReadjsonConfigFileContent
     else:
+        json_result = lastReadjsonConfigFileContent
         for item in path:
-            if item in lastReadjsonConfigFileContent:
-                lastReadjsonConfigFileContent = lastReadjsonConfigFileContent[item]
+            if item in json_result:
+                json_result = json_result[item]
             else:
                 return None
-        return lastReadjsonConfigFileContent
+        return json_result
 
 
 def read_fast_from_app_config_to_board_control_level(path_to_board_control_level_array: List[str], board_id: str):

@@ -73,9 +73,11 @@ class BoardTimeline:
         self.items += items
         if len(self.items) % 5 == 0:
             self.__purge_items()
+
+        self.foward_object_to_board(items)
         if len(items) == 1 and items[0].raw_data == '':
             return
-        self.foward_object_to_board(items)
+
         event_alarms = []
         for d in self.event_detectors:
             t0 = time.time()
@@ -135,7 +137,7 @@ class BoardTimeline:
                 'id': 1913,
                 '@timestamp': '{}'.format(datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                 'sensorId': '{}'.format(self.board_id + "_dh"), 'objects': obj_info_list})
-            self.producer.flush(5)
+            # self.producer.flush(5)
             # producer.close()
         except:
             self.logger.exception(
