@@ -18,7 +18,7 @@ class EventAlarmPriority(Enum):
 
 
 class EventAlarm:
-    def __init__(self, event_detector: event_detector.EventDetectorBase, original_utc_timestamp: datetime,
+    def __init__(self, event_detector, original_utc_timestamp: datetime,
                  priority: EventAlarmPriority,
                  description: str, code="", data={}):
         """

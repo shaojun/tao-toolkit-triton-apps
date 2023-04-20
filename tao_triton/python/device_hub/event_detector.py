@@ -217,12 +217,17 @@ class DoorStateChangedEventDetector(EventDetectorBase):
 class ElectricBicycleEnteringEventDetector(EventDetectorBase):
     SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = "ebic_image_samples"
 
+    # avoid a single spike eb event mis-trigger alarm, set to 1 for disable the feature
+    THROTTLE_Window_Depth = 2
+    THROTTLE_Window_Time_By_Sec = 5
+
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
         # self.logger = logging.getLogger(__name__)
         self.logger = logging.getLogger(
             "electricBicycleEnteringEventDetectorLogger")
         # self.logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
+        self.infer_confirmed_eb_history_list = []
 
     def prepare(self, timeline, event_detectors):
         """
@@ -282,7 +287,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if self.state_obj and "last_infer_ebic_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_infer_time_diff = (
-                        datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
+                    datetime.datetime.now() - self.state_obj["last_infer_ebic_timestamp"]).total_seconds()
                 # self.logger.debug("last_infer_time_diff:{}".format(last_infer_time_diff))
                 # if last_infer_time_diff < 2:
                 self.state_obj = {}
@@ -295,7 +300,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if self.state_obj and "last_report_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_report_time_diff = (
-                        datetime.datetime.now() - self.state_obj["last_report_timestamp"]).total_seconds()
+                    datetime.datetime.now() - self.state_obj["last_report_timestamp"]).total_seconds()
                 self.logger.debug(
                     "last_report_time_diff:{}".format(last_report_time_diff))
                 if last_report_time_diff <= 45:
@@ -360,7 +365,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
             t2 = time.time()
             after_infer_used_time = (t2 - t1) * 1000
-            self.logger.debug("board{},used time after infer{}".format(self.timeline.board_id, after_infer_used_time))
+            self.logger.debug("board{},used time after infer{}".format(
+                self.timeline.board_id, after_infer_used_time))
         return eb_entering_event_alarms
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
@@ -374,8 +380,14 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
         if m and m.group(0):
             infer_server_ebic_confid = float(m.group(0))
+            ebike_confid_threshold = util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
+                                                                      'ebic_confid')
+            if infer_server_ebic_confid >= ebike_confid_threshold:
+                if self.notifyEbIncomingAndCheckIfThrottleNeeded():
+                    return []
+
             # if infer_server_ebic_confid >= 0.25 and abs(story) == 1:
-            if self.raiseTheAlarm(infer_server_ebic_confid) and abs(story) == 1:
+            if self.raiseTheAlarm(infer_server_ebic_confid, ebike_confid_threshold) and abs(story) == 1:
                 self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
                                                                        {"detail": "there's a EB incoming"})
                 event_alarms.append(
@@ -416,13 +428,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
         return event_alarms
 
-    def raiseTheAlarm(self, infer_result):
+    def raiseTheAlarm(self, infer_result, ebike_confid_threshold):
         result = False
         # 推理结果是电车，更新成功判断为电车的时间，如果enter_time 跟exit_time都有值时说明是新一轮的电车入梯
         # 如果enter_time有值而exit_time无值则认为是同一轮,只更新latest_infer_success
-        ebike_confid = util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
-                                                          'ebic_confid')
-        if infer_result >= ebike_confid:
+        if infer_result >= ebike_confid_threshold:
             self.ebike_state["latest_infer_success"] = datetime.datetime.now()
 
             if self.ebike_state["enter_time"] != "" and self.ebike_state["exit_time"] == "":
@@ -469,6 +479,22 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         except:
             self.logger.exception(
                 "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
+
+    # avoid a single spike eb event mis-trigger alarm, set to 1 for disable the feature
+    # we noticed some cases that like a bicycle entering, most of the frames can be infered as bicycle which is correct, 
+    # but sometimes, a Single frame can be infered as eb, which is wrong, here is trying to avoid this case
+    def notifyEbIncomingAndCheckIfThrottleNeeded(self):
+        self.infer_confirmed_eb_history_list.append(
+            {"infer_time": datetime.datetime.now()})
+        # remove multiple expired items at once from a list
+        expired_items = [i for i in self.infer_confirmed_eb_history_list if
+                         (datetime.datetime.now() - i["infer_time"]).total_seconds() > ElectricBicycleEnteringEventDetector.THROTTLE_Window_Time_By_Sec]
+        self.infer_confirmed_eb_history_list = [
+            i for i in self.infer_confirmed_eb_history_list if i not in expired_items]
+
+        if len(self.infer_confirmed_eb_history_list) < ElectricBicycleEnteringEventDetector.THROTTLE_Window_Depth:
+            return True
+        return False
 
 
 #

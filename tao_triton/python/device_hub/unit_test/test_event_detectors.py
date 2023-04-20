@@ -1,13 +1,112 @@
 import re
+import os
+import sys
+import datetime
 from unittest import TestCase
 # from tao_triton.python.device_hub.event_detector import *
 from typing import List
-from tao_triton.python.device_hub.board_timeline import BoardTimeline
+# from tao_triton.python.device_hub.board_timeline import BoardTimeline
 import logging
-from tao_triton.python.device_hub.event_detector import ElectricBicycleEnteringEventDetector
-logging.getLogger(ElectricBicycleEnteringEventDetector.__name__).addHandler(
+# from tao_triton.python.device_hub.event_detector import ElectricBicycleEnteringEventDetector
+# from tao_triton.python.device_hub import event_alarm
+# logging.getLogger(ElectricBicycleEnteringEventDetector.__name__).addHandler(
+#             logging.NullHandler())
+
+
+class test_ElectricBicycleEnteringEventDetector(TestCase):
+    def __init__(self, *args, **kwargs):
+        super(test_ElectricBicycleEnteringEventDetector,
+              self).__init__(*args, **kwargs)
+
+    def test_check_throttle_needed(self):
+        path = sys.path
+        sys.path.append(os.path.join(
+            sys.path[1], 'tao_triton/python/device_hub'))
+        from tao_triton.python.device_hub import event_alarm
+        from tao_triton.python.device_hub.event_detector import ElectricBicycleEnteringEventDetector
+
+        logging.getLogger(ElectricBicycleEnteringEventDetector.__name__).addHandler(
             logging.NullHandler())
-class TestElectricBicycleEnteringEventDetector(TestCase):
+        ElectricBicycleEnteringEventDetector.THROTTLE_Window_Depth = 2
+        instance = ElectricBicycleEnteringEventDetector(logging)
+        for i in range(0, 2, 1):
+            t0 = datetime.datetime.now()
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == True)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            t1 = datetime.datetime.now()
+            print("time cost: {}".format(t1-t0))
+            import time
+            time.sleep(
+                ElectricBicycleEnteringEventDetector.THROTTLE_Window_Time_By_Sec+1)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == True)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            time.sleep(
+                ElectricBicycleEnteringEventDetector.THROTTLE_Window_Time_By_Sec/3)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+            self.assertTrue(actual == False)
+            time.sleep(
+                ElectricBicycleEnteringEventDetector.THROTTLE_Window_Time_By_Sec+1)
+        ElectricBicycleEnteringEventDetector.THROTTLE_Window_Depth = 1
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+        self.assertTrue(actual == False)
+        actual = instance.notifyEbIncomingAndCheckIfThrottleNeeded()
+
     def test_resolve_infer_server_confidence(self):
         infer_result_sample = " (localConf:0.850841)infer_results: temp_infer_image_files\0.jpg, 0.5524(0)=bicycle, 0.4476(1)=electric_bicycle"
         # the `0.4476(1)=electric_bicycle`  means the infer server is 0.4476 sure the object is electric_bicycle
@@ -31,44 +130,3 @@ class TestElectricBicycleEnteringEventDetector(TestCase):
         m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)',
                       infer_result_sample)
         self.assertTrue(m == None)
-
-    def test0_elenet_four_classes_model_infer_server_confidence(self):
-        import datetime
-        infer_result_sample = "temp_infer_image_files/0.jpg, 0.6880(3)=people, 0.2227(0)=background, 0.0184(1)=bicycle"
-
-        detector = ElectricBicycleEnteringEventDetector(logging)
-        board_timeline = self.create_boardtimeline(
-            'aaabbbccc', logging, [detector])
-        detector.prepare(board_timeline, None)
-        generated_alarms = []
-        generated_alarms = detector.__process_infer_result__(
-            datetime.datetime.now(),
-            0.88, '',
-            infer_result_sample, False)
-        self.assertFalse(generated_alarms)
-
-    def test1_elenet_four_classes_model_infer_server_confidence(self):
-        import datetime
-
-        detector = ElectricBicycleEnteringEventDetector(logging)
-        board_timeline = self.create_boardtimeline(
-            'aaabbbccc', logging, [detector])
-        detector.prepare(board_timeline, None)
-
-        infer_result_sample = "temp_infer_image_files/0.jpg, 0.6880(3)=people, 0.2227(0)=background, 0.0709(2)=electric_bicycle, 0.0184(1)=bicycle"
-        generated_alarms = []
-        generated_alarms = detector.__process_infer_result__(
-            datetime.datetime.now(),
-            0.88, 'abc',
-            infer_result_sample, False)
-        self.assertFalse(generated_alarms)
-
-    def create_boardtimeline(self, board_id: str, logging, event_detectors) -> List[BoardTimeline]:
-        import logging
-        from typing import List
-        return BoardTimeline(logging, board_id, [],
-                             event_detectors,
-                             [
-            # event_alarm.EventAlarmDummyNotifier(logging),
-            # event_alarm.EventAlarmWebServiceNotifier(logging)
-        ])
