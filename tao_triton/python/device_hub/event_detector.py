@@ -281,7 +281,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 len(story_filtered_timeline_items),
                 self.timeline.board_id, current_story))
         if len(object_filtered_timeline_items) == 0:
-            self.raiseTheAlarm(0)
+            ebike_confid_threshold = util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
+                                                                      'ebic_confid')
+            self.raiseTheAlarm(0, ebike_confid_threshold)
         for item in object_filtered_timeline_items:
             item.consumed = True
             if self.state_obj and "last_infer_ebic_timestamp" in self.state_obj:
@@ -384,6 +386,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                                       'ebic_confid')
             if infer_server_ebic_confid >= ebike_confid_threshold:
                 if self.notifyEbIncomingAndCheckIfThrottleNeeded():
+                    self.logger.debug("board: {}, Throttled a confirmed eb event".format(self.timeline.board_id))
                     return []
 
             # if infer_server_ebic_confid >= 0.25 and abs(story) == 1:
