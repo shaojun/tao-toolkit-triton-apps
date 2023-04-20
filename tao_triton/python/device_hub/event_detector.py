@@ -275,11 +275,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         current_story = 0
         if len(story_filtered_timeline_items) > 0:
             current_story = story_filtered_timeline_items[-1].raw_data["storey"]
-        self.logger.debug(
-            "ElectricBicycleEnteringEventDetector object len:{},story_length:{},board:{},current_story:{}".format(
-                len(object_filtered_timeline_items),
-                len(story_filtered_timeline_items),
-                self.timeline.board_id, current_story))
+        # self.logger.debug(
+        #     "ElectricBicycleEnteringEventDetector object len:{},story_length:{},board:{},current_story:{}".format(
+        #         len(object_filtered_timeline_items),
+        #         len(story_filtered_timeline_items),
+        #         self.timeline.board_id, current_story))
         if len(object_filtered_timeline_items) == 0:
             ebike_confid_threshold = util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
                                                                       'ebic_confid')
@@ -346,12 +346,29 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
             t1 = time.time()
             infer_used_time = (t1 - t0) * 1000
-            self.logger.debug("      board: {}, time used for infer:{}(localConf:{})infer_results: {}".format(
+            self.logger.debug("      board: {}, time used for infer:{}(localConf:{}), raw infer_results: {}".format(
                 self.timeline.board_id, infer_used_time,
                 edge_board_confidence, infer_results))
+            
+            infer_server_current_ebic_confid = 0
+            # triton infer model classes list is defined as : classes = ['background', 'bicycle', 'electric_bicycle', 'people']
+            # sample: (localConf:0.850841)infer_results: temp_infer_image_files\0.jpg, 0.5524(1)=bicycle, 0.4476(2)=electric_bicycle
+            # the `0.4476(2)=electric_bicycle`  means the infer server is 0.4476 sure the object is electric_bicycle
+            # which is less than 50%.
+            m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
+            if m and m.group(0):
+                infer_server_current_ebic_confid = float(m.group(0))
+            else:
+                self.logger.debug(
+                    "      board: {}, sink this eb detect due to infer server treat as non-eb class at all: {}".format(
+                        self.timeline.board_id,
+                        infer_results))
+                continue
+        
+            self.save_sample_image(infer_server_current_ebic_confid, full_base64_image_file_text)
+
             temp = self.__process_infer_result__(
-                item.original_timestamp, edge_board_confidence, full_base64_image_file_text, infer_results, True,
-                current_story)
+                item.original_timestamp, edge_board_confidence, infer_server_current_ebic_confid, current_story)
             eb_entering_event_alarms.extend(temp)
             # if eb_entering_event_alarms and len(eb_entering_event_alarms) > 0:
             #    self.state_obj = {
@@ -372,46 +389,38 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         return eb_entering_event_alarms
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
-                                 full_base64_image_file_text, infer_results, enable_save_sample_image=True, story=0):
+                                 infer_server_ebic_confid, story=0):
         event_alarms = []
-        infer_server_ebic_confid = 0
-        # triton infer model classes list is defined as : classes = ['background', 'bicycle', 'electric_bicycle', 'people']
-        # sample: (localConf:0.850841)infer_results: temp_infer_image_files\0.jpg, 0.5524(1)=bicycle, 0.4476(2)=electric_bicycle
-        # the `0.4476(2)=electric_bicycle`  means the infer server is 0.4476 sure the object is electric_bicycle
-        # which is less than 50%.
-        m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
-        if m and m.group(0):
-            infer_server_ebic_confid = float(m.group(0))
-            ebike_confid_threshold = util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
-                                                                      'ebic_confid')
-            if infer_server_ebic_confid >= ebike_confid_threshold:
-                if self.notifyEbIncomingAndCheckIfThrottleNeeded():
-                    self.logger.debug("board: {}, Throttled a confirmed eb event".format(self.timeline.board_id))
-                    return []
+        ebike_confid_threshold = util.read_fast_from_app_config_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
+                                                                    'ebic_confid')
+        if infer_server_ebic_confid >= ebike_confid_threshold:
+            if self.notifyEbIncomingAndCheckIfThrottleNeeded():
+                self.logger.debug("board: {}, Throttled a high confid: {} eb event".format( self.timeline.board_id,
+                                                                                           infer_server_ebic_confid))
+                return []
 
-            # if infer_server_ebic_confid >= 0.25 and abs(story) == 1:
-            if self.raiseTheAlarm(infer_server_ebic_confid, ebike_confid_threshold) and abs(story) == 1:
-                self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
-                                                                       {"detail": "there's a EB incoming"})
-                event_alarms.append(
-                    event_alarm.EventAlarm(self, timeline_item_original_timestamp, event_alarm.EventAlarmPriority.ERROR,
-                                           "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
-                                               edge_board_confidence, infer_server_ebic_confid)))
-            else:
-                self.logger.debug(
-                    "      board: {}, sink this eb detect due to infer server gives low confidence: {}, "
-                    "or the elevator is not in story 1 or -1, current storey is:{} ".format(
-                        self.timeline.board_id,
-                        infer_results, story))
-                # self.sendMessageToKafka("sink this eb detect. infer server gives low confidence:[]".format(
-                # infer_server_ebic_confid))
-
+        # if infer_server_ebic_confid >= 0.25 and abs(story) == 1:
+        if self.raiseTheAlarm(infer_server_ebic_confid, ebike_confid_threshold) and abs(story) == 1:
+            self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
+                                                                    {"detail": "there's a EB incoming"})
+            event_alarms.append(
+                event_alarm.EventAlarm(self, timeline_item_original_timestamp, event_alarm.EventAlarmPriority.ERROR,
+                                        "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
+                                            edge_board_confidence, infer_server_ebic_confid)))
         else:
             self.logger.debug(
-                "      board: {}, sink this eb detect due to infer server treat as non-eb class at all: {}".format(
+                "      board: {}, sink this eb detect due to infer server gives low confidence: {}, "
+                "or the elevator is not in story 1 or -1, current storey is:{} ".format(
                     self.timeline.board_id,
-                    infer_results))
-        if enable_save_sample_image and infer_server_ebic_confid >= 0.01:
+                    infer_server_ebic_confid, story))
+            # self.sendMessageToKafka("sink this eb detect. infer server gives low confidence:[]".format(
+            # infer_server_ebic_confid))
+
+        
+        return event_alarms
+    
+    def save_sample_image(self, infer_server_ebic_confid, full_base64_image_file_text):
+        if infer_server_ebic_confid >= 0.01:
             image_sample_path = os.path.join(
                 ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
             if not os.path.exists(image_sample_path):
@@ -429,7 +438,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 temp_full_image.save(os.path.join(
                     image_sample_path,
                     str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
-        return event_alarms
 
     def raiseTheAlarm(self, infer_result, ebike_confid_threshold):
         result = False
