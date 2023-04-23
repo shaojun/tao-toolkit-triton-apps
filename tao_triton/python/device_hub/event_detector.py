@@ -392,6 +392,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
                                  infer_server_ebic_confid, story=0):
+                                 infer_server_ebic_confid, story=0):
         event_alarms = []
         ebike_confid_threshold = util.read_fast_from_app_config_to_property(
             ["detectors", ElectricBicycleEnteringEventDetector.__name__],
