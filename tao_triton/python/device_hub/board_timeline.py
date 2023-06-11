@@ -75,8 +75,8 @@ class BoardTimeline:
             self.__purge_items()
 
         self.foward_object_to_board(items)
-        if len(items) == 1 and items[0].raw_data == '':
-            return
+        # if len(items) == 1 and items[0].raw_data == '':
+        #    return
 
         event_alarms = []
         for d in self.event_detectors:
