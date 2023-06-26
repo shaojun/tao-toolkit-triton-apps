@@ -287,7 +287,7 @@ def infer(verbose: bool, async_set: bool, streaming: bool, model_name: str, mode
                 if FLAGS.mode.lower() == "yolov3" or FLAGS.mode.lower() == "retinanet":
                     img = frame._load_img()
                     repeated_image_data.append(img)
-                elif FLAGS.mode.lower() == "multitask_classification":
+                elif FLAGS.mode.lower() == "multitask_classification" or FLAGS.mode.lower() == "classification":
                     img = frame._load_img_multitask_classification()
                     repeated_image_data.append(img)
                 elif FLAGS.mode.lower() == "peoplesegnet":

@@ -1,5 +1,5 @@
 # Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
 # "Software"), to deal in the Software without restriction, including
@@ -7,10 +7,10 @@
 # distribute, sublicense, and/or sell copies of the Software, and to
 # permit persons to whom the Software is furnished to do so, subject to
 # the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be
 # included in all copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 # EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
 # MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
@@ -32,7 +32,7 @@ class ClassificationPostprocessor(Postprocessor):
 
     def __init__(self, batch_size, frames, output_path, data_format):
         """Initialize a post processor class for a classification model.
-        
+
         Args:
             batch_size (int): Number of images in the batch.
             frames (list): List of images.
@@ -55,12 +55,14 @@ class ClassificationPostprocessor(Postprocessor):
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
         output_file = os.path.join(self.output_path, "results.txt")
+        output_result = []
         with open(output_file, "w") as wfile:
             for idx in range(self.batch_size):
                 results = output_array[idx]
                 current_idx = (int(this_id) - 1) * self.batch_size + idx
                 if current_idx < len(self.frames):
-                    wfile.write("{}".format(self.frames[current_idx]._image_path))
+                    wfile.write("{}".format(
+                        self.frames[current_idx]._image_path))
                     if not batching:
                         results = [results]
                     for result in results:
@@ -68,11 +70,16 @@ class ClassificationPostprocessor(Postprocessor):
                             cls = "".join(chr(x) for x in result).split(':')
                         else:
                             cls = result.split(':')
+                        output_result.append({'infer_image_path': self.frames[current_idx]._image_path,
+                                              'infer_confid': float(cls[0]),
+                                              'infer_class_index': int(cls[1]),
+                                              'infer_class_name': cls[2]})
                         wfile.write(
                             ", {:0.4f}({})={}".format(
                                 float(cls[0]), cls[1], cls[2]
                             )
                         )
-                    #wfile.write("\n")
+                    # wfile.write("\n")
                 else:
                     break
+        return output_result

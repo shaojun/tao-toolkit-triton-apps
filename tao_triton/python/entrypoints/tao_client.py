@@ -1,5 +1,5 @@
 # Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
 # "Software"), to deal in the Software without restriction, including
@@ -7,10 +7,10 @@
 # distribute, sublicense, and/or sell copies of the Software, and to
 # permit persons to whom the Software is furnished to do so, subject to
 # the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be
 # included in all copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 # EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
 # MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
@@ -19,6 +19,31 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+from tao_triton.python.model.multitask_classification_model import MultitaskClassificationModel
+from tao_triton.python.model.retinanet_model import RetinanetModel
+from tao_triton.python.model.peoplesegnet_model import PeoplesegnetModel
+from tao_triton.python.model.yolov3_model import YOLOv3Model
+from tao_triton.python.model.lprnet_model import LPRModel
+from tao_triton.python.model.classification_model import ClassificationModel
+from tao_triton.python.model.detectnet_model import DetectnetModel
+from tao_triton.python.utils.kitti import write_kitti_annotation
+from tao_triton.python.postprocessing.multitask_classification_postprocessor import MultitaskClassificationPostprocessor
+from tao_triton.python.postprocessing.retinanet_postprocessor import RetinanetPostprocessor
+from tao_triton.python.postprocessing.peoplesegnet_postprocessor import PeoplesegnetPostprocessor
+from tao_triton.python.postprocessing.yolov3_postprocessor import YOLOv3Postprocessor
+from tao_triton.python.postprocessing.lprnet_postprocessor import LPRPostprocessor
+from tao_triton.python.postprocessing.classification_postprocessor import ClassificationPostprocessor
+from tao_triton.python.postprocessing.detectnet_processor import DetectNetPostprocessor
+from tao_triton.python.types import Frame, UserData
+from tritonclient.utils import triton_to_np_dtype
+from tritonclient.utils import InferenceServerException
+import tritonclient.http as httpclient
+import tritonclient.grpc.model_config_pb2 as mc
+import tritonclient.grpc as grpcclient
+from tqdm import tqdm
+from PIL import Image
+import numpy as np
+from attrdict import AttrDict
 import argparse
 from copy import deepcopy
 from functools import partial
@@ -26,33 +51,7 @@ import logging
 import os
 import sys
 sys.path.append(r'../../../../tao-toolkit-triton-apps')
-from attrdict import AttrDict
-import numpy as np
-from PIL import Image
-from tqdm import tqdm
 
-import tritonclient.grpc as grpcclient
-import tritonclient.grpc.model_config_pb2 as mc
-import tritonclient.http as httpclient
-from tritonclient.utils import InferenceServerException
-from tritonclient.utils import triton_to_np_dtype
-
-from tao_triton.python.types import Frame, UserData
-from tao_triton.python.postprocessing.detectnet_processor import DetectNetPostprocessor
-from tao_triton.python.postprocessing.classification_postprocessor import ClassificationPostprocessor
-from tao_triton.python.postprocessing.lprnet_postprocessor import LPRPostprocessor
-from tao_triton.python.postprocessing.yolov3_postprocessor import YOLOv3Postprocessor
-from tao_triton.python.postprocessing.peoplesegnet_postprocessor import PeoplesegnetPostprocessor
-from tao_triton.python.postprocessing.retinanet_postprocessor import RetinanetPostprocessor
-from tao_triton.python.postprocessing.multitask_classification_postprocessor import MultitaskClassificationPostprocessor
-from tao_triton.python.utils.kitti import write_kitti_annotation
-from tao_triton.python.model.detectnet_model import DetectnetModel
-from tao_triton.python.model.classification_model import ClassificationModel
-from tao_triton.python.model.lprnet_model import LPRModel
-from tao_triton.python.model.yolov3_model import YOLOv3Model
-from tao_triton.python.model.peoplesegnet_model import PeoplesegnetModel
-from tao_triton.python.model.retinanet_model import RetinanetModel
-from tao_triton.python.model.multitask_classification_model import MultitaskClassificationModel
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ TRITON_MODEL_DICT = {
     "yolov3": YOLOv3Model,
     "peoplesegnet": PeoplesegnetModel,
     "retinanet": RetinanetModel,
-    "multitask_classification":MultitaskClassificationModel
+    "multitask_classification": MultitaskClassificationModel
 }
 
 POSTPROCESSOR_DICT = {
@@ -168,7 +167,8 @@ def parse_command_line(args=None):
                         help='Batch size. Default is 1.')
     parser.add_argument('--mode',
                         type=str,
-                        choices=['Classification', "DetectNet_v2", "LPRNet", "YOLOv3", "Peoplesegnet", "Retinanet", "Multitask_classification"],
+                        choices=['Classification', "DetectNet_v2", "LPRNet", "YOLOv3",
+                                 "Peoplesegnet", "Retinanet", "Multitask_classification"],
                         required=False,
                         default='NONE',
                         help='Type of scaling to apply to image pixels. Default is NONE.')
@@ -204,12 +204,27 @@ def parse_command_line(args=None):
                         type=str,
                         default="",
                         help="Path to the DetectNet_v2 clustering config.")
-    return parser.parse_args()
+    return parser.parse_args(args)
 
 
 def main():
+    callable_main(sys.argv[1:])
+
+
+model_metadata = None
+model_config = None
+# This function is used to run the inferencer client from another python script.
+# params:
+#   args: list of arguments to be passed to the inferencer client.
+# returns: 2 dimensional list of inference results, where each row is a source image's infer results,
+#       each result is a list of infer detail correlated to each class, the lower index has the higher confidence.
+
+
+def callable_main(args):
+    global model_metadata
+    global model_config
     """Running the inferencer client."""
-    FLAGS = parse_command_line(sys.argv[1:])
+    FLAGS = parse_command_line(args)
     if FLAGS.mode.lower() == "detectnet_v2":
         assert os.path.isfile(FLAGS.postprocessing_config), (
             "Clustering config must be defined for DetectNet_v2."
@@ -242,19 +257,21 @@ def main():
 
     # Make sure the model matches our requirements, and get some
     # properties of the model that we need for preprocessing
-    try:
-        model_metadata = triton_client.get_model_metadata(
-            model_name=FLAGS.model_name, model_version=FLAGS.model_version)
-    except InferenceServerException as e:
-        print("failed to retrieve the metadata: " + str(e))
-        sys.exit(1)
+    if model_metadata is None:
+        try:
+            model_metadata = triton_client.get_model_metadata(
+                model_name=FLAGS.model_name, model_version=FLAGS.model_version)
+        except InferenceServerException as e:
+            print("failed to retrieve the metadata: " + str(e))
+            sys.exit(1)
 
-    try:
-        model_config = triton_client.get_model_config(
-            model_name=FLAGS.model_name, model_version=FLAGS.model_version)
-    except InferenceServerException as e:
-        print("failed to retrieve the config: " + str(e))
-        sys.exit(1)
+    if model_config is None:
+        try:
+            model_config = triton_client.get_model_config(
+                model_name=FLAGS.model_name, model_version=FLAGS.model_version)
+        except InferenceServerException as e:
+            print("failed to retrieve the config: " + str(e))
+            sys.exit(1)
 
     if FLAGS.protocol.lower() == "grpc":
         model_config = model_config.config
@@ -262,7 +279,8 @@ def main():
         model_metadata, model_config = convert_http_metadata_config(
             model_metadata, model_config)
 
-    triton_model = TRITON_MODEL_DICT[FLAGS.mode.lower()].from_metadata(model_metadata, model_config)
+    triton_model = TRITON_MODEL_DICT[FLAGS.mode.lower()].from_metadata(
+        model_metadata, model_config)
     target_shape = (triton_model.c, triton_model.h, triton_model.w)
     npdtype = triton_to_np_dtype(triton_model.triton_dtype)
     max_batch_size = triton_model.max_batch_size
@@ -300,7 +318,8 @@ def main():
         FLAGS.batch_size, frames, FLAGS.output_path, triton_model.data_format
     ]
     if FLAGS.mode.lower() == "detectnet_v2":
-        args_postprocessor.extend([class_list, FLAGS.postprocessing_config, target_shape])
+        args_postprocessor.extend(
+            [class_list, FLAGS.postprocessing_config, target_shape])
     postprocessor = POSTPROCESSOR_DICT[FLAGS.mode.lower()](*args_postprocessor)
 
     # Holds the handles to the ongoing HTTP async requests.
@@ -322,7 +341,7 @@ def main():
                 if FLAGS.mode.lower() == "yolov3" or FLAGS.mode.lower() == "retinanet":
                     img = frame._load_img()
                     repeated_image_data.append(img)
-                elif FLAGS.mode.lower() == "multitask_classification":
+                elif FLAGS.mode.lower() == "multitask_classification" or FLAGS.mode.lower() == "classification":
                     img = frame._load_img_multitask_classification()
                     repeated_image_data.append(img)
                 elif FLAGS.mode.lower() == "peoplesegnet":
@@ -347,12 +366,13 @@ def main():
             # Send request
             try:
                 req_gen_args = [batched_image_data, triton_model.input_names,
-                    triton_model.output_names, triton_model.triton_dtype,
-                    FLAGS.protocol.lower()]
+                                triton_model.output_names, triton_model.triton_dtype,
+                                FLAGS.protocol.lower()]
                 req_gen_kwargs = {}
                 if FLAGS.mode.lower() == "classification":
                     req_gen_kwargs["num_classes"] = model_config.output[0].dims[0]
-                req_generator = requestGenerator(*req_gen_args, **req_gen_kwargs)
+                req_generator = requestGenerator(
+                    *req_gen_args, **req_gen_kwargs)
                 for inputs, outputs in req_generator:
                     sent_count += 1
                     if FLAGS.streaming:
@@ -385,14 +405,14 @@ def main():
                                                 inputs,
                                                 request_id=str(sent_count),
                                                 model_version=FLAGS.model_version,
-                                                outputs=outputs))
+                                                outputs=outputs, timeout=3000))
 
             except InferenceServerException as e:
                 print("inference failed: " + str(e))
                 if FLAGS.streaming:
                     triton_client.stop_stream()
                 sys.exit(1)
-            
+
             pbar.update(FLAGS.batch_size)
 
     if FLAGS.streaming:
@@ -415,8 +435,10 @@ def main():
             for async_request in async_requests:
                 responses.append(async_request.get_result())
 
-    logger.info("Gathering responses from the server and post processing the inferenced outputs.")
+    logger.info(
+        "Gathering responses from the server and post processing the inferenced outputs.")
     processed_request = 0
+    return_infer_results = []
     with tqdm(total=len(frames)) as pbar:
         while processed_request < sent_count:
             response = responses[processed_request]
@@ -424,12 +446,16 @@ def main():
                 this_id = response.get_response().id
             else:
                 this_id = response.get_response()["id"]
-            postprocessor.apply(
+            infer_results = postprocessor.apply(
                 response, this_id, render=True
             )
+
+            return_infer_results.append(infer_results)
             processed_request += 1
             pbar.update(FLAGS.batch_size)
     logger.info("PASS")
+    return return_infer_results
+
 
 if __name__ == '__main__':
     main()
