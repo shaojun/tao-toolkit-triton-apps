@@ -12,8 +12,10 @@ import base64
 import io
 import event_alarm
 import board_timeline
-from tao_triton.python.device_hub import base64_tao_client, util
+from tao_triton.python.device_hub import util
+from tao_triton.python.entrypoints import tao_client
 from json import dumps
+import uuid
 
 
 class EventDetectorBase:
@@ -196,7 +198,7 @@ class DoorStateChangedEventDetector(EventDetectorBase):
         # store it back
         self.state_obj = new_state_obj
         if (last_state_obj and last_state_obj["last_door_state"] != new_state_obj[
-            "last_door_state"]) or last_state_obj is None:
+                "last_door_state"]) or last_state_obj is None:
             self.__fire_on_property_changed_event_to_subscribers__(
                 "door_state",
                 {"last_state": "None" if last_state_obj is None else last_state_obj["last_door_state"],
@@ -205,10 +207,10 @@ class DoorStateChangedEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.INFO,
-                                       "Door state changed to: {},human_inside:{}".format(
-                                           new_state_obj["last_door_state"], hasPereson), code,
-                                       {"human_inside": hasPereson})]
+                    event_alarm.EventAlarmPriority.INFO,
+                    "Door state changed to: {},human_inside:{}".format(
+                    new_state_obj["last_door_state"], hasPereson), code,
+                    {"human_inside": hasPereson})]
         return None
 
 
@@ -221,6 +223,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
     THROTTLE_Window_Depth = 2
     THROTTLE_Window_Time_By_Sec = 5
 
+    # infer to remote triton server based on a local image file, this is the temp folder to store the image file
+    temp_image_files_folder_name = "temp_infer_image_files"
+
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
         # self.logger = logging.getLogger(__name__)
@@ -229,6 +234,22 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         # self.logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
         self.infer_confirmed_eb_history_list = []
         self.local_ebike_infer_result_list = []
+
+        # purge previous temp files
+        if os.path.exists(self.temp_image_files_folder_name):
+            for filename in os.listdir(self.temp_image_files_folder_name):
+                file_path = os.path.join(
+                    self.temp_image_files_folder_name, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    print('Failed to delete temp_image_files_folder %s. Reason: %s' % (
+                        file_path, e))
+        else:
+            os.makedirs(self.temp_image_files_folder_name)
 
     def prepare(self, timeline, event_detectors):
         """
@@ -333,43 +354,46 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             #                                         FLAGS.output_path,
             #                                         [cropped_base64_image_file_text])
             # 推理服务器36.153.41.18:18000
+            temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
+                                                             str(uuid.uuid4()) + '.jpg')
+            temp_image = Image.open(io.BytesIO(base64.decodebytes(
+                cropped_base64_image_file_text.encode('ascii'))))
+            temp_image.save(temp_cropped_image_file_full_name)
             t0 = time.time()
             try:
-                infer_results = base64_tao_client.infer(False, False, False,
-                                                        "elenet_four_classes_230618_tao", "",
-                                                        1, "",
-                                                        False, "192.168.66.149:8000", "HTTP", "Classification",
-                                                        os.path.join(
-                                                            os.getcwd(), "outputs"),
-                                                        [cropped_base64_image_file_text])
+                raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230618_tao',
+                                                                    '--mode', 'Classification',
+                                                                    '-u', '192.168.66.149:8000',
+                                                                    '--output_path', './',
+                                                                    temp_cropped_image_file_full_name])
+                infered_class = raw_infer_results[0][0]['infer_class_name']
+                infer_server_current_ebic_confid = raw_infer_results[0][0]['infer_confid']
             except:
                 self.logger.exception(
-                    "base64_tao_client.infer(...) rasised an exception:")
+                    "tao_client.callable_main(...) rasised an exception:")
                 return
 
             t1 = time.time()
+
             infer_used_time = (t1 - t0) * 1000
             self.logger.debug("      board: {}, time used for infer:{}(localConf:{}), raw infer_results: {}".format(
                 self.timeline.board_id, infer_used_time,
-                edge_board_confidence, infer_results))
+                edge_board_confidence, infered_class))
 
-            infer_server_current_ebic_confid = 0
-            # triton infer model classes list is defined as : classes = ['background', 'bicycle', 'electric_bicycle', 'people']
-            # sample: (localConf:0.850841)infer_results: temp_infer_image_files\0.jpg, 0.5524(1)=bicycle, 0.4476(2)=electric_bicycle
-            # the `0.4476(2)=electric_bicycle`  means the infer server is 0.4476 sure the object is electric_bicycle
-            # which is less than 50%.
-            m = re.search('\d\.\d+(?=\(\d\)\=electric_bicycle)', infer_results)
-            if m and m.group(0):
-                infer_server_current_ebic_confid = float(m.group(0))
-            else:
+            if infered_class != 'electric_bicycle':
                 self.logger.debug(
                     "      board: {}, sink this eb detect due to infer server treat as non-eb class at all: {}".format(
                         self.timeline.board_id,
-                        infer_results))
+                        infered_class))
                 continue
-
-            self.save_sample_image(
-                infer_server_current_ebic_confid, full_base64_image_file_text)
+            try:
+                self.save_sample_image(temp_cropped_image_file_full_name,
+                                       infer_server_current_ebic_confid, full_base64_image_file_text)
+            except:
+                self.logger.exception(
+                    "save_sample_image(...) rasised an exception:")
+            if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
+                os.unlink(temp_cropped_image_file_full_name)
 
             temp = self.__process_infer_result__(
                 item.original_timestamp, edge_board_confidence, infer_server_current_ebic_confid, current_story)
@@ -398,7 +422,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         ebike_confid_threshold = util.read_fast_from_app_config_to_property(
             ["detectors", ElectricBicycleEnteringEventDetector.__name__],
             'ebic_confid')
-        self.sendEBikeConfirmToLocal(infer_server_ebic_confid, ebike_confid_threshold)
+        self.sendEBikeConfirmToLocal(
+            infer_server_ebic_confid, ebike_confid_threshold)
         if infer_server_ebic_confid >= ebike_confid_threshold:
             if self.notifyEbIncomingAndCheckIfThrottleNeeded(infer_server_ebic_confid):
                 self.logger.debug("board: {}, Throttled a high confid: {} eb event".format(self.timeline.board_id,
@@ -424,7 +449,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
         return event_alarms
 
-    def save_sample_image(self, infer_server_ebic_confid, full_base64_image_file_text):
+    def save_sample_image(self, image_file_full_name, infer_server_ebic_confid, full_base64_image_file_text):
         if infer_server_ebic_confid >= 0.01:
             image_sample_path = os.path.join(
                 ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
@@ -432,7 +457,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 os.makedirs(image_sample_path)
             file_name_timestamp_str = str(
                 datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%f")[:-3])
-            shutil.copyfile(os.path.join("temp_infer_image_files", "0.jpg"),
+            shutil.copyfile(image_file_full_name,
                             os.path.join(
                                 image_sample_path,
                                 str(infer_server_ebic_confid) + "___" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
@@ -531,7 +556,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             return
         if len(self.local_ebike_infer_result_list) == 0:
             self.logger.debug("send ebike confirm")
-            self.sendMessageToKafka(("Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed"))
+            self.sendMessageToKafka(
+                ("Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed"))
             self.local_ebike_infer_result_list.append(
                 {"infer_result": infer_result, "confirm_send": True, "infer_time": datetime.datetime.now()})
             return
@@ -541,9 +567,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         self.local_ebike_infer_result_list.append(
             {"infer_result": infer_result, "confirm_send": False, "infer_time": datetime.datetime.now()})
         if len(self.local_ebike_infer_result_list) >= local_ebike_count and self.local_ebike_infer_result_list[0][
-            "confirm_send"]:
-            confirmed_result = [i for i in self.local_ebike_infer_result_list if i["infer_result"] >= config_result]
-            config_result_85 = [i for i in self.local_ebike_infer_result_list if i["infer_result"] >= 0.85]
+                "confirm_send"]:
+            confirmed_result = [
+                i for i in self.local_ebike_infer_result_list if i["infer_result"] >= config_result]
+            config_result_85 = [
+                i for i in self.local_ebike_infer_result_list if i["infer_result"] >= 0.85]
             # since the infer is so sure, then let it go through and not to cancel confirm
             if len(config_result_85) > 0:
                 self.local_ebike_infer_result_list[0]["confirm_send"] = False
@@ -605,7 +633,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             if self.state_obj and "last_infer_timestamp" in self.state_obj:
                 # we don't want to report too freq
                 last_report_time_diff = (
-                        datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
+                    datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
                 # if last_report_time_diff <= 60 * 60 * 24:
                 if last_report_time_diff <= 60 * 10:
                     continue
@@ -760,8 +788,8 @@ class BlockingDoorEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.ERROR,
-                                       "电梯门被遮挡", "002")]
+                    event_alarm.EventAlarmPriority.ERROR,
+                    "电梯门被遮挡", "002")]
 
         return None
 
@@ -810,7 +838,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
                     not i.consumed
                     and
                     ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and (
-                            "Person|#" in i.raw_data in i.raw_data)) or
+                        "Person|#" in i.raw_data in i.raw_data)) or
                      (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED))]
 
         return filter
@@ -843,7 +871,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         new_state_obj = None
         if last_state_obj and "last_report_timestamp" in last_state_obj:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_obj["last_report_timestamp"]).total_seconds()
+                datetime.datetime.now() - last_state_obj["last_report_timestamp"]).total_seconds()
             # 如果短时间内上报过
             if last_report_time_diff < 120:
                 return None
@@ -860,13 +888,13 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if (datetime.datetime.now(datetime.timezone.utc) - object_person.original_timestamp).total_seconds() < 20:
             return None
         self.logger.debug("困人检测中共发现{}人，最早目标出现在:{}".format(len(person_filtered_timeline_items),
-                                                                          object_person.original_timestamp_str))
+                                                          object_person.original_timestamp_str))
         object_person = None
         for person in reversed(person_filtered_timeline_items):
             latest_time_diff = (
-                    datetime.datetime.now(datetime.timezone.utc) - person.original_timestamp).total_seconds()
+                datetime.datetime.now(datetime.timezone.utc) - person.original_timestamp).total_seconds()
             person_door_close_time_diff = (
-                    door_state["notify_time"] - person.original_timestamp).total_seconds()
+                door_state["notify_time"] - person.original_timestamp).total_seconds()
             if latest_time_diff < 3 and person_door_close_time_diff < 0:
                 object_person = person
             break
@@ -875,7 +903,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if not object_person:
             return None
         if (datetime.datetime.now(datetime.timezone.utc) - person_filtered_timeline_items[
-            0].original_timestamp).total_seconds() < 90:
+                0].original_timestamp).total_seconds() < 90:
             return None
         # speed
         speed_filtered_timeline_items = [i for i in filtered_timeline_items if i.item_type ==
@@ -898,10 +926,10 @@ class PeopleStuckEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.ERROR,
-                                       "{}发现有人困在电梯内".format(
-                                           new_state_obj["last_report_timestamp"].strftime("%d/%m/%Y %H:%M:%S")),
-                                       "001")]
+                    event_alarm.EventAlarmPriority.ERROR,
+                    "{}发现有人困在电梯内".format(
+                    new_state_obj["last_report_timestamp"].strftime("%d/%m/%Y %H:%M:%S")),
+                    "001")]
         return None
 
 
@@ -947,7 +975,7 @@ class ElevatorOverspeedEventDetector(EventDetectorBase):
                 (datetime.datetime.now() - self.state_obj["last_notify_time_stamp"]).total_seconds() < 300:
             return None
         last_state_obj = None if not (
-                self.state_obj and "state" in self.state_obj) else self.state_obj["state"]
+            self.state_obj and "state" in self.state_obj) else self.state_obj["state"]
         new_state_obj = None
         for item in reversed(filtered_timeline_items):
             if item.item_type == board_timeline.TimelineItemType.LOCAL_IDLE_LOOP:
@@ -973,8 +1001,8 @@ class ElevatorOverspeedEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.WARNING,
-                                       "电梯超速，当前速度：{}m/s".format(new_state_obj["last_speed"]), "0020")]
+                    event_alarm.EventAlarmPriority.WARNING,
+                    "电梯超速，当前速度：{}m/s".format(new_state_obj["last_speed"]), "0020")]
         return None
 
 
@@ -1044,7 +1072,7 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                                 "last_report_time"]
                             if last_report_time:
                                 report_time_diff = (
-                                        datetime.datetime.now() - last_report_time).total_seconds()
+                                    datetime.datetime.now() - last_report_time).total_seconds()
                                 if report_time_diff < 20:
                                     self.logger.debug(
                                         "last report time:{},time_diff:{}".format(last_report_time, report_time_diff))
@@ -1102,7 +1130,7 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                 return None
             self.logger.debug(
                 "反复开关门判断中出现人：{},raw:{}".format(target_persons[-1].original_timestamp_str,
-                                                          target_persons[-1].raw_data))
+                                               target_persons[-1].raw_data))
 
         alarms = self.alarms_to_fire
         self.alarms_to_fire = []
@@ -1133,7 +1161,7 @@ class PassagerVigorousExerciseEventDetector(EventDetectorBase):
                       # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
                       ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "Person|#" in i.raw_data) or
                        (
-                               i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED and "acceleration" in i.raw_data))]
+                          i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED and "acceleration" in i.raw_data))]
             return result
 
         return filter
@@ -1148,7 +1176,7 @@ class PassagerVigorousExerciseEventDetector(EventDetectorBase):
         new_state_obj = None
         if last_state_obj and "last_notify_timestamp" in last_state_obj:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
+                datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
             if last_report_time_diff < 120:
                 return None
 
@@ -1175,8 +1203,8 @@ class PassagerVigorousExerciseEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.ERROR,
-                                       "剧烈运动，当前加速度: {}".format(new_state_obj["acceleration"]), "005")]
+                    event_alarm.EventAlarmPriority.ERROR,
+                    "剧烈运动，当前加速度: {}".format(new_state_obj["acceleration"]), "005")]
         return None
 
 
@@ -1250,7 +1278,7 @@ class DoorOpeningAtMovingEventDetector(EventDetectorBase):
             last_state_obj = self.state_obj["last_notify_timestamp"]
         if last_state_obj:
             last_notify_time_diff = (
-                    datetime.datetime.now() - last_state_obj).total_seconds()
+                datetime.datetime.now() - last_state_obj).total_seconds()
             if last_notify_time_diff < 10:
                 return None
         temp_speed = 0.0
@@ -1270,8 +1298,8 @@ class DoorOpeningAtMovingEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.WARNING,
-                                       "电梯门在运行中打开,当前速度为:{}m/s".format(temp_speed), "0022")]
+                    event_alarm.EventAlarmPriority.WARNING,
+                    "电梯门在运行中打开,当前速度为:{}m/s".format(temp_speed), "0022")]
         return None
 
 
@@ -1313,7 +1341,7 @@ class ElevatorSuddenlyStoppedEventDetector(EventDetectorBase):
             last_state_obj = self.state_obj
         if last_state_obj:
             last_notify_time_diff = (
-                    datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
+                datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
             if last_notify_time_diff < 300:
                 return None
 
@@ -1339,12 +1367,12 @@ class ElevatorSuddenlyStoppedEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.WARNING,
-                                       "电梯发生急停,速度从{}的{}m/s在{}变成{}".format(
-                                           new_state_obj["previous_time"],
-                                           new_state_obj["previous_speed"],
-                                           new_state_obj["current_time"],
-                                           new_state_obj["current_speed"]), "006")]
+                    event_alarm.EventAlarmPriority.WARNING,
+                    "电梯发生急停,速度从{}的{}m/s在{}变成{}".format(
+                    new_state_obj["previous_time"],
+                    new_state_obj["previous_speed"],
+                    new_state_obj["current_time"],
+                    new_state_obj["current_speed"]), "006")]
         return None
 
 
@@ -1411,7 +1439,7 @@ class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
             last_state_obj = self.state_obj
         if last_state_obj:
             last_notify_time_diff = (
-                    datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
+                datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
             if last_notify_time_diff < 60 * 60 * 24:
                 return None
         if self.last_door_open_state_time \
@@ -1497,7 +1525,7 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
 
         if last_state_object:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_object).total_seconds()
+                datetime.datetime.now() - last_state_object).total_seconds()
             if last_report_time_diff < 120:
                 return None
         person_timeline_item = [i for i in filtered_timeline_items if i.item_type ==
@@ -1523,8 +1551,8 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
             self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
             return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                           event_alarm.EventAlarmPriority.WARNING,
-                                           "电梯无人，上下往返: {}次".format(len(storey_three_timeline_item)), "0019")]
+                event_alarm.EventAlarmPriority.WARNING,
+                "电梯无人，上下往返: {}次".format(len(storey_three_timeline_item)), "0019")]
 
         return None
 
@@ -1572,7 +1600,7 @@ class TemperatureTooHighEventDetector(EventDetectorBase):
                              "last_notify_timestamp": datetime.datetime.now()}
         if last_state_obj:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
+                datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
             if last_report_time_diff < 10:
                 return None
         # store it back, and it will be passed in at next call
@@ -1582,9 +1610,10 @@ class TemperatureTooHighEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.WARNING,
-                                       "电梯温度异常，当前温度: {}".format(new_state_obj["last_temperature_state"]),
-                                       "0013")]
+                    event_alarm.EventAlarmPriority.WARNING,
+                    "电梯温度异常，当前温度: {}".format(
+                        new_state_obj["last_temperature_state"]),
+                    "0013")]
         return None
 
 
@@ -1626,7 +1655,7 @@ class ElevatorShockEventDetector(EventDetectorBase):
         new_state_obj = None
         if last_state_obj:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
+                datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
             if last_report_time_diff < 5:
                 return None
 
@@ -1646,11 +1675,11 @@ class ElevatorShockEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.WARNING,
-                                       "电梯发生震动:当前加速度:{}m/s2，配置的最大加速度为：{}m/s2".format(
-                                           new_state_obj["current_acceleration"],
-                                           new_state_obj["configured_max_acceleration"]),
-                                       "005")]
+                    event_alarm.EventAlarmPriority.WARNING,
+                    "电梯发生震动:当前加速度:{}m/s2，配置的最大加速度为：{}m/s2".format(
+                    new_state_obj["current_acceleration"],
+                    new_state_obj["configured_max_acceleration"]),
+                    "005")]
         return None
 
 
@@ -1686,7 +1715,7 @@ class ElevatorJamsEventDetector(EventDetectorBase):
         new_state_obj = None
         if last_state_obj:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
+                datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
             if last_report_time_diff < 30:
                 return None
         # 识别到的人的记录小于10条，那么不算拥挤
@@ -1705,9 +1734,9 @@ class ElevatorJamsEventDetector(EventDetectorBase):
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.WARNING,
-                                       "电梯拥堵:当前人数:{}".format(len(target_persons)),
-                                       "0011")]
+                    event_alarm.EventAlarmPriority.WARNING,
+                    "电梯拥堵:当前人数:{}".format(len(target_persons)),
+                    "0011")]
         return None
 
 
@@ -1736,10 +1765,10 @@ class ElevatorMileageEventDetector(EventDetectorBase):
                       # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
                       and ((i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
                             and "storey" in i.raw_data) or (
-                                   i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
-                                   and "speed" in i.raw_data
-                           ) or (
-                                   i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "Person|#" in i.raw_data))]
+                          i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
+                          and "speed" in i.raw_data
+                      ) or (
+                          i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "Person|#" in i.raw_data))]
             return result
 
         return filter
@@ -1836,11 +1865,11 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                       # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
                       and ((i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
                             and "storey" in i.raw_data) or (
-                                   i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
-                                   and "speed" in i.raw_data) or (
-                                   i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
-                                   and "Person|#" in i.raw_data
-                           ))]
+                          i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED
+                          and "speed" in i.raw_data) or (
+                          i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT
+                          and "Person|#" in i.raw_data
+                      ))]
             return result
 
         return filter
@@ -1938,7 +1967,7 @@ class GyroscopeFaultEventDetector(EventDetectorBase):
             return None
         if last_state_object:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+                datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
             if last_report_time_diff < 600:
                 return None
         target_timeline_items = filtered_timeline_items[-5:]
@@ -1995,7 +2024,7 @@ class PressureFaultEventDetector(EventDetectorBase):
             return None
         if last_state_object:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+                datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
             if last_report_time_diff < 600:
                 return None
         target_timeline_items = filtered_timeline_items[-5:]
@@ -2064,7 +2093,7 @@ class ElectricSwitchFaultEventDetector(EventDetectorBase):
         target_timeline_item = filtered_timeline_items[-1]
         if last_state_object:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+                datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
             # 光电故障6小时报一次，不用太频繁
             if last_report_time_diff < 21600:
                 target_timeline_item.consumed = True
@@ -2246,7 +2275,7 @@ class DetectPersonOnTopEventDetector(EventDetectorBase):
                             "time_stamp": datetime.datetime.now()}
         if last_state_object:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+                datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
             # 检测顶部有人5分钟报一次
             if last_report_time_diff < 300 and "detectPerson" in last_state_object and \
                     last_state_object["detectPerson"] == detect_person:
@@ -2304,7 +2333,7 @@ class DetectCameraBlockedEventDetector(EventDetectorBase):
                                     "time_stamp": datetime.datetime.now()}
         if last_state_object:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+                datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
             # 检测顶部有人5分钟报一次
             if last_report_time_diff < 300:
                 return None
