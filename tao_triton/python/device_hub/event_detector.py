@@ -336,7 +336,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             t0 = time.time()
             try:
                 infer_results = base64_tao_client.infer(False, False, False,
-                                                        "elenet_four_classes_230417_tao", "",
+                                                        "elenet_four_classes_230618_tao", "",
                                                         1, "",
                                                         False, "192.168.66.149:8000", "HTTP", "Classification",
                                                         os.path.join(
