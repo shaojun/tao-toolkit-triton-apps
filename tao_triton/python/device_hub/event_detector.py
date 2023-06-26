@@ -532,7 +532,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                          (datetime.datetime.now() - i["infer_time"]).total_seconds() > ElectricBicycleEnteringEventDetector.THROTTLE_Window_Time_By_Sec]
         self.infer_confirmed_eb_history_list = [
             i for i in self.infer_confirmed_eb_history_list if i not in expired_items]
-        if confirmed_confid >= 0.85:
+        if confirmed_confid >= 0.99:
             # since the infer is so sure, then let it go through and not to throttle.
             return False
         if len(self.infer_confirmed_eb_history_list) < ElectricBicycleEnteringEventDetector.THROTTLE_Window_Depth:
