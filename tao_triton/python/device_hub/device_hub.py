@@ -86,7 +86,8 @@ def create_boardtimeline(board_id: str):
                        event_detector.ElectricSwitchFaultEventDetector(logging),
                        event_detector.DeviceOfflineEventDetector(logging),
                        event_detector.DetectPersonOnTopEventDetector(logging),
-                       event_detector.DetectCameraBlockedEventDetector(logging)
+                       event_detector.DetectCameraBlockedEventDetector(logging),
+                       #event_detector.CameraDetectVehicleEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
@@ -227,6 +228,7 @@ if __name__ == '__main__':
     # consumer.subscribe(pattern="suzhou_yang_testing_jtsn4g")
     consumer.subscribe(pattern="^E[0-9]+$")
     # consumer.subscribe(pattern="shaoLocalJts2gBoard")
+    # consumer.subscribe(pattern="test_123")
 
 while True:
     try:
@@ -311,6 +313,11 @@ while True:
                         new_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
                                                         board_timeline.TimelineItemType.CAMERA_BLOCKED,
+                                                        board_msg_original_timestamp, board_msg_id, obj_data))
+                    elif "eventType" in obj_data:
+                        new_items.append(
+                            board_timeline.TimelineItem(cur_board_timeline,
+                                                        board_timeline.TimelineItemType.CAMERA_VECHILE_EVENT,
                                                         board_msg_original_timestamp, board_msg_id, obj_data))
                 cur_board_timeline.add_items(new_items)
             elif "update" in event_data:
