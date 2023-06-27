@@ -380,20 +380,23 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.timeline.board_id, infer_used_time,
                 edge_board_confidence, infered_class))
 
+            if infered_class == 'electric_bicycle':
+                try:
+                    self.save_sample_image(temp_cropped_image_file_full_name,
+                                       infer_server_current_ebic_confid, full_base64_image_file_text)
+                except:
+                    self.logger.exception(
+                        "save_sample_image(...) rasised an exception:")
+            if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
+                os.unlink(temp_cropped_image_file_full_name)
+
             if infered_class != 'electric_bicycle':
                 self.logger.debug(
                     "      board: {}, sink this eb detect due to infer server treat as non-eb class at all: {}".format(
                         self.timeline.board_id,
                         infered_class))
-                continue
-            try:
-                self.save_sample_image(temp_cropped_image_file_full_name,
-                                       infer_server_current_ebic_confid, full_base64_image_file_text)
-            except:
-                self.logger.exception(
-                    "save_sample_image(...) rasised an exception:")
-            if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
-                os.unlink(temp_cropped_image_file_full_name)
+                continue         
+            
 
             temp = self.__process_infer_result__(
                 item.original_timestamp, edge_board_confidence, infer_server_current_ebic_confid, current_story)
