@@ -87,14 +87,14 @@ def create_boardtimeline(board_id: str):
                        event_detector.DeviceOfflineEventDetector(logging),
                        event_detector.DetectPersonOnTopEventDetector(logging),
                        event_detector.DetectCameraBlockedEventDetector(logging),
-                       #event_detector.CameraDetectVehicleEventDetector(logging)
+                       # event_detector.CameraDetectVehicleEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
                                         [
                                             # event_alarm.EventAlarmDummyNotifier(logging),
                                             event_alarm.EventAlarmWebServiceNotifier(logging)
-                                        ])
+    ])
 
 
 def create_boardtimeline_from_web_service() -> List[board_timeline.BoardTimeline]:
@@ -120,8 +120,26 @@ def pipe_in_local_idle_loop_item_to_board_timelines():
                     tl.add_items([local_idle_loop_item])
 
 
+def time_diff(boardMsgTimeStampStr: str, kafkaServerAppliedTimeStamp: int):
+    """
+    caculate the time difference between boardMsgTimeStamp and kafkaMsgTimeStamp
+    :param boardMsgTimeStampStr: the timestamp in board message, UTC datetime string, like: '2023-06-28T12:58:58.960Z'
+    :param kafkaMsgTimeStamp: the kafka server labeled a int value of timestamp to all incoming messages.
+    :return: the abs seconds time difference between boardMsgTimeStamp and kafkaMsgTimeStamp
+    """
+    board_timestamp_utc_datetime = datetime.datetime.fromisoformat(
+        boardMsgTimeStampStr.replace("Z", "+00:00"))
+    # event.timestamp is a simple local(utc+8) datetime, like datetime.datetime(2023, 6, 28, 20, 58, 58, 995000)
+    kafka_server_received_msg_datetime = datetime.datetime.fromtimestamp(
+        kafkaServerAppliedTimeStamp / 1e3).astimezone(board_timestamp_utc_datetime.tzinfo)
+    time_diff = (board_timestamp_utc_datetime -
+                 kafka_server_received_msg_datetime).total_seconds()
+    return abs(time_diff)
+
+
 # duration is in seconds
-timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(2, pipe_in_local_idle_loop_item_to_board_timelines)
+timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
+    2, pipe_in_local_idle_loop_item_to_board_timelines)
 if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     logger.info('%s is starting...', 'device_hub')
@@ -242,7 +260,7 @@ while True:
             if "sensorId" not in event_data or "@timestamp" not in event_data:
                 continue
             board_msg_id = event_data["id"]
-
+            # UTC datetime, like 2023-06-28T12:58:58.960Z
             board_msg_original_timestamp = event_data["@timestamp"]
             board_id = event_data["sensorId"]
             if board_id == "default_empty_id_please_manual_set_rv1126":
@@ -252,6 +270,14 @@ while True:
             #    continue
 
             if "_dh" in board_id:
+                continue
+
+            time_diff_by_seconds = time_diff(
+                board_msg_original_timestamp, event.timestamp)
+            if time_diff_by_seconds > 10:
+                logger.warning(
+                    "time_diff_by_seconds: %s, board_id: %s",
+                    time_diff_by_seconds, board_id)
                 continue
 
             cur_board_timeline = [t for t in BOARD_TIMELINES if
@@ -327,6 +353,7 @@ while True:
                                                                          event_data)]
                 cur_board_timeline.add_items(new_update_timeline_items)
 
-    except:
+    except Exception as e:
         logger.exception("Major error caused by exception:")
+        print(e)
         continue
