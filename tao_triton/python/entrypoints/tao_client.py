@@ -213,6 +213,7 @@ def main():
 
 model_metadata = None
 model_config = None
+current_model_name = None
 # This function is used to run the inferencer client from another python script.
 # params:
 #   args: list of arguments to be passed to the inferencer client.
@@ -223,6 +224,7 @@ model_config = None
 def callable_main(args):
     global model_metadata
     global model_config
+    global current_model_name
     """Running the inferencer client."""
     FLAGS = parse_command_line(args)
     if FLAGS.mode.lower() == "detectnet_v2":
@@ -257,15 +259,16 @@ def callable_main(args):
 
     # Make sure the model matches our requirements, and get some
     # properties of the model that we need for preprocessing
-    if model_metadata is None:
+    if model_metadata is None or FLAGS.model_name != current_model_name:
         try:
+            current_model_name = FLAGS.model_name
             model_metadata = triton_client.get_model_metadata(
                 model_name=FLAGS.model_name, model_version=FLAGS.model_version)
         except InferenceServerException as e:
             print("failed to retrieve the metadata: " + str(e))
             sys.exit(1)
 
-    if model_config is None:
+    if model_config is None or FLAGS.model_name != current_model_name:
         try:
             model_config = triton_client.get_model_config(
                 model_name=FLAGS.model_name, model_version=FLAGS.model_version)
