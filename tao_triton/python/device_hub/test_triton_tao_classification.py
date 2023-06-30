@@ -11,11 +11,10 @@ import glob
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-r', '--enable-random-input-and-visualize-output-mode',
-                        type=str,
-                        default=False,
-                        help="random content of images stayed in single folder, and output them to different sub folders with class name",
-                        required=False)
+    parser.add_argument(
+        '-r', '--enable-random-input-and-visualize-output-mode', type=str, default=False,
+        help="random content of images stayed in single folder, and output them to different sub folders with class name",
+        required=False)
     parser.add_argument('-a', '--enable-assess-mode',
                         type=str,
                         default=True,
@@ -24,7 +23,7 @@ if __name__ == '__main__':
     parser.add_argument('--input-images-folder-path',
                         type=str,
                         default=os.path.join(
-                            os.getcwd(), "/home/shao/Downloads/mini_test_4class_in_each_sub_folder"),
+                            os.getcwd(), "/home/shao/Downloads/testing_4class_do_not_use_for_training"),
                         help="Path to the folder of images for classifying, if -r enabled, the single folder",
                         required=False)
     parser.add_argument('--output-image-classes-folder-path',
@@ -54,9 +53,8 @@ if __name__ == '__main__':
 
     # 3060GPU machine ip:  36.153.41.18:18000
     infer_server_url = "36.153.41.18:18000"  # "localhost:8000"
-    infer_confid_treat_as_low_threshold = 0.3
     testing_model_names = [
-        # "elenet_four_classes_230417_tao",
+        "elenet_four_classes_230417_tao",
         "elenet_four_classes_230618_tao",
         "elenet_four_classes_230620_tao"
     ]
@@ -75,11 +73,10 @@ if __name__ == '__main__':
                     'image_folder_path': single_class_folder_full_path,
                     'image_class_name': class_folder_simple_name,
                     'image_file_count': 0,
-                    'correctly_classified_times': 0,
+                    'correctly_classified_confid_values': [],
                     'wrong_classified_to_classes_info': {},
                     'total_infer_confid': 0,
-                    'total_infer_times_by_seconds': 0,
-                    'total_low_infer_confid_times': 0}
+                    'total_infer_times_by_seconds': 0}
                 # statistics[classfolder][] = 0
                 for file in os.listdir(single_class_folder_full_path):
                     with open(os.path.join(single_class_folder_full_path, file), "rb") as image_file:
@@ -117,15 +114,14 @@ if __name__ == '__main__':
                             'total_infer_times_by_seconds'] += infer_used_time
 
                         if infered_class == class_folder_simple_name:
-                            model_statistics[testing_model_name][class_folder_simple_name]['correctly_classified_times'] += 1
+                            model_statistics[testing_model_name][class_folder_simple_name][
+                                'correctly_classified_confid_values'].append(infered_server_confid)
                             model_statistics[testing_model_name][class_folder_simple_name][
                                 'total_infer_confid'] += infered_server_confid
-                            if infered_server_confid <= infer_confid_treat_as_low_threshold:
-                                model_statistics[testing_model_name][class_folder_simple_name][
-                                    'total_low_infer_confid_times'] += 1
                         else:
                             # wrong_classified_to_classes_info
-                            if infered_class in model_statistics[testing_model_name][class_folder_simple_name]['wrong_classified_to_classes_info']:
+                            if infered_class in model_statistics[testing_model_name][class_folder_simple_name][
+                                    'wrong_classified_to_classes_info']:
                                 model_statistics[testing_model_name][class_folder_simple_name][
                                     'wrong_classified_to_classes_info'][infered_class] += 1
                             else:
@@ -134,36 +130,43 @@ if __name__ == '__main__':
         print('\r\n\r\n')
         for testing_model_name in testing_model_names:
             False_Negative_Info = {}
-            for key in model_statistics[testing_model_name].keys():
-                for fn_class_name in model_statistics[testing_model_name][key]["wrong_classified_to_classes_info"]:
+            for class_name in model_statistics[testing_model_name].keys():
+                for fn_class_name in model_statistics[testing_model_name][class_name]["wrong_classified_to_classes_info"]:
                     if fn_class_name in False_Negative_Info:
-                        False_Negative_Info[fn_class_name] += model_statistics[testing_model_name][key]["wrong_classified_to_classes_info"][fn_class_name]
+                        False_Negative_Info[fn_class_name] += model_statistics[testing_model_name][class_name][
+                            "wrong_classified_to_classes_info"][fn_class_name]
                     else:
-                        False_Negative_Info[fn_class_name] = model_statistics[testing_model_name][key]["wrong_classified_to_classes_info"][fn_class_name]
+                        False_Negative_Info[fn_class_name] = model_statistics[testing_model_name][
+                            class_name]["wrong_classified_to_classes_info"][fn_class_name]
 
+            confid_watch_points = [0, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9]
             print('Statistics for model: {}'.format(testing_model_name))
-            for key in model_statistics[testing_model_name].keys():
-                stats = model_statistics[testing_model_name][key]
-                if key not in False_Negative_Info:
-                    False_Negative_Info[key] = 0
-                print('     Class: {} -> acc: {}({}/{}), recall: {}({}/{}+{}) low infer: {}, avg infer(by_ms): {}, avg confid: {}, detail: {}  \r'.format(
-                    key.ljust(16),
+            for class_name in model_statistics[testing_model_name].keys():
+                stats = model_statistics[testing_model_name][class_name]
+                if class_name not in False_Negative_Info:
+                    False_Negative_Info[class_name] = 0
+                for confid_watch_point in confid_watch_points:
+                    correctly_classified_times = len(
+                        [confid for confid in stats['correctly_classified_confid_values'] if confid >= confid_watch_point])
+                    print('     with confid_watch_point: {}'.format(confid_watch_point))
+                    print('         Class: {} -> acc: {}({}/{}), recall: {}({}/{}+{}), avg infer(by_ms): {}, avg confid: {}, detail: {}  \r'.format(
+                        class_name.ljust(16),
 
-                    str(int(stats['correctly_classified_times']
-                            ) / int(stats['image_file_count']))[:5],
-                    stats['correctly_classified_times'],
-                    stats['image_file_count'],
+                        str(correctly_classified_times /
+                            int(stats['image_file_count']))[:5],
+                        correctly_classified_times,
+                        stats['image_file_count'],
 
-                    str(int(stats['correctly_classified_times']
-                            ) / (int(stats['correctly_classified_times'])+ False_Negative_Info[key])  )[:5],
-                    stats['correctly_classified_times'],
-                    stats['correctly_classified_times'],
-                    False_Negative_Info[key],
+                        str(correctly_classified_times /
+                            (correctly_classified_times + False_Negative_Info[class_name]))[:5],
+                        correctly_classified_times,
+                        correctly_classified_times,
+                        False_Negative_Info[class_name],
 
-                    stats['total_low_infer_confid_times'],
-                    str(1000*int(stats['total_infer_times_by_seconds']
-                                 ) / int(stats['image_file_count']))[:7],
-                    str(stats['total_infer_confid'] /
-                        (999999999 if stats['correctly_classified_times'] == 0 else stats['correctly_classified_times']))[:5],
-                    stats['wrong_classified_to_classes_info']))
+                        str(1000*int(stats['total_infer_times_by_seconds']
+                                     ) / int(stats['image_file_count']))[:7],
+                        str(stats['total_infer_confid'] /
+                            (999999999 if correctly_classified_times == 0 else correctly_classified_times))[:5],
+                        stats['wrong_classified_to_classes_info']))
+                    print('\r')
             print('=====================================================================================================')

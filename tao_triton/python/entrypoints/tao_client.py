@@ -438,8 +438,8 @@ def callable_main(args):
             for async_request in async_requests:
                 responses.append(async_request.get_result())
 
-    logger.info(
-        "Gathering responses from the server and post processing the inferenced outputs.")
+    # logger.info(
+    #     "Gathering responses from the server and post processing the inferenced outputs.")
     processed_request = 0
     return_infer_results = []
     with tqdm(total=len(frames)) as pbar:
@@ -456,7 +456,7 @@ def callable_main(args):
             return_infer_results.append(infer_results)
             processed_request += 1
             pbar.update(FLAGS.batch_size)
-    logger.info("PASS")
+    # logger.info("PASS")
     return return_infer_results
 
 
