@@ -23,7 +23,7 @@ if __name__ == '__main__':
     parser.add_argument('--input-images-folder-path',
                         type=str,
                         default=os.path.join(
-                            os.getcwd(), "/home/shao/Downloads/testing_4class_do_not_use_for_training"),
+                            os.getcwd(), "/home/shao/Downloads/test"),
                         help="Path to the folder of images for classifying, if -r enabled, the single folder",
                         required=False)
     parser.add_argument('--output-image-classes-folder-path',
@@ -140,7 +140,7 @@ if __name__ == '__main__':
                             class_name]["wrong_classified_to_classes_info"][fn_class_name]
 
             confid_watch_points = [0, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9]
-            print('Statistics for model: {}'.format(testing_model_name))
+            print('Statistics for model: {}, dataset: {}'.format(testing_model_name, FLAGS.input_images_folder_path))
             for class_name in model_statistics[testing_model_name].keys():
                 stats = model_statistics[testing_model_name][class_name]
                 if class_name not in False_Negative_Info:

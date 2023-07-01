@@ -101,7 +101,7 @@ class BoardTimeline:
             t1 = time.time()
             perf_time_used_by_ms = (t1 - t0) * 1000
             if perf_time_used_by_ms >= 800:
-                self.logger.debug(
+                self.logger.info(
                     "event_detector: {} used time(ms): {}".format(d.__class__, perf_time_used_by_ms))
 
         if event_alarms:
@@ -111,7 +111,7 @@ class BoardTimeline:
             t1 = time.time()
             perf_time_used_by_ms = (t1 - t0) * 1000
             if perf_time_used_by_ms >= 800:
-                self.logger.debug(
+                self.logger.info(
                     "event_alarms total used time(ms): {}".format(perf_time_used_by_ms))
 
     def __purge_items(self):

@@ -64,7 +64,7 @@ class EventAlarmWebServiceNotifier:
     HEADERS = {'Content-type': 'application/json', 'Accept': 'application/json'}
 
     def __init__(self, logging):
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("eventAlarmWebServiceNotifierLogger")
         self.alarms = []
         self.thread_lock = threading.Lock()
         _thread.start_new_thread(self.processAlarms, ())

@@ -88,7 +88,9 @@ class EventDetectorBase:
 class DoorStateChangedEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        self.logger = logging.getLogger(__name__)
+        # self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(
+            "doorStateChangedEventDetectorLogger")
         self.electricBicycleEnteringEventDetector_instance = None
 
     def prepare(self, timeline, event_detectors):
@@ -700,13 +702,13 @@ class BlockingDoorEventDetector(EventDetectorBase):
                 break
 
     def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
-        self.logger.debug(
-            "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
-                self.timeline.board_id,
-                self.__class__.__name__,
-                src_detector.__class__.__name__,
-                property_name,
-                str(data)))
+        # self.logger.debug(
+        #     "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
+        #         self.timeline.board_id,
+        #         self.__class__.__name__,
+        #         src_detector.__class__.__name__,
+        #         property_name,
+        #         str(data)))
         if src_detector.__class__.__name__ == DoorStateChangedEventDetector.__name__:
             # handle event from DoorStateChangedEventDetector
             # 记录最近一次电梯门的状态，如果它是处于关闭状态，那么就不用判断遮挡门
@@ -819,13 +821,13 @@ class PeopleStuckEventDetector(EventDetectorBase):
                 break
 
     def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
-        self.logger.debug(
-            "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
-                self.timeline.board_id,
-                self.__class__.__name__,
-                src_detector.__class__.__name__,
-                property_name,
-                str(data)))
+        # self.logger.debug(
+        #     "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
+        #         self.timeline.board_id,
+        #         self.__class__.__name__,
+        #         src_detector.__class__.__name__,
+        #         property_name,
+        #         str(data)))
         if src_detector.__class__.__name__ == DoorStateChangedEventDetector.__name__:
             # handle event from DoorStateChangedEventDetector
             # 记录最近一次电梯门的状态，
@@ -1016,7 +1018,7 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
         EventDetectorBase.__init__(self, logging)
         self.alarms_to_fire = []
         self.timeline = None
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("doorRepeatlyOpenAndCloseEventDetectorLogger")
 
     def prepare(self, timeline, event_detectors):
         """
@@ -1480,13 +1482,13 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
         pass
 
     def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
-        self.logger.debug(
-            "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
-                self.timeline.board_id,
-                self.__class__.__name__,
-                src_detector.__class__.__name__,
-                property_name,
-                str(data)))
+        # self.logger.debug(
+        #     "board: {}, {} is notified by event from: {} for property: {} with data: {}".format(
+        #         self.timeline.board_id,
+        #         self.__class__.__name__,
+        #         src_detector.__class__.__name__,
+        #         property_name,
+        #         str(data)))
         if src_detector.__class__.__name__ == DoorStateChangedEventDetector.__name__:
             # handle event from DoorStateChangedEventDetector
             # 记录最近一次电梯门的状态. 无人高频运动的情况电梯门应该是一直处于关闭状态
@@ -1690,7 +1692,7 @@ class ElevatorShockEventDetector(EventDetectorBase):
 class ElevatorJamsEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("elevatorJamsEventDetectorLogger")
 
     def prepare(self, timeline, event_detectors):
         """

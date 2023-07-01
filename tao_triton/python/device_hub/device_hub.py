@@ -93,7 +93,8 @@ def create_boardtimeline(board_id: str):
                                         event_detectors,
                                         [
                                             # event_alarm.EventAlarmDummyNotifier(logging),
-                                            event_alarm.EventAlarmWebServiceNotifier(logging)
+                                            event_alarm.EventAlarmWebServiceNotifier(
+                                                logging)
     ])
 
 
@@ -120,21 +121,39 @@ def pipe_in_local_idle_loop_item_to_board_timelines():
                     tl.add_items([local_idle_loop_item])
 
 
-def time_diff(boardMsgTimeStampStr: str, kafkaServerAppliedTimeStamp: int):
+def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAppliedTimeStamp: int, dh_local_datetime: datetime.datetime):
     """
-    caculate the time difference between boardMsgTimeStamp and kafkaMsgTimeStamp
+    caculate the time difference between boardMsgTimeStamp, kafkaMsgTimeStamp and dh local datetime.
+    :param board_id: the board id, used for logging.
     :param boardMsgTimeStampStr: the timestamp in board message, UTC datetime string, like: '2023-06-28T12:58:58.960Z'
     :param kafkaMsgTimeStamp: the kafka server labeled a int value of timestamp to all incoming messages.
-    :return: the abs seconds time difference between boardMsgTimeStamp and kafkaMsgTimeStamp
+    :param dh_local_datetime: the local datetime of device hub, it's the datetime.datetime.now()
+    :return: the time difference in seconds
     """
     board_timestamp_utc_datetime = datetime.datetime.fromisoformat(
         boardMsgTimeStampStr.replace("Z", "+00:00"))
     # event.timestamp is a simple local(utc+8) datetime, like datetime.datetime(2023, 6, 28, 20, 58, 58, 995000)
-    kafka_server_received_msg_datetime = datetime.datetime.fromtimestamp(
+    kafka_server_received_msg_utc_datetime = datetime.datetime.fromtimestamp(
         kafkaServerAppliedTimeStamp / 1e3).astimezone(board_timestamp_utc_datetime.tzinfo)
-    time_diff = (board_timestamp_utc_datetime -
-                 kafka_server_received_msg_datetime).total_seconds()
-    return abs(time_diff)
+    dh_local_utc_datetime = dh_local_datetime.astimezone(
+        board_timestamp_utc_datetime.tzinfo)
+    time_diff_between_board_and_kafka = (board_timestamp_utc_datetime -
+                                         kafka_server_received_msg_utc_datetime).total_seconds()
+    if abs(time_diff_between_board_and_kafka) >= 20:
+        # log every 10 seconds for avoid log flooding
+        if datetime.datetime.now().second % 10 == 0:
+            logging.warning("time_diff between board and kafka is too big: %s for board with id: %s",
+                            time_diff_between_board_and_kafka, board_id)
+        return True
+    time_diff_between_kafka_and_dh_local = (kafka_server_received_msg_utc_datetime -
+                                            dh_local_utc_datetime).total_seconds()
+    if abs(time_diff_between_kafka_and_dh_local) >= 15:
+        # log every 10 seconds for avoid log flooding
+        if datetime.datetime.now().second % 10 == 0:
+            logging.warning("time_diff between kafka and dh_local is too big: %s for board with id: %s",
+                            time_diff_between_kafka_and_dh_local, board_id)
+        return True
+    return False
 
 
 # duration is in seconds
@@ -243,7 +262,7 @@ if __name__ == '__main__':
 
     # consumer.subscribe(pattern="1423820088517")
     # consumer.subscribe(pattern="shaoLocalJsNxBoard")
-    # consumer.subscribe(pattern="suzhou_yang_testing_jtsn4g")
+    # consumer.subscribe(pattern="E1630452176113373185")
     consumer.subscribe(pattern="^E[0-9]+$")
     # consumer.subscribe(pattern="shaoLocalJts2gBoard")
     # consumer.subscribe(pattern="test_123")
@@ -260,7 +279,7 @@ while True:
             if "sensorId" not in event_data or "@timestamp" not in event_data:
                 continue
             board_msg_id = event_data["id"]
-            # UTC datetime, like 2023-06-28T12:58:58.960Z
+            # UTC datetime str, like: '2023-06-28T12:58:58.960Z'
             board_msg_original_timestamp = event_data["@timestamp"]
             board_id = event_data["sensorId"]
             if board_id == "default_empty_id_please_manual_set_rv1126":
@@ -272,12 +291,7 @@ while True:
             if "_dh" in board_id:
                 continue
 
-            time_diff_by_seconds = time_diff(
-                board_msg_original_timestamp, event.timestamp)
-            if time_diff_by_seconds > 10:
-                logger.warning(
-                    "time_diff_by_seconds: %s, board_id: %s",
-                    time_diff_by_seconds, board_id)
+            if is_time_diff_too_big(board_id, board_msg_original_timestamp, event.timestamp, datetime.datetime.now()):
                 continue
 
             cur_board_timeline = [t for t in BOARD_TIMELINES if
