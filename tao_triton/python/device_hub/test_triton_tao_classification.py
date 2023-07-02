@@ -8,6 +8,7 @@ import shutil
 import re
 import argparse
 import glob
+import numpy as np
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -23,7 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('--input-images-folder-path',
                         type=str,
                         default=os.path.join(
-                            os.getcwd(), "/home/shao/Downloads/test"),
+                            os.getcwd(), "/home/shao/Downloads/test_mini"),
                         help="Path to the folder of images for classifying, if -r enabled, the single folder",
                         required=False)
     parser.add_argument('--output-image-classes-folder-path',
@@ -54,8 +55,8 @@ if __name__ == '__main__':
     # 3060GPU machine ip:  36.153.41.18:18000
     infer_server_url = "36.153.41.18:18000"  # "localhost:8000"
     testing_model_names = [
-        "elenet_four_classes_230417_tao",
-        "elenet_four_classes_230618_tao",
+        # "elenet_four_classes_230417_tao",
+        # "elenet_four_classes_230618_tao",
         "elenet_four_classes_230620_tao"
     ]
     classes = ['background', 'bicycle', 'electric_bicycle', 'people']
@@ -77,7 +78,6 @@ if __name__ == '__main__':
                     'wrong_classified_to_classes_info': {},
                     'total_infer_confid': 0,
                     'total_infer_times_by_seconds': 0}
-                # statistics[classfolder][] = 0
                 for file in os.listdir(single_class_folder_full_path):
                     with open(os.path.join(single_class_folder_full_path, file), "rb") as image_file:
                         model_statistics[testing_model_name][class_folder_simple_name]['image_file_count'] += 1
@@ -123,29 +123,23 @@ if __name__ == '__main__':
                             if infered_class in model_statistics[testing_model_name][class_folder_simple_name][
                                     'wrong_classified_to_classes_info']:
                                 model_statistics[testing_model_name][class_folder_simple_name][
-                                    'wrong_classified_to_classes_info'][infered_class] += 1
+                                    'wrong_classified_to_classes_info'][infered_class].append(infered_server_confid)
                             else:
                                 model_statistics[testing_model_name][class_folder_simple_name][
-                                    'wrong_classified_to_classes_info'][infered_class] = 1
+                                    'wrong_classified_to_classes_info'][infered_class] = [infered_server_confid]
         print('\r\n\r\n')
+        confid_watch_points = [0, 0.3, 0.5, 0.7, 0.9]
+        # confid_watch_points = [0, 0.6, 0.9]
         for testing_model_name in testing_model_names:
-            False_Negative_Info = {}
-            for class_name in model_statistics[testing_model_name].keys():
-                for fn_class_name in model_statistics[testing_model_name][class_name]["wrong_classified_to_classes_info"]:
-                    if fn_class_name in False_Negative_Info:
-                        False_Negative_Info[fn_class_name] += model_statistics[testing_model_name][class_name][
-                            "wrong_classified_to_classes_info"][fn_class_name]
-                    else:
-                        False_Negative_Info[fn_class_name] = model_statistics[testing_model_name][
-                            class_name]["wrong_classified_to_classes_info"][fn_class_name]
-
-            confid_watch_points = [0, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9]
             print('Statistics for model: {}, dataset: {}'.format(testing_model_name, FLAGS.input_images_folder_path))
             for class_name in model_statistics[testing_model_name].keys():
                 stats = model_statistics[testing_model_name][class_name]
-                if class_name not in False_Negative_Info:
-                    False_Negative_Info[class_name] = 0
                 for confid_watch_point in confid_watch_points:
+                    False_Negative_times = 0
+                    for cn in model_statistics[testing_model_name].keys():
+                        for wrong_confid_value in model_statistics[testing_model_name][cn]['wrong_classified_to_classes_info'].get(class_name, []):
+                            if wrong_confid_value >= confid_watch_point:
+                                False_Negative_times += 1
                     correctly_classified_times = len(
                         [confid for confid in stats['correctly_classified_confid_values'] if confid >= confid_watch_point])
                     print('     with confid_watch_point: {}'.format(confid_watch_point))
@@ -158,10 +152,10 @@ if __name__ == '__main__':
                         stats['image_file_count'],
 
                         str(correctly_classified_times /
-                            (correctly_classified_times + False_Negative_Info[class_name]))[:5],
+                            (999999999 if correctly_classified_times + False_Negative_times == 0 else correctly_classified_times + False_Negative_times))[:5],
                         correctly_classified_times,
                         correctly_classified_times,
-                        False_Negative_Info[class_name],
+                        False_Negative_times,
 
                         str(1000*int(stats['total_infer_times_by_seconds']
                                      ) / int(stats['image_file_count']))[:7],
