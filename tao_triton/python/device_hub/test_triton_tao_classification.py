@@ -24,7 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('--input-images-folder-path',
                         type=str,
                         default=os.path.join(
-                            os.getcwd(), "/home/shao/Downloads/test_mini"),
+                            os.getcwd(), "/home/shao/Downloads/mini_test_4class_in_each_sub_folder"),
                         help="Path to the folder of images for classifying, if -r enabled, the single folder",
                         required=False)
     parser.add_argument('--output-image-classes-folder-path',
@@ -55,9 +55,9 @@ if __name__ == '__main__':
     # 3060GPU machine ip:  36.153.41.18:18000
     infer_server_url = "36.153.41.18:18000"  # "localhost:8000"
     testing_model_names = [
-        # "elenet_four_classes_230417_tao",
-        # "elenet_four_classes_230618_tao",
-        "elenet_four_classes_230620_tao"
+        "elenet_four_classes_230417_tao",
+        "elenet_four_classes_230620_tao",
+        "elenet_four_classes_230702_tao"
     ]
     classes = ['background', 'bicycle', 'electric_bicycle', 'people']
     model_statistics = {}
@@ -143,7 +143,7 @@ if __name__ == '__main__':
                     correctly_classified_times = len(
                         [confid for confid in stats['correctly_classified_confid_values'] if confid >= confid_watch_point])
                     print('     with confid_watch_point: {}'.format(confid_watch_point))
-                    print('         Class: {} -> acc: {}({}/{}), recall: {}({}/{}+{}), avg infer(by_ms): {}, avg confid: {}, detail: {}  \r'.format(
+                    print('         Class: {} -> acc: {}({}/{}), recall: {}({}/{}+{}), avg infer(by_ms): {}, avg confid: {}, detail abstract: {{{}}}  \r'.format(
                         class_name.ljust(16),
 
                         str(correctly_classified_times /
@@ -161,6 +161,6 @@ if __name__ == '__main__':
                                      ) / int(stats['image_file_count']))[:7],
                         str(stats['total_infer_confid'] /
                             (999999999 if correctly_classified_times == 0 else correctly_classified_times))[:5],
-                        stats['wrong_classified_to_classes_info']))
+                        ', '.join([i+"->"+str(len(stats['wrong_classified_to_classes_info'][i])) for i in stats['wrong_classified_to_classes_info'].keys()])))
                     print('\r')
             print('=====================================================================================================')
