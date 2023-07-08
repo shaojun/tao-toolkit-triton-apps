@@ -4,3 +4,5 @@
 *.jpg
 .vscode/launch.json
 .vscode/settings.json
+log/
+/.idea
