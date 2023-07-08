@@ -363,7 +363,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             temp_image.save(temp_cropped_image_file_full_name)
             t0 = time.time()
             try:
-                raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230618_tao',
+                raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230620_tao',
                                                                     '--mode', 'Classification',
                                                                     '-u', '192.168.66.149:8000',
                                                                     '--output_path', './',
