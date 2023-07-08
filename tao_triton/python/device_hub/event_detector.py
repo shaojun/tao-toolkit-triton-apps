@@ -378,7 +378,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             t1 = time.time()
 
             infer_used_time = (t1 - t0) * 1000
-            self.logger.debug("      board: {}, time used for infer:{}(localConf:{}), raw infer_results: {}".format(
+            self.logger.debug("      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results: {}".format(
                 self.timeline.board_id, infer_used_time,
                 edge_board_confidence, infered_class))
 
@@ -417,7 +417,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
             t2 = time.time()
             after_infer_used_time = (t2 - t1) * 1000
-            self.logger.debug("board{},used time after infer{}".format(
+            self.logger.debug("board: {}, used time after infer: {}ms".format(
                 self.timeline.board_id, after_infer_used_time))
         return eb_entering_event_alarms
 
@@ -599,7 +599,8 @@ class GasTankEnteringEventDetector(EventDetectorBase):
 
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        self.logger = logging.getLogger(__name__)
+        # self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("gasTankEnteringEventDetectorLogger")
 
     def prepare(self, timeline, event_detectors):
         """
@@ -644,8 +645,8 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                 # if last_report_time_diff <= 60 * 60 * 24:
                 if last_report_time_diff <= 60 * 10:
                     continue
-            self.logger.debug(
-                "timeline_item in gas tank detect raw data:{}".format(item.raw_data))
+            # self.logger.debug(
+            #     "timeline_item in gas tank detect raw data:{}".format(item.raw_data))
             self.state_obj = {"last_infer_timestamp": datetime.datetime.now()}
 
             sections = item.raw_data.split('|')
@@ -687,7 +688,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
 class BlockingDoorEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("blockingDoorEventDetector")
 
     def prepare(self, timeline, event_detectors):
         """
@@ -806,7 +807,8 @@ class BlockingDoorEventDetector(EventDetectorBase):
 class PeopleStuckEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        self.logger = logging.getLogger(__name__)
+        # self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("peopleStuckEventDetector")
         self.state_obj = {}
 
     def prepare(self, timeline, event_detectors):
