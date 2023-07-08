@@ -78,6 +78,36 @@ handlers:
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
+  gasTankEnteringEventDetector_file_handler:
+    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    level: DEBUG
+    formatter: simple
+    filename: "log/gasTankEnteringEventDetector.log"
+    when: S
+    interval: 86400
+    backupCount: 1200
+    maxBytes: 40240000
+    encoding: utf8
+  peopleStuckEventDetector_file_handler:
+    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    level: DEBUG
+    formatter: simple
+    filename: "log/peopleStuckEventDetector.log"
+    when: S
+    interval: 86400
+    backupCount: 1200
+    maxBytes: 40240000
+    encoding: utf8
+  blockingDoorEventDetector_file_handler:
+    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    level: DEBUG
+    formatter: simple
+    filename: "log/blockingDoorEventDetector.log"
+    when: S
+    interval: 86400
+    backupCount: 1200
+    maxBytes: 40240000
+    encoding: utf8
 loggers:
   sampleLogger:
     level: DEBUG
@@ -106,6 +136,18 @@ loggers:
   doorRepeatlyOpenAndCloseEventDetectorLogger:
     level: DEBUG
     handlers: [ doorRepeatlyOpenAndCloseEventDetector_file_handler ]
+    propagate: no
+  gasTankEnteringEventDetectorLogger:
+    level: DEBUG
+    handlers: [ gasTankEnteringEventDetector_file_handler ]
+    propagate: no
+  peopleStuckEventDetector:
+    level: DEBUG
+    handlers: [ peopleStuckEventDetector_file_handler ]
+    propagate: no
+  blockingDoorEventDetector:
+    level: DEBUG
+    handlers: [ blockingDoorEventDetector_file_handler ]
     propagate: no
 root:
   level: DEBUG
