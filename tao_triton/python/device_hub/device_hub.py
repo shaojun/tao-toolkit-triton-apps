@@ -139,7 +139,7 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
         board_timestamp_utc_datetime.tzinfo)
     time_diff_between_board_and_kafka = (board_timestamp_utc_datetime -
                                          kafka_server_received_msg_utc_datetime).total_seconds()
-    if abs(time_diff_between_board_and_kafka) >= 20:
+    if abs(time_diff_between_board_and_kafka) >= 10:
         # log every 10 seconds for avoid log flooding
         if datetime.datetime.now().second % 10 == 0:
             logging.warning("time_diff between board and kafka is too big: %s for board with id: %s",
