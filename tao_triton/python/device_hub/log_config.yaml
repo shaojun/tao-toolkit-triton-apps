@@ -18,6 +18,16 @@ handlers:
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
+  perf_logger_file_handler:
+    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    level: DEBUG
+    formatter: simple
+    filename: "log/perf.log"
+    when: S
+    interval: 86400
+    backupCount: 1200
+    maxBytes: 40240000
+    encoding: utf8
   electricBicycleEnteringEventDetector_file_handler:
     class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
@@ -112,6 +122,10 @@ loggers:
   sampleLogger:
     level: DEBUG
     handlers: []
+    propagate: no
+  perfLogger:
+    level: DEBUG
+    handlers: [perf_logger_file_handler]
     propagate: no
   electricBicycleEnteringEventDetectorLogger:
     level: DEBUG

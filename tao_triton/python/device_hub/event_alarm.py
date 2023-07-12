@@ -50,11 +50,12 @@ class EventAlarmDummyNotifier(EventAlarmNotifierBase):
         if not alarms:
             return
         for a in alarms:
-            self.logger.info(
-                "board: {}, Notifying alarm(by {}) with priority: {} -> {}".format(
-                    a.event_detector.timeline.board_id,
-                    a.event_detector.__class__.__name__,
-                    a.priority, a.description))
+            pass
+            # self.logger.info(
+            #     "board: {}, Notifying alarm(by {}) with priority: {} -> {}".format(
+            #         a.event_detector.timeline.board_id,
+            #         a.event_detector.__class__.__name__,
+            #         a.priority, a.description))
 
 
 class EventAlarmWebServiceNotifier:

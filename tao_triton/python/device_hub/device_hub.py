@@ -62,6 +62,8 @@ class RepeatTimer(Timer):
 
 
 shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
+
+
 def create_boardtimeline(board_id: str, kafka_producer):
     # these detectors instances are shared by all timelines
     event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
@@ -102,6 +104,18 @@ def create_boardtimeline_from_web_service() -> List[board_timeline.BoardTimeline
 
 
 BOARD_TIMELINES = None
+
+
+def logging_perf_counter():
+    perf_logger = logging.getLogger("perfLogger")
+    global perf_counter_consumed_msg_count
+    global perf_counter_filtered_msg_count_by_time_diff_too_big
+    perf_logger.warning("consumed_msg_count: {}".format(perf_counter_consumed_msg_count))
+    perf_logger.warning("filtered_msg_count_by_time_diff_too_big: {}".format(
+        perf_counter_filtered_msg_count_by_time_diff_too_big))
+    # reset it
+    perf_counter_consumed_msg_count = 0
+    perf_counter_filtered_msg_count_by_time_diff_too_big = 0
 
 
 def pipe_in_local_idle_loop_item_to_board_timelines():
@@ -146,7 +160,7 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
         return True
     time_diff_between_kafka_and_dh_local = (kafka_server_received_msg_utc_datetime -
                                             dh_local_utc_datetime).total_seconds()
-    if abs(time_diff_between_kafka_and_dh_local) >= 2.5:
+    if abs(time_diff_between_kafka_and_dh_local) >= 12.5:
         # log every 10 seconds for avoid log flooding
         if datetime.datetime.now().second % 10 == 0:
             logging.warning("time_diff between kafka and dh_local is too big: %s for board with id: %s",
@@ -158,12 +172,18 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
 # duration is in seconds
 timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
     2, pipe_in_local_idle_loop_item_to_board_timelines)
+
+perf_counter_consumed_msg_count = 0
+perf_counter_filtered_msg_count_by_time_diff_too_big = 0
+timely_logging_perf_counter_timer = RepeatTimer(
+    60, logging_perf_counter)
 if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     logger.info('%s is starting...', 'device_hub')
 
     BOARD_TIMELINES = create_boardtimeline_from_web_service()
     timely_pipe_in_local_idle_loop_msg_timer.start()
+    timely_logging_perf_counter_timer.start()
     # except Exception as e:
     # logging.error("Exception occurred", exc_info=True)
     # or logging.exception("descriptive msg")  trace will be autoly appended
@@ -300,6 +320,7 @@ while True:
                 continue
 
             if is_time_diff_too_big(board_id, board_msg_original_timestamp, event.timestamp, datetime.datetime.now()):
+                perf_counter_filtered_msg_count_by_time_diff_too_big += 1
                 continue
 
             cur_board_timeline = [t for t in BOARD_TIMELINES if
@@ -374,7 +395,7 @@ while True:
                                                                          board_msg_original_timestamp, board_msg_id,
                                                                          event_data)]
                 cur_board_timeline.add_items(new_update_timeline_items)
-
+            perf_counter_consumed_msg_count += 1
     except Exception as e:
         logger.exception("Major error caused by exception:")
         print(e)
