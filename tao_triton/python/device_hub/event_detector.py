@@ -168,6 +168,7 @@ class DoorStateChangedEventDetector(EventDetectorBase):
         # target_items = recent_items
         self.logger.debug(
             "total length of recent items:{}, target items:{}".format(len(recent_items), len(target_items)))
+        """
         for item in target_items:
             if "Vehicle|#|TwoWheeler" in item.raw_data or "|TwoWheeler|confirmed" in item.raw_data:
                 self.logger.debug("Item in door state detect. e-bike. original time:{}".format(
@@ -183,6 +184,16 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                         item.item_type,
                         item.raw_data,
                         item.original_timestamp_str))
+        """
+        if len(target_items) > 0:
+            log_item = target_items[0]
+            self.logger.debug(
+                "item in door state detect,board:{},board_msg_id:{}, item type:{},raw_data:{},original time:{}".format(
+                    log_item.timeline.board_id,
+                    log_item.board_msg_id,
+                    log_item.item_type,
+                    log_item.raw_data,
+                    log_item.original_timestamp_str))
         hasPereson = "Y" if len(person_items) > 0 else "N"
         for ri in target_items:
             if ri.item_type == board_timeline.TimelineItemType.LOCAL_IDLE_LOOP:
@@ -507,6 +518,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     temp_time - self.ebike_state["latest_infer_success"]).total_seconds() > 5:
                 self.ebike_state["latest_infer_success"] = ""
                 self.ebike_state["exit_time"] = temp_time
+                self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
                 self.logger.info("board: {},ebike exit at:{}".format(
                     self.timeline.board_id, temp_time))
         return result

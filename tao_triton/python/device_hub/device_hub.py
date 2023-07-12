@@ -61,7 +61,7 @@ class RepeatTimer(Timer):
             self.function(*self.args, **self.kwargs)
 
 
-def create_boardtimeline(board_id: str):
+def create_boardtimeline(board_id: str, producer):
     # these detectors instances are shared by all timelines
     event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
                        event_detector.DoorStateChangedEventDetector(logging),
@@ -95,7 +95,7 @@ def create_boardtimeline(board_id: str):
                                             # event_alarm.EventAlarmDummyNotifier(logging),
                                             event_alarm.EventAlarmWebServiceNotifier(
                                                 logging)
-    ])
+    ],producer)
 
 
 def create_boardtimeline_from_web_service() -> List[board_timeline.BoardTimeline]:
@@ -260,12 +260,15 @@ if __name__ == '__main__':
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
 
+    producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
+                             value_serializer=lambda x: json.dumps(x).encode('utf-8'))
     # consumer.subscribe(pattern="1423820088517")
     # consumer.subscribe(pattern="shaoLocalJsNxBoard")
     # consumer.subscribe(pattern="E1630452176113373185")
-    consumer.subscribe(pattern="^E[0-9]+$")
+    # consumer.subscribe(pattern="^E[0-9]+$")
     # consumer.subscribe(pattern="shaoLocalJts2gBoard")
-    # consumer.subscribe(pattern="test_123")
+    # consumer.subscribe(pattern="^(E163|E160)[0-9]+$")
+    consumer.subscribe(pattern="^(E16)[0-9]+$")
 
 while True:
     try:
@@ -288,6 +291,12 @@ while True:
             # if board_id != "E1634085712737341441":
             #    continue
 
+            if board_id == "E1640262214042521601":
+                continue
+
+            if board_id == "E1675418684153139201":
+                continue
+
             if "_dh" in board_id:
                 continue
 
@@ -297,7 +306,7 @@ while True:
             cur_board_timeline = [t for t in BOARD_TIMELINES if
                                   t.board_id == board_id]
             if not cur_board_timeline:
-                cur_board_timeline = create_boardtimeline(board_id)
+                cur_board_timeline = create_boardtimeline(board_id, producer)
                 BOARD_TIMELINES.append(cur_board_timeline)
             else:
                 cur_board_timeline = cur_board_timeline[0]

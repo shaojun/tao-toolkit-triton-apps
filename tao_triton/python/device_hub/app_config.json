@@ -2,7 +2,7 @@
     "detectors": {
         "ElectricBicycleEnteringEventDetector": {
             "EnableSendConfirmedEbEnteringMsgToKafka": true,
-            "ebic_confid": 0.85,
+            "ebic_confid": 0.83,
             "local_ebic_count": 5
         },
         "GasTankEnteringEventDetector": {
