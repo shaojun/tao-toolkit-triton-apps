@@ -393,13 +393,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.timeline.board_id, infer_used_time,
                 edge_board_confidence, infered_class))
 
-            if infered_class == 'electric_bicycle':
-                try:
-                    self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
-                                           infer_server_current_ebic_confid, full_base64_image_file_text)
-                except:
-                    self.logger.exception(
-                        "save_sample_image(...) rasised an exception:")
+            # if infered_class == 'electric_bicycle':
+            try:
+                self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
+                                        infer_server_current_ebic_confid, full_base64_image_file_text)
+            except:
+                self.logger.exception(
+                    "save_sample_image(...) rasised an exception:")
             if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
                 os.unlink(temp_cropped_image_file_full_name)
 
