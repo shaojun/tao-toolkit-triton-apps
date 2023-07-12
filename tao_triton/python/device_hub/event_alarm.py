@@ -66,23 +66,18 @@ class EventAlarmWebServiceNotifier:
     def __init__(self, logging):
         self.logger = logging.getLogger("eventAlarmWebServiceNotifierLogger")
         self.alarms = []
-        self.thread_lock = threading.Lock()
         _thread.start_new_thread(self.processAlarms, ())
 
     def notify(self, alarms: List[EventAlarm]):
         if not alarms or len(alarms) == 0:
             return
-        self.thread_lock.acquire()
         self.alarms.append(alarms)
-        self.thread_lock.release()
 
     def processAlarms(self):
         while True:
             targert_alarms = None
-            self.thread_lock.acquire()
             if self.alarms and len(self.alarms) > 0:
                 targert_alarms = self.alarms.pop(0)
-            self.thread_lock.release()
             if not targert_alarms:
                 time.sleep(1)
             else:

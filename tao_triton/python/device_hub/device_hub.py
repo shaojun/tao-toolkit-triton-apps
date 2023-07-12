@@ -61,7 +61,8 @@ class RepeatTimer(Timer):
             self.function(*self.args, **self.kwargs)
 
 
-def create_boardtimeline(board_id: str, producer):
+shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
+def create_boardtimeline(board_id: str, kafka_producer):
     # these detectors instances are shared by all timelines
     event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
                        event_detector.DoorStateChangedEventDetector(logging),
@@ -91,11 +92,9 @@ def create_boardtimeline(board_id: str, producer):
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
-                                        [
-                                            # event_alarm.EventAlarmDummyNotifier(logging),
-                                            event_alarm.EventAlarmWebServiceNotifier(
-                                                logging)
-    ],producer)
+                                        [  # event_alarm.EventAlarmDummyNotifier(logging),
+                                            shared_EventAlarmWebServiceNotifier],
+                                        kafka_producer)
 
 
 def create_boardtimeline_from_web_service() -> List[board_timeline.BoardTimeline]:
@@ -260,8 +259,8 @@ if __name__ == '__main__':
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
 
-    producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
-                             value_serializer=lambda x: json.dumps(x).encode('utf-8'))
+    shared_kafka_producer = KafkaProducer(bootstrap_servers=FLAGS.kafka_server_url,
+                                          value_serializer=lambda x: json.dumps(x).encode('utf-8'))
     # consumer.subscribe(pattern="1423820088517")
     # consumer.subscribe(pattern="shaoLocalJsNxBoard")
     # consumer.subscribe(pattern="E1630452176113373185")
@@ -306,7 +305,7 @@ while True:
             cur_board_timeline = [t for t in BOARD_TIMELINES if
                                   t.board_id == board_id]
             if not cur_board_timeline:
-                cur_board_timeline = create_boardtimeline(board_id, producer)
+                cur_board_timeline = create_boardtimeline(board_id, shared_kafka_producer)
                 BOARD_TIMELINES.append(cur_board_timeline)
             else:
                 cur_board_timeline = cur_board_timeline[0]
