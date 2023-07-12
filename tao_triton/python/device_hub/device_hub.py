@@ -108,14 +108,17 @@ BOARD_TIMELINES = None
 
 def logging_perf_counter():
     perf_logger = logging.getLogger("perfLogger")
-    global perf_counter_consumed_msg_count
-    global perf_counter_filtered_msg_count_by_time_diff_too_big
-    perf_logger.warning("consumed_msg_count: {}".format(perf_counter_consumed_msg_count))
+    global PERF_COUNTER_consumed_msg_count
+    global PERF_COUNTER_filtered_msg_count_by_time_diff_too_big
+    global PERF_COUNTER_work_time_by_ms
+    perf_logger.warning("consumed_msg_count: {}".format(PERF_COUNTER_consumed_msg_count))
     perf_logger.warning("filtered_msg_count_by_time_diff_too_big: {}".format(
-        perf_counter_filtered_msg_count_by_time_diff_too_big))
+        PERF_COUNTER_filtered_msg_count_by_time_diff_too_big))
+    perf_logger.warning("work_time_by_ms: {}".format(PERF_COUNTER_work_time_by_ms))
     # reset it
-    perf_counter_consumed_msg_count = 0
-    perf_counter_filtered_msg_count_by_time_diff_too_big = 0
+    PERF_COUNTER_consumed_msg_count = 0
+    PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
+    PERF_COUNTER_work_time_by_ms = 0
 
 
 def pipe_in_local_idle_loop_item_to_board_timelines():
@@ -160,7 +163,7 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
         return True
     time_diff_between_kafka_and_dh_local = (kafka_server_received_msg_utc_datetime -
                                             dh_local_utc_datetime).total_seconds()
-    if abs(time_diff_between_kafka_and_dh_local) >= 12.5:
+    if abs(time_diff_between_kafka_and_dh_local) >= 4:
         # log every 10 seconds for avoid log flooding
         if datetime.datetime.now().second % 10 == 0:
             logging.warning("time_diff between kafka and dh_local is too big: %s for board with id: %s",
@@ -173,10 +176,12 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
 timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
     2, pipe_in_local_idle_loop_item_to_board_timelines)
 
-perf_counter_consumed_msg_count = 0
-perf_counter_filtered_msg_count_by_time_diff_too_big = 0
+PERF_LOGGING_INTERVAL = 60
+PERF_COUNTER_consumed_msg_count = 0
+PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
+PERF_COUNTER_work_time_by_ms = 0
 timely_logging_perf_counter_timer = RepeatTimer(
-    60, logging_perf_counter)
+    PERF_LOGGING_INTERVAL, logging_perf_counter)
 if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     logger.info('%s is starting...', 'device_hub')
@@ -320,9 +325,9 @@ while True:
                 continue
 
             if is_time_diff_too_big(board_id, board_msg_original_timestamp, event.timestamp, datetime.datetime.now()):
-                perf_counter_filtered_msg_count_by_time_diff_too_big += 1
+                PERF_COUNTER_filtered_msg_count_by_time_diff_too_big += 1
                 continue
-
+            perf_counter_work_time_start_time = time.time()
             cur_board_timeline = [t for t in BOARD_TIMELINES if
                                   t.board_id == board_id]
             if not cur_board_timeline:
@@ -395,7 +400,8 @@ while True:
                                                                          board_msg_original_timestamp, board_msg_id,
                                                                          event_data)]
                 cur_board_timeline.add_items(new_update_timeline_items)
-            perf_counter_consumed_msg_count += 1
+            PERF_COUNTER_work_time_by_ms += (time.time() - perf_counter_work_time_start_time) * 1000
+            PERF_COUNTER_consumed_msg_count += 1
     except Exception as e:
         logger.exception("Major error caused by exception:")
         print(e)
