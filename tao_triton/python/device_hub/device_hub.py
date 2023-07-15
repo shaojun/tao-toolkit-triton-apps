@@ -49,6 +49,7 @@ from tao_triton.python.device_hub import board_timeline
 import board_timeline
 import event_alarm
 import event_detector
+import board_timeline_container
 
 with open('log_config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
@@ -103,7 +104,12 @@ def create_boardtimeline_from_web_service() -> List[board_timeline.BoardTimeline
     return []
 
 
+def create_boardtimelinecontainer_from_web_service() -> {}:
+    return {}
+
+
 BOARD_TIMELINES = None
+BOARD_TIMELINES_CONTAINERS = None
 
 
 def logging_perf_counter():
@@ -137,7 +143,8 @@ def pipe_in_local_idle_loop_item_to_board_timelines():
                     tl.add_items([local_idle_loop_item])
 
 
-def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAppliedTimeStamp: int, dh_local_datetime: datetime.datetime):
+def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAppliedTimeStamp: int,
+                         dh_local_datetime: datetime.datetime):
     """
     caculate the time difference between boardMsgTimeStamp, kafkaMsgTimeStamp and dh local datetime.
     :param board_id: the board id, used for logging.
@@ -187,6 +194,7 @@ if __name__ == '__main__':
     logger.info('%s is starting...', 'device_hub')
 
     BOARD_TIMELINES = create_boardtimeline_from_web_service()
+    BOARD_TIMELINES_CONTAINERS = create_boardtimelinecontainer_from_web_service()
     timely_pipe_in_local_idle_loop_msg_timer.start()
     timely_logging_perf_counter_timer.start()
     # except Exception as e:
@@ -328,6 +336,18 @@ while True:
                 PERF_COUNTER_filtered_msg_count_by_time_diff_too_big += 1
                 continue
             perf_counter_work_time_start_time = time.time()
+
+            border_key = board_id[0:4]
+            cur_board_timeline_container = BOARD_TIMELINES_CONTAINERS.get(border_key)
+            if not cur_board_timeline_container:
+                cur_board_timeline_container = board_timeline_container.BoardTimeLineContainer(border_key, logging,
+                                                                                               shared_kafka_producer,
+                                                                                               shared_EventAlarmWebServiceNotifier)
+                BOARD_TIMELINES_CONTAINERS[border_key] = cur_board_timeline_container
+
+            cur_board_timeline_container.add_event_data(event_data)
+
+            continue
             cur_board_timeline = [t for t in BOARD_TIMELINES if
                                   t.board_id == board_id]
             if not cur_board_timeline:
