@@ -28,14 +28,17 @@ if __name__ == '__main__':
                             os.getcwd(), "/home/shao/Downloads/test_mini"),
                         help="Path to the folder of images for classifying, if -r enabled, the single folder",
                         required=False)
-    parser.add_argument('--output-image-classes-folder-path',
+    parser.add_argument('--output-wrong-classified-images-to-folder-path',
                         type=str,
                         default=os.path.join(
-                            os.getcwd(), "output_image_classes"),
-                        help="Path to the folder of classified images with sub folder of class",
+                            os.getcwd(), "test_triton_tao_output_wrongly_classified_images"),
+                        help="Path to the folder of wrongly classified images with sub folder of each class",
                         required=False)
     FLAGS = parser.parse_args()
     FLAGS.enable_random_input_and_visualize_output_mode
+
+    if os.path.exists(FLAGS.output_wrong_classified_images_to_folder_path):
+        shutil.rmtree(FLAGS.output_wrong_classified_images_to_folder_path)
 
     temp_image_files_folder_name = "temp_infer_image_files"
     # purge previous temp files
@@ -148,7 +151,7 @@ if __name__ == '__main__':
                             if wrong_info['confid'] >= confid_watch_point:
                                 False_Negative_times += 1
                             wrong_classification_output_image_folder_of_a_class = os.path.join(
-                                FLAGS.output_image_classes_folder_path, 'wrong_classification_output_image_folder',
+                                FLAGS.output_wrong_classified_images_to_folder_path, 'wrong_classification_output_image_folder',
                                 'ground_truth_of_{}'.format(inner_class_name), 'wrongly_to_{}'.format(target_class_name))
                             if not os.path.exists(wrong_classification_output_image_folder_of_a_class):
                                 os.makedirs(wrong_classification_output_image_folder_of_a_class)
