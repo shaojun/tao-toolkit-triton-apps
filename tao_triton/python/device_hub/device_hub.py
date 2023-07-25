@@ -24,33 +24,34 @@
 # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-import argparse
-import datetime
-import time
-import os
-from typing import List
-
-import base64_tao_client
-import logging
-import logging.config
-import yaml
-from kafka import KafkaConsumer
-from kafka import KafkaProducer
-import json
-import uuid
+import requests
+from multiprocessing import Process
+import event_detector
+import event_alarm
+import board_timeline
+from tao_triton.python.device_hub import board_timeline
 from threading import Timer
+import uuid
+import json
+from kafka import KafkaProducer
+from kafka import KafkaConsumer
+import yaml
+import logging.config
+import logging
+import base64_tao_client
+from typing import List
+import os
+import time
+import datetime
+import argparse
+import sys
+sys.path.append('../../../')
+
 # infer_server_url = None
 # infer_server_protocol = None
 # infer_model_name = None
 # infer_model_version = None
 # infer_server_comm_output_verbose = None
-from tao_triton.python.device_hub import board_timeline
-import board_timeline
-import event_alarm
-import event_detector
-from multiprocessing import Process
-import requests
 
 with open('log_config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
@@ -200,7 +201,7 @@ def worker_of_process_board_msg(boards: List, process_name: str):
         group_id=str(uuid.uuid1()),
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
-    shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
+    shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmDummyNotifier(logging)
     shared_kafka_producer = KafkaProducer(bootstrap_servers=FLAGS.kafka_server_url,
                                           value_serializer=lambda x: json.dumps(x).encode('utf-8'))
     if boards == None:
@@ -429,20 +430,23 @@ if __name__ == '__main__':
     get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
                                               headers={'Content-type': 'application/json', 'Accept': 'application/json'})
     if get_all_board_ids_response.status_code != 200:
-        logger.error("get all board ids  failed, status code: %s", get_all_board_ids_response.status_code)
-        print("get all board ids  failed, status code: %s", get_all_board_ids_response.status_code)
+        logger.error("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))
+        print("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))
         exit(1)
-    json_result = get_all_board_ids_response.json()
+    json_result=get_all_board_ids_response.json()
     if "result" in json_result:
-        total_board_count = len(json_result["result"])
-        logger.info("total board count from web service is: %s", total_board_count)
-        board_info_chunks = split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
-        chunk_index = 0
+        total_board_count=len(json_result["result"])
+        logger.info("total board count from web service is: {}".format(str(total_board_count)))
+        print("total board count from web service is: {}".format(str(total_board_count)))
+        board_info_chunks=split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
+        chunk_index=0
         for ck in board_info_chunks:
-            logger.info("process: %s, board count assigned: %s", str(chunk_index), len(ck))
-            p = Process(target=worker_of_process_board_msg, args=(ck, str(chunk_index)))
+            logger.info("process: {}, board count assigned: {}".format(str(chunk_index), len(ck)))
+            print("process: {}, board count assigned: {}".format(str(chunk_index), len(ck)))
+            p=Process(target=worker_of_process_board_msg, args=(ck, str(chunk_index)))
             concurrent_processes.append(p)
             p.start()
+            print("process: {} started".format(str(chunk_index)))
             chunk_index += 1
 
         while True:
