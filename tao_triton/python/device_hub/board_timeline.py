@@ -103,7 +103,7 @@ class BoardTimeline:
             perf_time_used_by_ms = (t1 - t0) * 1000
             if perf_time_used_by_ms >= 600:
                 self.logger.info(
-                    "event_detector: {}, detect(...) used time(ms): {}".format(d.__class__, perf_time_used_by_ms))
+                    "board: {}, {} detect used time(ms): {}".format(self.board_id, d.__class__.__name__, perf_time_used_by_ms))
 
         if event_alarms:
             t0 = time.time()
