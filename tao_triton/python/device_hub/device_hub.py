@@ -44,8 +44,6 @@ import os
 import time
 import datetime
 import argparse
-import sys
-sys.path.append('../../../')
 
 # infer_server_url = None
 # infer_server_protocol = None
@@ -102,9 +100,6 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                                         kafka_producer)
 
 
-BOARD_TIMELINES = None
-
-
 def logging_perf_counter(process_name: str):
     global PERF_COUNTER_consumed_msg_count
     global PERF_COUNTER_filtered_msg_count_by_time_diff_too_big
@@ -120,9 +115,9 @@ def logging_perf_counter(process_name: str):
     PERF_COUNTER_work_time_by_ms = 0
 
 
-def pipe_in_local_idle_loop_item_to_board_timelines():
-    if BOARD_TIMELINES:
-        for tl in BOARD_TIMELINES:
+def pipe_in_local_idle_loop_item_to_board_timelines(board_timelines: list):
+    if board_timelines:
+        for tl in board_timelines:
             if tl.items:
                 # a timeline wasn't fired for 5s, then pip in local idle loop item
                 if (datetime.datetime.fromisoformat(datetime.datetime.now(
@@ -172,28 +167,33 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
     return False
 
 
-def add_items_to_board(board_timeline: board_timeline.BoardTimeline, items: List[board_timeline.TimelineItem]):
-    board_timeline.add_items(items)
-
-
 def split_array_to_group_of_chunks(arr, group_count: int):
     import math
     chunk_size = math.ceil(len(arr)/group_count)
     return [arr[i:i + chunk_size] for i in range(0, len(arr), chunk_size)]
-# duration is in seconds
-# timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
-#    2, pipe_in_local_idle_loop_item_to_board_timelines)
 
 
 def worker_of_process_board_msg(boards: List, process_name: str):
+    with open('log_config.yaml', 'r') as f:
+        config = yaml.safe_load(f.read())
+        logging.config.dictConfig(config)
+
     global PERF_COUNTER_consumed_msg_count
     global PERF_COUNTER_filtered_msg_count_by_time_diff_too_big
     global PERF_COUNTER_work_time_by_ms
 
     logger = logging.getLogger(__name__)
     logger.info('process: {} is running...'.format(process_name))
-    timely_logging_perf_counter_timer = RepeatTimer(PERF_LOGGING_INTERVAL, logging_perf_counter, process_name)
+
+    # duration is in seconds
+    timely_logging_perf_counter_timer = RepeatTimer(
+        PERF_LOGGING_INTERVAL, logging_perf_counter, [process_name])
     timely_logging_perf_counter_timer.start()
+
+    board_timelines = []
+    timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
+        2, pipe_in_local_idle_loop_item_to_board_timelines, [board_timelines])
+    timely_pipe_in_local_idle_loop_msg_timer.start()
     consumer = KafkaConsumer(
         bootstrap_servers=FLAGS.kafka_server_url,
         auto_offset_reset='latest',
@@ -201,12 +201,11 @@ def worker_of_process_board_msg(boards: List, process_name: str):
         group_id=str(uuid.uuid1()),
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
-    shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmDummyNotifier(logging)
+    shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
     shared_kafka_producer = KafkaProducer(bootstrap_servers=FLAGS.kafka_server_url,
                                           value_serializer=lambda x: json.dumps(x).encode('utf-8'))
     if boards == None:
         return
-    board_timelines = []
     consumer_str = ""
     for index, value in enumerate(boards):
         if index == 0:
@@ -433,17 +432,17 @@ if __name__ == '__main__':
         logger.error("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))
         print("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))
         exit(1)
-    json_result=get_all_board_ids_response.json()
+    json_result = get_all_board_ids_response.json()
     if "result" in json_result:
-        total_board_count=len(json_result["result"])
+        total_board_count = len(json_result["result"])
         logger.info("total board count from web service is: {}".format(str(total_board_count)))
         print("total board count from web service is: {}".format(str(total_board_count)))
-        board_info_chunks=split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
-        chunk_index=0
+        board_info_chunks = split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
+        chunk_index = 0
         for ck in board_info_chunks:
             logger.info("process: {}, board count assigned: {}".format(str(chunk_index), len(ck)))
             print("process: {}, board count assigned: {}".format(str(chunk_index), len(ck)))
-            p=Process(target=worker_of_process_board_msg, args=(ck, str(chunk_index)))
+            p = Process(target=worker_of_process_board_msg, args=(ck, str(chunk_index)))
             concurrent_processes.append(p)
             p.start()
             print("process: {} started".format(str(chunk_index)))

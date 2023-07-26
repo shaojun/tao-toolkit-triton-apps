@@ -8,7 +8,7 @@ from typing import List
 from kafka import KafkaProducer
 
 
-class TimelineItemType(Enum):
+class TimelineItemType(int, Enum):
     # the item is sent by object detect app
     OBJECT_DETECT = 1
     # the item is sent by speed sensor
