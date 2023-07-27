@@ -176,6 +176,12 @@ def split_array_to_group_of_chunks(arr, group_count: int):
 def worker_of_process_board_msg(boards: List, process_name: str):
     with open('log_config.yaml', 'r') as f:
         config = yaml.safe_load(f.read())
+        for handler_name in config['handlers']:
+            if 'file_handler' in handler_name:
+                config['handlers'][handler_name]['filename'] = config['handlers'][handler_name]['filename'].replace(
+                    'log/', 'log/'+process_name+"/")
+                if not os.path.exists('log/'+process_name+"/"):
+                    os.makedirs('log/'+process_name+"/")
         logging.config.dictConfig(config)
 
     global PERF_COUNTER_consumed_msg_count
@@ -440,12 +446,14 @@ if __name__ == '__main__':
         board_info_chunks = split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
         chunk_index = 0
         for ck in board_info_chunks:
-            logger.info("process: {}, board count assigned: {}".format(str(chunk_index), len(ck)))
-            print("process: {}, board count assigned: {}".format(str(chunk_index), len(ck)))
-            p = Process(target=worker_of_process_board_msg, args=(ck, str(chunk_index)))
+            process_name = str(chunk_index)
+            logger.info("process: {}, board count assigned: {}, they're: {}".format(
+                process_name, len(ck), ','.join([i['serialNo'] for i in ck])))
+            print("process: {}, board count assigned: {}".format(process_name, len(ck)))
+            p = Process(target=worker_of_process_board_msg, args=(ck, process_name))
             concurrent_processes.append(p)
             p.start()
-            print("process: {} started".format(str(chunk_index)))
+            print("process: {} started".format(process_name))
             chunk_index += 1
 
         while True:
