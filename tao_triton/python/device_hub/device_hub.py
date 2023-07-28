@@ -176,12 +176,12 @@ def split_array_to_group_of_chunks(arr, group_count: int):
 def worker_of_process_board_msg(boards: List, process_name: str):
     with open('log_config.yaml', 'r') as f:
         config = yaml.safe_load(f.read())
-        for handler_name in config['handlers']:
-            if 'file_handler' in handler_name:
-                config['handlers'][handler_name]['filename'] = config['handlers'][handler_name]['filename'].replace(
-                    'log/', 'log/'+process_name+"/")
-                if not os.path.exists('log/'+process_name+"/"):
-                    os.makedirs('log/'+process_name+"/")
+        file_handlers = [config['handlers'][handler_name]
+                         for handler_name in config['handlers'] if 'file_handler' in handler_name]
+        for h in file_handlers:
+            h['filename'] = h['filename'].replace('log/', 'log/'+process_name+"/")
+            if not os.path.exists('log/'+process_name+"/"):
+                os.makedirs('log/'+process_name+"/")
         logging.config.dictConfig(config)
 
     global PERF_COUNTER_consumed_msg_count
