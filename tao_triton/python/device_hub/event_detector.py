@@ -472,13 +472,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if not os.path.exists(image_sample_path):
                 os.makedirs(image_sample_path)
             board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
-                datetime.datetime.now().tzinfo).strftime("%Y_%m_%d_%H_%M_%S_%f")[:-3])
+                datetime.datetime.now().tzinfo).strftime("%Y_%m%d_%H%M_%S_%f")[:-3])
             dh_local_timestamp_str = str(
-                datetime.datetime.now().strftime("%H_%M_%S_%f")[:-3])
+                datetime.datetime.now().strftime("%H%M_%S_%f")[:-3])
             shutil.copyfile(image_file_full_name,
                             os.path.join(
                                 image_sample_path,
-                                str(infer_server_ebic_confid) + "___" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
+                                str(infer_server_ebic_confid)[:4] +  "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str +"___" + self.timeline.board_id + ".jpg"))
 
             if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
                 temp_full_image = Image.open(io.BytesIO(
@@ -682,7 +682,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                         base64.decodebytes(cropped_base64_image_file_text.encode('ascii'))))
                     temp_cropped_image.save(os.path.join(
                         image_sample_path,
-                        "crop_image___" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
+                        "crop_image___" + file_name_timestamp_str + "___" + self.timeline.board_id  + ".jpg"))
 
             # is_enabled = util.read_fast_from_app_config_to_board_control_level(
             #    ["detectors", 'GasTankEnteringEventDetector', 'FeatureSwitchers'], self.timeline.board_id)
