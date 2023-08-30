@@ -376,7 +376,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             try:
                 raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230722_tao',
                                                                     '--mode', 'Classification',
-                                                                    '-u', '192.168.66.149:8000',
+                                                                    '-u', '127.0.0.1:8000',
                                                                     '--output_path', './',
                                                                     temp_cropped_image_file_full_name])
                 infered_class = raw_infer_results[0][0]['infer_class_name']
@@ -488,6 +488,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
 
     def raiseTheAlarm(self, infer_result, ebike_confid_threshold):
+        keep_ebike_confid_threshold = util.read_fast_from_app_config_to_property(
+            ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+            'keep_ebic_confid')
         result = False
         # 推理结果是电车，更新成功判断为电车的时间，如果enter_time 跟exit_time都有值时说明是新一轮的电车入梯
         # 如果enter_time有值而exit_time无值则认为是同一轮,只更新latest_infer_success
@@ -500,7 +503,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     "board: {}, sink this eb detect due to it is the same ebike, enter_time:{}, infer_result:{}".format(
                         self.timeline.board_id, self.ebike_state["enter_time"],
                         infer_result))
-            else:
+            elif self.needRaiseAlarm():
                 self.ebike_state["enter_time"] = datetime.datetime.now()
                 self.ebike_state["exit_time"] = ""
                 result = True
@@ -508,14 +511,27 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                  format(self.timeline.board_id,
                                         self.ebike_state["enter_time"],
                                         self.ebike_state["latest_infer_success"]))
+            else:
+                self.logger.info("board: {}, sink ebike entering,latest_infer_success:{}".
+                                 format(self.timeline.board_id,
+                                        self.ebike_state["latest_infer_success"]))
+        # 成功上生成过电车告警且当前推理结果大于保留电车的阈值限制，则不认为出梯
+        elif keep_ebike_confid_threshold != 0 and infer_result >= keep_ebike_confid_threshold and \
+                self.ebike_state["enter_time"] != "":
+            self.ebike_state["latest_infer_success"] = datetime.datetime.now()
+            self.logger.info("board: {}, keep the eb enter state, enter_time:{}, infer_result:{}".format(
+                self.timeline.board_id, self.ebike_state["enter_time"], infer_result))
         # 推理为非电车，如果距上次推理成功已有一段时间，那么则认为电动车出梯了
         else:
+            time_to_keep_successful_infer_result = util.read_fast_from_app_config_to_property(
+                ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+                'time_to_keep_successful_infer_result')
             temp_time = datetime.datetime.now()
             if self.ebike_state["latest_infer_success"] == "":
                 self.ebike_state["enter_time"] = ""
                 self.ebike_state["exit_time"] = ""
             elif self.ebike_state["latest_infer_success"] != "" and (
-                    temp_time - self.ebike_state["latest_infer_success"]).total_seconds() > 5:
+                    temp_time - self.ebike_state["latest_infer_success"]).total_seconds() > time_to_keep_successful_infer_result:
                 self.ebike_state["latest_infer_success"] = ""
                 self.ebike_state["exit_time"] = temp_time
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
@@ -599,6 +615,43 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.local_ebike_infer_result_list[0]["confirm_send"] = False
                 self.logger.debug("send ebike confirm exit")
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
+
+    # 本地识别到的电车在进行识别后，如果已经进行了max_infer_count(比如10次)次推理都不是电动车，那么在max_infer_time的
+    # 时间段内将不再生成告警
+    # max_infer_count_for_one_session配置为0时作废该逻辑
+    def needRaiseAlarm(self):
+        result = False
+
+        max_infer_count = util.read_fast_from_app_config_to_property(
+            ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+            'max_infer_count_for_one_session')
+
+        # 配置为0时作废该逻辑
+        if max_infer_count == 0:
+            return True
+
+        # 推理次数还未达到配置的最大次数，不影响原有逻辑
+        if len(self.local_ebike_infer_result_list) < max_infer_count:
+            return True
+
+        ebic_confid = util.read_fast_from_app_config_to_property(
+            ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+            'ebic_confid')
+        surrived_items = self.local_ebike_infer_result_list[0:max_infer_count]
+        surrived_items = [i for i in surrived_items if i["infer_result"] >= ebic_confid]
+        # 如果前max_infer_count中有推理成功的电车，则不影响原有逻辑
+        if len(surrived_items) > 0:
+            return True
+
+        # 如果第一次推理到现在已经超过配置的最大推理时间，则不影响原有逻辑
+        max_infer_time_for_one_session = util.read_fast_from_app_config_to_property(
+            ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+            'max_infer_time_for_one_session')
+        if (datetime.datetime.now() - self.local_ebike_infer_result_list[0][
+            "infer_time"]).total_seconds() >= max_infer_time_for_one_session:
+            return True
+
+        return result
 
 
 #
