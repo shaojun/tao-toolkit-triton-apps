@@ -389,9 +389,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             t1 = time.time()
 
             infer_used_time = (t1 - t0) * 1000
-            self.logger.debug("      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results: {}".format(
-                self.timeline.board_id, infer_used_time,
-                edge_board_confidence, infered_class))
+            self.logger.debug("      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results/confid: {}/{}".format(
+                self.timeline.board_id, str(infer_used_time)[:5],
+                str(edge_board_confidence)[:4], infered_class, infer_server_current_ebic_confid))
 
             # if infered_class == 'electric_bicycle':
             try:
@@ -429,7 +429,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             t2 = time.time()
             after_infer_used_time = (t2 - t1) * 1000
             self.logger.debug("board: {}, used time after infer: {}ms".format(
-                self.timeline.board_id, after_infer_used_time))
+                self.timeline.board_id, str(after_infer_used_time))[:5])
         return eb_entering_event_alarms
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
@@ -456,8 +456,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                            edge_board_confidence, infer_server_ebic_confid)))
         else:
             self.logger.debug(
-                "      board: {}, sink this eb detect due to infer server gives low confidence: {}, "
-                "or the elevator is not in story 1 or -1, current storey is:{} ".format(
+                "      board: {}, sink this eb detect as server gives low confid: {}, "
+                "or not in story 1 or -1, current storey is:{} ".format(
                     self.timeline.board_id,
                     infer_server_ebic_confid, story))
             # self.sendMessageToKafka("sink this eb detect. infer server gives low confidence:[]".format(
@@ -497,7 +497,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if self.ebike_state["enter_time"] != "" and self.ebike_state["exit_time"] == "":
                 result = False
                 self.logger.info(
-                    "board: {}, sink this eb detect due to it is the same ebike, enter_time:{}, infer_result:{}".format(
+                    "board: {}, sink this eb detect as it's the same ebike, enter_time:{}, infer_result:{}".format(
                         self.timeline.board_id, self.ebike_state["enter_time"],
                         infer_result))
             else:
