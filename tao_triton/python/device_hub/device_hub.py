@@ -26,9 +26,9 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import requests
 from multiprocessing import Process
-import event_detector
-import event_alarm
-import board_timeline
+import tao_triton.python.device_hub.event_detector as event_detector
+import tao_triton.python.device_hub.event_alarm as event_alarm
+import tao_triton.python.device_hub.board_timeline
 from tao_triton.python.device_hub import board_timeline
 from threading import Timer
 import uuid
@@ -38,20 +38,22 @@ from kafka import KafkaConsumer
 import yaml
 import logging.config
 import logging
-import base64_tao_client
+import tao_triton.python.device_hub.base64_tao_client
 from typing import List
 import os
 import time
 import datetime
 import argparse
+import traceback
 
 # infer_server_url = None
 # infer_server_protocol = None
 # infer_model_name = None
 # infer_model_version = None
 # infer_server_comm_output_verbose = None
-
-with open('log_config.yaml', 'r') as f:
+APP_ROOT_PATH = os.path.join(os.getcwd(), 'tao_triton', 'python', 'device_hub')
+LOG_CONFIG_FILE_PATH = os.path.join(APP_ROOT_PATH, 'log_config.yaml')
+with open(LOG_CONFIG_FILE_PATH, 'r') as f:
     config = yaml.safe_load(f.read())
     logging.config.dictConfig(config)
 
@@ -174,14 +176,15 @@ def split_array_to_group_of_chunks(arr, group_count: int):
 
 
 def worker_of_process_board_msg(boards: List, process_name: str):
-    with open('log_config.yaml', 'r') as f:
+    with open(LOG_CONFIG_FILE_PATH, 'r') as f:
         config = yaml.safe_load(f.read())
         file_handlers = [config['handlers'][handler_name]
                          for handler_name in config['handlers'] if 'file_handler' in handler_name]
         for h in file_handlers:
             h['filename'] = h['filename'].replace('log/', 'log/'+process_name+"/")
-            if not os.path.exists('log/'+process_name+"/"):
-                os.makedirs('log/'+process_name+"/")
+            log_foler_path = os.path.join(APP_ROOT_PATH, 'log', process_name)
+            if not os.path.exists(log_foler_path):
+                os.makedirs(log_foler_path)
         logging.config.dictConfig(config)
 
     global PERF_COUNTER_consumed_msg_count
@@ -333,7 +336,7 @@ def worker_of_process_board_msg(boards: List, process_name: str):
                 PERF_COUNTER_consumed_msg_count += 1
         except Exception as e:
             logger.exception("Major error caused by exception:")
-            print(e)
+            print(traceback.format_exc())
             continue
 
 

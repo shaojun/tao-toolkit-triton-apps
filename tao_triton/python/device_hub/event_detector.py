@@ -10,8 +10,8 @@ from kafka import KafkaProducer
 from PIL import Image
 import base64
 import io
-import event_alarm
-import board_timeline
+import tao_triton.python.device_hub.event_alarm as event_alarm
+import tao_triton.python.device_hub.board_timeline as board_timeline
 from tao_triton.python.device_hub import util
 from tao_triton.python.entrypoints import tao_client
 from json import dumps

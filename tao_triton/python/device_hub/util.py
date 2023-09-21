@@ -1,7 +1,8 @@
 import datetime
 import json
 from typing import List
-
+import tao_triton.python.device_hub.device_hub
+import os
 
 lastReadjsonConfigFileTime = None
 lastReadjsonConfigFileContent = None
@@ -11,7 +12,7 @@ def read_fast_from_app_config(path: List[str]):
     global lastReadjsonConfigFileTime
     global lastReadjsonConfigFileContent
     if lastReadjsonConfigFileTime is None or (datetime.datetime.now() - lastReadjsonConfigFileTime).seconds > 5:
-        f = open('app_config.json')
+        f = open(os.path.join(tao_triton.python.device_hub.device_hub.APP_ROOT_PATH,'app_config.json'))
         data = json.load(f)
         lastReadjsonConfigFileContent = data
         lastReadjsonConfigFileTime = datetime.datetime.now()

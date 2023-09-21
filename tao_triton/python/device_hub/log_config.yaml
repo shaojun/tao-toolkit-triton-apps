@@ -10,110 +10,110 @@ handlers:
     formatter: simple
     stream: ext://sys.stdout
   main_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/main.log"
+    filename: "tao_triton/python/device_hub/log/main.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
   perf_logger_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/perf.log"
+    filename: "tao_triton/python/device_hub/log/perf.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
   electricBicycleEnteringEventDetector_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/electricBicycleEnteringEventDetector.log"
+    filename: "tao_triton/python/device_hub/log/electricBicycleEnteringEventDetector.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
   doorStateChangedEventDetector_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/doorStateChangedEventDetector.log"
+    filename: "tao_triton/python/device_hub/log/doorStateChangedEventDetector.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 80240000
     encoding: utf8
   cameraDetectVehicleEventDetector_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/cameraDetectVehicleEventDetector.log"
+    filename: "tao_triton/python/device_hub/log/cameraDetectVehicleEventDetector.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
   eventAlarmWebServiceNotifier_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/eventAlarmWebServiceNotifier.log"
+    filename: "tao_triton/python/device_hub/log/eventAlarmWebServiceNotifier.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
   elevatorJamsEventDetector_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/elevatorJamsEventDetector.log"
+    filename: "tao_triton/python/device_hub/log/elevatorJamsEventDetector.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
   doorRepeatlyOpenAndCloseEventDetector_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/doorRepeatlyOpenAndCloseEventDetector.log"
+    filename: "tao_triton/python/device_hub/log/doorRepeatlyOpenAndCloseEventDetector.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
   gasTankEnteringEventDetector_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/gasTankEnteringEventDetector.log"
+    filename: "tao_triton/python/device_hub/log/gasTankEnteringEventDetector.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
   peopleStuckEventDetector_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/peopleStuckEventDetector.log"
+    filename: "tao_triton/python/device_hub/log/peopleStuckEventDetector.log"
     when: S
     interval: 86400
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
   blockingDoorEventDetector_file_handler:
-    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    class: tao_triton.python.device_hub.enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/blockingDoorEventDetector.log"
+    filename: "tao_triton/python/device_hub/log/blockingDoorEventDetector.log"
     when: S
     interval: 86400
     backupCount: 1200

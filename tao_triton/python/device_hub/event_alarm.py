@@ -4,7 +4,7 @@ import threading
 import time
 from enum import Enum
 from typing import List
-import event_detector
+import tao_triton.python.device_hub.event_detector as event_detector
 import requests
 
 
