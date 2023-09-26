@@ -396,7 +396,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # if infered_class == 'electric_bicycle':
             try:
                 self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
-                                        infer_server_current_ebic_confid, full_base64_image_file_text)
+                                        infered_class, infer_server_current_ebic_confid, full_base64_image_file_text)
             except:
                 self.logger.exception(
                     "save_sample_image(...) rasised an exception:")
@@ -465,27 +465,31 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
         return event_alarms
 
-    def save_sample_image(self, image_file_full_name, original_utc_timestamp: datetime, infer_server_ebic_confid, full_base64_image_file_text):
-        if infer_server_ebic_confid >= 0.01:
-            image_sample_path = os.path.join(
-                ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
-            if not os.path.exists(image_sample_path):
-                os.makedirs(image_sample_path)
-            board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
-                datetime.datetime.now().tzinfo).strftime("%Y_%m%d_%H%M_%S_%f")[:-3])
-            dh_local_timestamp_str = str(
-                datetime.datetime.now().strftime("%H%M_%S_%f")[:-3])
+    def save_sample_image(self, image_file_full_name, original_utc_timestamp: datetime, infered_class, infer_server_ebic_confid, full_base64_image_file_text):
+        image_sample_path = os.path.join(
+            ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
+        if not os.path.exists(image_sample_path):
+            os.makedirs(image_sample_path)
+        board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
+            datetime.datetime.now().tzinfo).strftime("%Y_%m%d_%H%M_%S_%f")[:-3])
+        dh_local_timestamp_str = str(
+            datetime.datetime.now().strftime("%H%M_%S_%f")[:-3])
+        file_name_prefix = ''
+        if infered_class == 'electric_bicycle':
+            pass
+        else:
+            file_name_prefix = infered_class+"_"
             shutil.copyfile(image_file_full_name,
                             os.path.join(
                                 image_sample_path,
-                                str(infer_server_ebic_confid)[:4] +  "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str +"___" + self.timeline.board_id + ".jpg"))
+                                file_name_prefix, str(infer_server_ebic_confid)[:4] +  "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str +"___" + self.timeline.board_id + ".jpg"))
 
-            if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
-                temp_full_image = Image.open(io.BytesIO(
-                    base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
-                temp_full_image.save(os.path.join(
-                    image_sample_path,
-                    str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
+        if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
+            temp_full_image = Image.open(io.BytesIO(
+                base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
+            temp_full_image.save(os.path.join(
+                image_sample_path,
+                str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
 
     def raiseTheAlarm(self, infer_result, ebike_confid_threshold):
         result = False
