@@ -389,14 +389,14 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             t1 = time.time()
 
             infer_used_time = (t1 - t0) * 1000
-            self.logger.debug("      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results: {}".format(
-                self.timeline.board_id, infer_used_time,
-                edge_board_confidence, infered_class))
+            self.logger.debug("      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results/confid: {}/{}".format(
+                self.timeline.board_id, str(infer_used_time)[:5],
+                str(edge_board_confidence)[:4], infered_class, infer_server_current_ebic_confid))
 
             # if infered_class == 'electric_bicycle':
             try:
                 self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
-                                        infer_server_current_ebic_confid, full_base64_image_file_text)
+                                        infered_class, infer_server_current_ebic_confid, full_base64_image_file_text)
             except:
                 self.logger.exception(
                     "save_sample_image(...) rasised an exception:")
@@ -435,7 +435,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             t2 = time.time()
             after_infer_used_time = (t2 - t1) * 1000
             self.logger.debug("board: {}, used time after infer: {}ms".format(
-                self.timeline.board_id, after_infer_used_time))
+                self.timeline.board_id, str(after_infer_used_time))[:5])
         return eb_entering_event_alarms
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
@@ -462,8 +462,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                            edge_board_confidence, infer_server_ebic_confid)))
         else:
             self.logger.debug(
-                "      board: {}, sink this eb detect due to infer server gives low confidence: {}, "
-                "or the elevator is not in story 1 or -1, current storey is:{} ".format(
+                "      board: {}, sink this eb detect as server gives low confid: {}, "
+                "or not in story 1 or -1, current storey is:{} ".format(
                     self.timeline.board_id,
                     infer_server_ebic_confid, story))
             # self.sendMessageToKafka("sink this eb detect. infer server gives low confidence:[]".format(
@@ -471,27 +471,32 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
         return event_alarms
 
-    def save_sample_image(self, image_file_full_name, original_utc_timestamp: datetime, infer_server_ebic_confid, full_base64_image_file_text):
-        if infer_server_ebic_confid >= 0.01:
-            image_sample_path = os.path.join(
-                ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
-            if not os.path.exists(image_sample_path):
-                os.makedirs(image_sample_path)
-            board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
-                datetime.datetime.now().tzinfo).strftime("%Y_%m%d_%H%M_%S_%f")[:-3])
-            dh_local_timestamp_str = str(
-                datetime.datetime.now().strftime("%H%M_%S_%f")[:-3])
-            shutil.copyfile(image_file_full_name,
-                            os.path.join(
-                                image_sample_path,
-                                str(infer_server_ebic_confid)[:4] +  "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str +"___" + self.timeline.board_id + ".jpg"))
+    def save_sample_image(self, image_file_full_name, original_utc_timestamp: datetime, infered_class, infer_server_ebic_confid, full_base64_image_file_text):
+        image_sample_path = os.path.join(
+            ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
+        if not os.path.exists(image_sample_path):
+            os.makedirs(image_sample_path)
+        board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
+            datetime.datetime.now().tzinfo).strftime("%Y_%m%d_%H%M_%S_%f")[:-3])
+        dh_local_timestamp_str = str(
+            datetime.datetime.now().strftime("%H%M_%S_%f")[:-3])
+        file_name_prefix = ''
+        if infered_class == 'electric_bicycle':
+            pass
+        else:
+            file_name_prefix = infered_class + "_"
+        shutil.copyfile(image_file_full_name,
+                        os.path.join(
+                            image_sample_path,
+                            file_name_prefix, 
+                            str(infer_server_ebic_confid)[:4] +  "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str +"___" + self.timeline.board_id + ".jpg"))
 
-            if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
-                temp_full_image = Image.open(io.BytesIO(
-                    base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
-                temp_full_image.save(os.path.join(
-                    image_sample_path,
-                    str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
+        if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
+            temp_full_image = Image.open(io.BytesIO(
+                base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
+            temp_full_image.save(os.path.join(
+                image_sample_path,
+                str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
 
     def raiseTheAlarm(self, infer_result, ebike_confid_threshold):
         keep_ebike_confid_threshold = util.read_fast_from_app_config_to_property(
@@ -506,7 +511,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if self.ebike_state["enter_time"] != "" and self.ebike_state["exit_time"] == "":
                 result = False
                 self.logger.info(
-                    "board: {}, sink this eb detect due to it is the same ebike, enter_time:{}, infer_result:{}".format(
+                    "board: {}, sink this eb detect as it's the same ebike, enter_time:{}, infer_result:{}".format(
                         self.timeline.board_id, self.ebike_state["enter_time"],
                         infer_result))
             elif self.needRaiseAlarm():
