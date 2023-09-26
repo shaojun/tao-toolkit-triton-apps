@@ -65,7 +65,7 @@ class RepeatTimer(Timer):
 # shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
 
 
-def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier):
+def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str):
     # these detectors instances are shared by all timelines
     event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
                        event_detector.DoorStateChangedEventDetector(logging),
@@ -97,7 +97,7 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                                         event_detectors,
                                         [  # event_alarm.EventAlarmDummyNotifier(logging),
                                             shared_EventAlarmWebServiceNotifier],
-                                        kafka_producer)
+                                        kafka_producer, target_borads)
 
 
 def logging_perf_counter(process_name: str):
@@ -173,7 +173,25 @@ def split_array_to_group_of_chunks(arr, group_count: int):
     return [arr[i:i + chunk_size] for i in range(0, len(arr), chunk_size)]
 
 
-def worker_of_process_board_msg(boards: List, process_name: str):
+def get_xiaoquids(xiaoqu_name:str):
+    get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all?xiaoquName="+xiaoqu_name,
+                                              headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+    if get_all_board_ids_response.status_code != 200:
+        return ""
+
+    json_result = get_all_board_ids_response.json()
+    if "result" in json_result:
+        target_boards=""
+        for index, value in enumerate(json_result["result"]):
+            if index == 0:
+                target_boards += value["serialNo"]
+            else:
+                target_boards += "|" + value["serialNo"]
+        return target_boards
+    return ""
+
+
+def worker_of_process_board_msg(boards: List, process_name: str, target_borads:str):
     with open('log_config.yaml', 'r') as f:
         config = yaml.safe_load(f.read())
         file_handlers = [config['handlers'][handler_name]
@@ -257,7 +275,7 @@ def worker_of_process_board_msg(boards: List, process_name: str):
                                       t.board_id == board_id]
                 if not cur_board_timeline:
                     cur_board_timeline = create_boardtimeline(board_id, shared_kafka_producer,
-                                                              shared_EventAlarmWebServiceNotifier)
+                                                              shared_EventAlarmWebServiceNotifier, target_borads)
                     board_timelines.append(cur_board_timeline)
                 else:
                     cur_board_timeline = cur_board_timeline[0]
@@ -445,12 +463,13 @@ if __name__ == '__main__':
         print("total board count from web service is: {}".format(str(total_board_count)))
         board_info_chunks = split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
         chunk_index = 0
+        target_borads = get_xiaoquids("心泊家园（梅花苑）")
         for ck in board_info_chunks:
             process_name = str(chunk_index)
             logger.info("process: {}, board count assigned: {}, they're: {}".format(
                 process_name, len(ck), ','.join([i['serialNo'] for i in ck])))
             print("process: {}, board count assigned: {}".format(process_name, len(ck)))
-            p = Process(target=worker_of_process_board_msg, args=(ck, process_name))
+            p = Process(target=worker_of_process_board_msg, args=(ck, process_name,target_borads))
             concurrent_processes.append(p)
             p.start()
             print("process: {} started".format(process_name))

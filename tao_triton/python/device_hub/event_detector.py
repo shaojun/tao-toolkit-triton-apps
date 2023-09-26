@@ -402,7 +402,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     "save_sample_image(...) rasised an exception:")
             if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
                 os.unlink(temp_cropped_image_file_full_name)
-
+            if infered_class != 'electric_bicycle':
+                self.logger.debug(
+                    "      board: {}, rewrite this eb detect due to infer server treat as non-eb class at all: {}".format(
+                        self.timeline.board_id,
+                        infered_class))
+                infered_class = 'electric_bicycle'
+                infer_server_current_ebic_confid = 0.1212
             if infered_class != 'electric_bicycle':
                 self.logger.debug(
                     "      board: {}, sink this eb detect due to infer server treat as non-eb class at all: {}".format(
@@ -541,6 +547,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
     def sendMessageToKafka(self, message):
         try:
+            if self.timeline.board_id in self.timeline.target_borads:
+                # self.logger.info("board:{}is in the target list".format(self.timeline.board_id))
+                return
+            # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
             #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
             obj_info_list = []
@@ -708,7 +718,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                 last_report_time_diff = (
                     datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
                 # if last_report_time_diff <= 60 * 60 * 24:
-                if last_report_time_diff <= 60 * 10:
+                if last_report_time_diff <= 60 * 60 * 6:
                     continue
             # self.logger.debug(
             #     "timeline_item in gas tank detect raw data:{}".format(item.raw_data))

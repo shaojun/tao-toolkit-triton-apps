@@ -6,3 +6,4 @@
 .vscode/settings.json
 log/
 /.idea
+/tao_triton/python/device_hub/test_triton_tao_output_wrongly_classified_images/

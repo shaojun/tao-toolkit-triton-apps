@@ -25,7 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--input-images-folder-path',
                         type=str,
                         default=os.path.join(
-                            os.getcwd(), "/home/shao/Downloads/test_mini"),
+                            os.getcwd(), "/home/kevin/Pictures/testing_split_from_yaoming/test"),
                         help="Path to the folder of images for classifying, if -r enabled, the single folder",
                         required=False)
     parser.add_argument('--output-wrong-classified-images-to-folder-path',

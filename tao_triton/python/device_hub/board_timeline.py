@@ -56,13 +56,14 @@ class BoardTimeline:
     Timeline_Items_Max_Survive_Time = 120
 
     def __init__(self, logging, board_id: str, items: List[TimelineItem], event_detectors,
-                 event_alarm_notifiers, producer):
+                 event_alarm_notifiers, producer, target_borads: str):
         self.last_state_update_local_timestamp = None
         self.logger = logging.getLogger(__name__)
         self.board_id = board_id
         self.items = items
         self.event_detectors = event_detectors
         self.event_alarm_notifiers = event_alarm_notifiers
+        self.target_borads = target_borads
         # self.producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
         #                              value_serializer=lambda x: dumps(x).encode('utf-8'))
         self.producer = producer
