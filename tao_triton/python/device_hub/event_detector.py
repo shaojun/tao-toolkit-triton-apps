@@ -478,11 +478,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         if infered_class == 'electric_bicycle':
             pass
         else:
-            file_name_prefix = infered_class+"_"
-            shutil.copyfile(image_file_full_name,
-                            os.path.join(
-                                image_sample_path,
-                                file_name_prefix, str(infer_server_ebic_confid)[:4] +  "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str +"___" + self.timeline.board_id + ".jpg"))
+            file_name_prefix = infered_class + "_"
+        shutil.copyfile(image_file_full_name,
+                        os.path.join(
+                            image_sample_path,
+                            file_name_prefix, 
+                            str(infer_server_ebic_confid)[:4] +  "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str +"___" + self.timeline.board_id + ".jpg"))
 
         if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
             temp_full_image = Image.open(io.BytesIO(
