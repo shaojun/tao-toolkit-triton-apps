@@ -9,6 +9,7 @@ import re
 import argparse
 import glob
 import numpy as np
+import shutil
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -24,17 +25,20 @@ if __name__ == '__main__':
     parser.add_argument('--input-images-folder-path',
                         type=str,
                         default=os.path.join(
-                            os.getcwd(), "/home/shao/Downloads/mini_test_4class_in_each_sub_folder"),
+                            os.getcwd(), "/home/kevin/Pictures/testing_split_from_yaoming/test"),
                         help="Path to the folder of images for classifying, if -r enabled, the single folder",
                         required=False)
-    parser.add_argument('--output-image-classes-folder-path',
+    parser.add_argument('--output-wrong-classified-images-to-folder-path',
                         type=str,
                         default=os.path.join(
-                            os.getcwd(), "output_image_classes"),
-                        help="Path to the folder of classified images with sub folder of class",
+                            os.getcwd(), "test_triton_tao_output_wrongly_classified_images"),
+                        help="Path to the folder of wrongly classified images with sub folder of each class",
                         required=False)
     FLAGS = parser.parse_args()
     FLAGS.enable_random_input_and_visualize_output_mode
+
+    if os.path.exists(FLAGS.output_wrong_classified_images_to_folder_path):
+        shutil.rmtree(FLAGS.output_wrong_classified_images_to_folder_path)
 
     temp_image_files_folder_name = "temp_infer_image_files"
     # purge previous temp files
@@ -55,9 +59,10 @@ if __name__ == '__main__':
     # 3060GPU machine ip:  36.153.41.18:18000
     infer_server_url = "36.153.41.18:18000"  # "localhost:8000"
     testing_model_names = [
-        "elenet_four_classes_230417_tao",
-        "elenet_four_classes_230620_tao",
-        "elenet_four_classes_230702_tao"
+        # "elenet_four_classes_230417_tao",
+        # "elenet_four_classes_230620_tao",
+        # "elenet_four_classes_230702_tao",
+        "elenet_four_classes_230722_tao"
     ]
     classes = ['background', 'bicycle', 'electric_bicycle', 'people']
     model_statistics = {}
@@ -78,15 +83,16 @@ if __name__ == '__main__':
                     'wrong_classified_to_classes_info': {},
                     'total_infer_confid': 0,
                     'total_infer_times_by_seconds': 0}
-                for file in os.listdir(single_class_folder_full_path):
-                    with open(os.path.join(single_class_folder_full_path, file), "rb") as image_file:
-                        model_statistics[testing_model_name][class_folder_simple_name]['image_file_count'] += 1
+                for simple_file_name in os.listdir(single_class_folder_full_path):
+                    with open(os.path.join(single_class_folder_full_path, simple_file_name), "rb") as image_file:
+                        stats = model_statistics[testing_model_name][class_folder_simple_name]
+                        stats['image_file_count'] += 1
                         encoded_string = base64.b64encode(image_file.read())
                         full_image_base64_encoded_text = encoded_string.decode(
                             'ascii')
                         import uuid
 
-                        file_ext_name = os.path.splitext(file)[1]
+                        file_ext_name = os.path.splitext(simple_file_name)[1]
                         temp_image_file_full_name = os.path.join(temp_image_files_folder_name,
                                                                  str(uuid.uuid4()) + file_ext_name)
                         temp_image = Image.open(io.BytesIO(base64.decodebytes(
@@ -110,41 +116,54 @@ if __name__ == '__main__':
 
                         infer_used_time = (
                             datetime.datetime.now() - t0).total_seconds()
-                        model_statistics[testing_model_name][class_folder_simple_name][
-                            'total_infer_times_by_seconds'] += infer_used_time
+                        stats['total_infer_times_by_seconds'] += infer_used_time
 
                         if infered_class == class_folder_simple_name:
-                            model_statistics[testing_model_name][class_folder_simple_name][
-                                'correctly_classified_confid_values'].append(infered_server_confid)
-                            model_statistics[testing_model_name][class_folder_simple_name][
-                                'total_infer_confid'] += infered_server_confid
+                            stats['correctly_classified_confid_values'].append(
+                                infered_server_confid)
+                            stats['total_infer_confid'] += infered_server_confid
                         else:
                             # wrong_classified_to_classes_info
-                            if infered_class in model_statistics[testing_model_name][class_folder_simple_name][
-                                    'wrong_classified_to_classes_info']:
-                                model_statistics[testing_model_name][class_folder_simple_name][
-                                    'wrong_classified_to_classes_info'][infered_class].append(infered_server_confid)
+                            if infered_class in stats['wrong_classified_to_classes_info']:
+                                stats['wrong_classified_to_classes_info'][infered_class].append({
+                                    'confid': infered_server_confid,
+                                    'file_full_path': os.path.join(single_class_folder_full_path, simple_file_name)
+                                })
+                                # infered_server_confid)
                             else:
-                                model_statistics[testing_model_name][class_folder_simple_name][
-                                    'wrong_classified_to_classes_info'][infered_class] = [infered_server_confid]
+                                stats['wrong_classified_to_classes_info'][infered_class] = [
+                                    {
+                                        'confid': infered_server_confid,
+                                        'file_full_path': os.path.join(single_class_folder_full_path, simple_file_name)
+                                    }]
         print('\r\n\r\n')
-        confid_watch_points = [0, 0.3, 0.5, 0.7, 0.9]
+        confid_watch_points = [0, 0.5, 0.7, 0.9]
         # confid_watch_points = [0, 0.6, 0.9]
         for testing_model_name in testing_model_names:
             print('Statistics for model: {}, dataset: {}'.format(testing_model_name, FLAGS.input_images_folder_path))
-            for class_name in model_statistics[testing_model_name].keys():
-                stats = model_statistics[testing_model_name][class_name]
+            for target_class_name in model_statistics[testing_model_name].keys():
+                stats = model_statistics[testing_model_name][target_class_name]
                 for confid_watch_point in confid_watch_points:
                     False_Negative_times = 0
-                    for cn in model_statistics[testing_model_name].keys():
-                        for wrong_confid_value in model_statistics[testing_model_name][cn]['wrong_classified_to_classes_info'].get(class_name, []):
-                            if wrong_confid_value >= confid_watch_point:
+                    '''re-loop all class statistics to extract the wrong classified info to target_class_name'''
+                    for inner_class_name in model_statistics[testing_model_name].keys():
+                        for wrong_info in model_statistics[testing_model_name][inner_class_name]['wrong_classified_to_classes_info'].get(target_class_name, []):
+                            if wrong_info['confid'] >= confid_watch_point:
                                 False_Negative_times += 1
+                            wrong_classification_output_image_folder_of_a_class = os.path.join(
+                                FLAGS.output_wrong_classified_images_to_folder_path, 'wrong_classification_output_image_folder',
+                                'ground_truth_of_{}'.format(inner_class_name), 'wrongly_to_{}'.format(target_class_name))
+                            if not os.path.exists(wrong_classification_output_image_folder_of_a_class):
+                                os.makedirs(wrong_classification_output_image_folder_of_a_class)
+                            shutil.copy(wrong_info['file_full_path'],
+                                        wrong_classification_output_image_folder_of_a_class)
+                            
+
                     correctly_classified_times = len(
                         [confid for confid in stats['correctly_classified_confid_values'] if confid >= confid_watch_point])
                     print('     with confid_watch_point: {}'.format(confid_watch_point))
-                    print('         Class: {} -> acc: {}({}/{}), recall: {}({}/{}+{}), avg infer(by_ms): {}, avg confid: {}, detail abstract: {{{}}}  \r'.format(
-                        class_name.ljust(16),
+                    print('         Class: {} -> acc: {}({}/{}), recall: {}({}/{}+{}), avg infer(by_ms): {}, avg confid: {}, wrong infer: {{{}}}  \r'.format(
+                        target_class_name.ljust(16),
 
                         str(correctly_classified_times /
                             int(stats['image_file_count']))[:5],

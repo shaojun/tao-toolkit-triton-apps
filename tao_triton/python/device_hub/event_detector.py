@@ -374,9 +374,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             temp_image.save(temp_cropped_image_file_full_name)
             t0 = time.time()
             try:
-                raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230620_tao',
+                raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230722_tao',
                                                                     '--mode', 'Classification',
-                                                                    '-u', '192.168.66.149:8000',
+                                                                    '-u', '127.0.0.1:8000',
                                                                     '--output_path', './',
                                                                     temp_cropped_image_file_full_name])
                 infered_class = raw_infer_results[0][0]['infer_class_name']
@@ -389,20 +389,26 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             t1 = time.time()
 
             infer_used_time = (t1 - t0) * 1000
-            self.logger.debug("      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results: {}".format(
-                self.timeline.board_id, infer_used_time,
-                edge_board_confidence, infered_class))
+            self.logger.debug("      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results/confid: {}/{}".format(
+                self.timeline.board_id, str(infer_used_time)[:5],
+                str(edge_board_confidence)[:4], infered_class, infer_server_current_ebic_confid))
 
             # if infered_class == 'electric_bicycle':
             try:
                 self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
-                                        infer_server_current_ebic_confid, full_base64_image_file_text)
+                                        infered_class, infer_server_current_ebic_confid, full_base64_image_file_text)
             except:
                 self.logger.exception(
                     "save_sample_image(...) rasised an exception:")
             if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
                 os.unlink(temp_cropped_image_file_full_name)
-
+            if infered_class != 'electric_bicycle':
+                self.logger.debug(
+                    "      board: {}, rewrite this eb detect due to infer server treat as non-eb class at all: {}".format(
+                        self.timeline.board_id,
+                        infered_class))
+                infered_class = 'electric_bicycle'
+                infer_server_current_ebic_confid = 0.1212
             if infered_class != 'electric_bicycle':
                 self.logger.debug(
                     "      board: {}, sink this eb detect due to infer server treat as non-eb class at all: {}".format(
@@ -429,7 +435,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             t2 = time.time()
             after_infer_used_time = (t2 - t1) * 1000
             self.logger.debug("board: {}, used time after infer: {}ms".format(
-                self.timeline.board_id, after_infer_used_time))
+                self.timeline.board_id, str(after_infer_used_time))[:5])
         return eb_entering_event_alarms
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
@@ -456,8 +462,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                            edge_board_confidence, infer_server_ebic_confid)))
         else:
             self.logger.debug(
-                "      board: {}, sink this eb detect due to infer server gives low confidence: {}, "
-                "or the elevator is not in story 1 or -1, current storey is:{} ".format(
+                "      board: {}, sink this eb detect as server gives low confid: {}, "
+                "or not in story 1 or -1, current storey is:{} ".format(
                     self.timeline.board_id,
                     infer_server_ebic_confid, story))
             # self.sendMessageToKafka("sink this eb detect. infer server gives low confidence:[]".format(
@@ -465,29 +471,37 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
         return event_alarms
 
-    def save_sample_image(self, image_file_full_name, original_utc_timestamp: datetime, infer_server_ebic_confid, full_base64_image_file_text):
-        if infer_server_ebic_confid >= 0.01:
-            image_sample_path = os.path.join(
-                ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
-            if not os.path.exists(image_sample_path):
-                os.makedirs(image_sample_path)
-            board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
-                datetime.datetime.now().tzinfo).strftime("%Y_%m_%d_%H_%M_%S_%f")[:-3])
-            dh_local_timestamp_str = str(
-                datetime.datetime.now().strftime("%H_%M_%S_%f")[:-3])
-            shutil.copyfile(image_file_full_name,
-                            os.path.join(
-                                image_sample_path,
-                                str(infer_server_ebic_confid) + "___" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
+    def save_sample_image(self, image_file_full_name, original_utc_timestamp: datetime, infered_class, infer_server_ebic_confid, full_base64_image_file_text):
+        image_sample_path = os.path.join(
+            ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
+        if not os.path.exists(image_sample_path):
+            os.makedirs(image_sample_path)
+        board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
+            datetime.datetime.now().tzinfo).strftime("%Y_%m%d_%H%M_%S_%f")[:-3])
+        dh_local_timestamp_str = str(
+            datetime.datetime.now().strftime("%H%M_%S_%f")[:-3])
+        file_name_prefix = ''
+        if infered_class == 'electric_bicycle':
+            pass
+        else:
+            file_name_prefix = infered_class + "_"
+        shutil.copyfile(image_file_full_name,
+                        os.path.join(
+                            image_sample_path,
+                            file_name_prefix, 
+                            str(infer_server_ebic_confid)[:4] +  "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str +"___" + self.timeline.board_id + ".jpg"))
 
-            if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
-                temp_full_image = Image.open(io.BytesIO(
-                    base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
-                temp_full_image.save(os.path.join(
-                    image_sample_path,
-                    str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
+        if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
+            temp_full_image = Image.open(io.BytesIO(
+                base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
+            temp_full_image.save(os.path.join(
+                image_sample_path,
+                str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
 
     def raiseTheAlarm(self, infer_result, ebike_confid_threshold):
+        keep_ebike_confid_threshold = util.read_fast_from_app_config_to_property(
+            ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+            'keep_ebic_confid')
         result = False
         # 推理结果是电车，更新成功判断为电车的时间，如果enter_time 跟exit_time都有值时说明是新一轮的电车入梯
         # 如果enter_time有值而exit_time无值则认为是同一轮,只更新latest_infer_success
@@ -497,10 +511,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if self.ebike_state["enter_time"] != "" and self.ebike_state["exit_time"] == "":
                 result = False
                 self.logger.info(
-                    "board: {}, sink this eb detect due to it is the same ebike, enter_time:{}, infer_result:{}".format(
+                    "board: {}, sink this eb detect as it's the same ebike, enter_time:{}, infer_result:{}".format(
                         self.timeline.board_id, self.ebike_state["enter_time"],
                         infer_result))
-            else:
+            elif self.needRaiseAlarm():
                 self.ebike_state["enter_time"] = datetime.datetime.now()
                 self.ebike_state["exit_time"] = ""
                 result = True
@@ -508,14 +522,27 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                  format(self.timeline.board_id,
                                         self.ebike_state["enter_time"],
                                         self.ebike_state["latest_infer_success"]))
+            else:
+                self.logger.info("board: {}, sink ebike entering,latest_infer_success:{}".
+                                 format(self.timeline.board_id,
+                                        self.ebike_state["latest_infer_success"]))
+        # 成功上生成过电车告警且当前推理结果大于保留电车的阈值限制，则不认为出梯
+        elif keep_ebike_confid_threshold != 0 and infer_result >= keep_ebike_confid_threshold and \
+                self.ebike_state["enter_time"] != "":
+            self.ebike_state["latest_infer_success"] = datetime.datetime.now()
+            self.logger.info("board: {}, keep the eb enter state, enter_time:{}, infer_result:{}".format(
+                self.timeline.board_id, self.ebike_state["enter_time"], infer_result))
         # 推理为非电车，如果距上次推理成功已有一段时间，那么则认为电动车出梯了
         else:
+            time_to_keep_successful_infer_result = util.read_fast_from_app_config_to_property(
+                ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+                'time_to_keep_successful_infer_result')
             temp_time = datetime.datetime.now()
             if self.ebike_state["latest_infer_success"] == "":
                 self.ebike_state["enter_time"] = ""
                 self.ebike_state["exit_time"] = ""
             elif self.ebike_state["latest_infer_success"] != "" and (
-                    temp_time - self.ebike_state["latest_infer_success"]).total_seconds() > 5:
+                    temp_time - self.ebike_state["latest_infer_success"]).total_seconds() > time_to_keep_successful_infer_result:
                 self.ebike_state["latest_infer_success"] = ""
                 self.ebike_state["exit_time"] = temp_time
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
@@ -525,6 +552,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
     def sendMessageToKafka(self, message):
         try:
+            if self.timeline.board_id in self.timeline.target_borads:
+                # self.logger.info("board:{}is in the target list".format(self.timeline.board_id))
+                return
+            # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
             #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
             obj_info_list = []
@@ -600,6 +631,43 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.logger.debug("send ebike confirm exit")
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
 
+    # 本地识别到的电车在进行识别后，如果已经进行了max_infer_count(比如10次)次推理都不是电动车，那么在max_infer_time的
+    # 时间段内将不再生成告警
+    # max_infer_count_for_one_session配置为0时作废该逻辑
+    def needRaiseAlarm(self):
+        result = False
+
+        max_infer_count = util.read_fast_from_app_config_to_property(
+            ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+            'max_infer_count_for_one_session')
+
+        # 配置为0时作废该逻辑
+        if max_infer_count == 0:
+            return True
+
+        # 推理次数还未达到配置的最大次数，不影响原有逻辑
+        if len(self.local_ebike_infer_result_list) < max_infer_count:
+            return True
+
+        ebic_confid = util.read_fast_from_app_config_to_property(
+            ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+            'ebic_confid')
+        surrived_items = self.local_ebike_infer_result_list[0:max_infer_count]
+        surrived_items = [i for i in surrived_items if i["infer_result"] >= ebic_confid]
+        # 如果前max_infer_count中有推理成功的电车，则不影响原有逻辑
+        if len(surrived_items) > 0:
+            return True
+
+        # 如果第一次推理到现在已经超过配置的最大推理时间，则不影响原有逻辑
+        max_infer_time_for_one_session = util.read_fast_from_app_config_to_property(
+            ["detectors", ElectricBicycleEnteringEventDetector.__name__],
+            'max_infer_time_for_one_session')
+        if (datetime.datetime.now() - self.local_ebike_infer_result_list[0][
+            "infer_time"]).total_seconds() >= max_infer_time_for_one_session:
+            return True
+
+        return result
+
 
 #
 # 煤气罐检测告警（煤气罐入梯)
@@ -655,7 +723,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                 last_report_time_diff = (
                     datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
                 # if last_report_time_diff <= 60 * 60 * 24:
-                if last_report_time_diff <= 60 * 10:
+                if last_report_time_diff <= 60 * 60 * 6:
                     continue
             # self.logger.debug(
             #     "timeline_item in gas tank detect raw data:{}".format(item.raw_data))
@@ -682,7 +750,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                         base64.decodebytes(cropped_base64_image_file_text.encode('ascii'))))
                     temp_cropped_image.save(os.path.join(
                         image_sample_path,
-                        "crop_image___" + self.timeline.board_id + "___" + file_name_timestamp_str + ".jpg"))
+                        "crop_image___" + file_name_timestamp_str + "___" + self.timeline.board_id  + ".jpg"))
 
             # is_enabled = util.read_fast_from_app_config_to_board_control_level(
             #    ["detectors", 'GasTankEnteringEventDetector', 'FeatureSwitchers'], self.timeline.board_id)

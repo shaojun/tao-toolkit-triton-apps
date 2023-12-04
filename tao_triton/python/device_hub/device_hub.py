@@ -24,32 +24,32 @@
 # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-import argparse
-import datetime
-import time
-import os
-from typing import List
-
-import base64_tao_client
-import logging
-import logging.config
-import yaml
-from kafka import KafkaConsumer
-from kafka import KafkaProducer
-import json
-import uuid
+import requests
+from multiprocessing import Process
+import event_detector
+import event_alarm
+import board_timeline
+from tao_triton.python.device_hub import board_timeline
 from threading import Timer
+import uuid
+import json
+from kafka import KafkaProducer
+from kafka import KafkaConsumer
+import yaml
+import logging.config
+import logging
+import base64_tao_client
+from typing import List
+import os
+import time
+import datetime
+import argparse
+
 # infer_server_url = None
 # infer_server_protocol = None
 # infer_model_name = None
 # infer_model_version = None
 # infer_server_comm_output_verbose = None
-from tao_triton.python.device_hub import board_timeline
-import board_timeline
-import event_alarm
-import event_detector
-import board_timeline_container
 
 with open('log_config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
@@ -62,10 +62,10 @@ class RepeatTimer(Timer):
             self.function(*self.args, **self.kwargs)
 
 
-shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
+# shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
 
 
-def create_boardtimeline(board_id: str, kafka_producer):
+def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str):
     # these detectors instances are shared by all timelines
     event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
                        event_detector.DoorStateChangedEventDetector(logging),
@@ -97,39 +97,27 @@ def create_boardtimeline(board_id: str, kafka_producer):
                                         event_detectors,
                                         [  # event_alarm.EventAlarmDummyNotifier(logging),
                                             shared_EventAlarmWebServiceNotifier],
-                                        kafka_producer)
+                                        kafka_producer, target_borads)
 
 
-def create_boardtimeline_from_web_service() -> List[board_timeline.BoardTimeline]:
-    return []
-
-
-def create_boardtimelinecontainer_from_web_service() -> {}:
-    return {}
-
-
-BOARD_TIMELINES = None
-BOARD_TIMELINES_CONTAINERS = None
-
-
-def logging_perf_counter():
-    perf_logger = logging.getLogger("perfLogger")
+def logging_perf_counter(process_name: str):
     global PERF_COUNTER_consumed_msg_count
     global PERF_COUNTER_filtered_msg_count_by_time_diff_too_big
     global PERF_COUNTER_work_time_by_ms
-    perf_logger.warning("consumed_msg_count: {}".format(PERF_COUNTER_consumed_msg_count))
-    perf_logger.warning("filtered_msg_count_by_time_diff_too_big: {}".format(
-        PERF_COUNTER_filtered_msg_count_by_time_diff_too_big))
-    perf_logger.warning("work_time_by_ms: {}".format(PERF_COUNTER_work_time_by_ms))
+    perf_logger = logging.getLogger("perfLogger")
+    perf_logger.warning("process: {}, consumed_msg_count: {}".format(process_name, PERF_COUNTER_consumed_msg_count))
+    perf_logger.warning("process: {}, filtered_msg_count_by_time_diff_too_big: {}".format(
+        process_name, PERF_COUNTER_filtered_msg_count_by_time_diff_too_big))
+    perf_logger.warning("process: {}, work_time_by_ms: {}".format(process_name, PERF_COUNTER_work_time_by_ms))
     # reset it
     PERF_COUNTER_consumed_msg_count = 0
     PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
     PERF_COUNTER_work_time_by_ms = 0
 
 
-def pipe_in_local_idle_loop_item_to_board_timelines():
-    if BOARD_TIMELINES:
-        for tl in BOARD_TIMELINES:
+def pipe_in_local_idle_loop_item_to_board_timelines(board_timelines: list):
+    if board_timelines:
+        for tl in board_timelines:
             if tl.items:
                 # a timeline wasn't fired for 5s, then pip in local idle loop item
                 if (datetime.datetime.fromisoformat(datetime.datetime.now(
@@ -179,27 +167,204 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
     return False
 
 
-# duration is in seconds
-timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
-    2, pipe_in_local_idle_loop_item_to_board_timelines)
+def split_array_to_group_of_chunks(arr, group_count: int):
+    import math
+    chunk_size = math.ceil(len(arr)/group_count)
+    return [arr[i:i + chunk_size] for i in range(0, len(arr), chunk_size)]
 
+
+def get_xiaoquids(xiaoqu_name:str):
+    get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all?xiaoquName="+xiaoqu_name,
+                                              headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+    if get_all_board_ids_response.status_code != 200:
+        return ""
+
+    json_result = get_all_board_ids_response.json()
+    if "result" in json_result:
+        target_boards=""
+        for index, value in enumerate(json_result["result"]):
+            if index == 0:
+                target_boards += value["serialNo"]
+            else:
+                target_boards += "|" + value["serialNo"]
+        return target_boards
+    return ""
+
+
+def worker_of_process_board_msg(boards: List, process_name: str, target_borads:str):
+    with open('log_config.yaml', 'r') as f:
+        config = yaml.safe_load(f.read())
+        file_handlers = [config['handlers'][handler_name]
+                         for handler_name in config['handlers'] if 'file_handler' in handler_name]
+        for h in file_handlers:
+            h['filename'] = h['filename'].replace('log/', 'log/'+process_name+"/")
+            if not os.path.exists('log/'+process_name+"/"):
+                os.makedirs('log/'+process_name+"/")
+        logging.config.dictConfig(config)
+
+    global PERF_COUNTER_consumed_msg_count
+    global PERF_COUNTER_filtered_msg_count_by_time_diff_too_big
+    global PERF_COUNTER_work_time_by_ms
+
+    logger = logging.getLogger(__name__)
+    logger.info('process: {} is running...'.format(process_name))
+
+    # duration is in seconds
+    timely_logging_perf_counter_timer = RepeatTimer(
+        PERF_LOGGING_INTERVAL, logging_perf_counter, [process_name])
+    timely_logging_perf_counter_timer.start()
+
+    board_timelines = []
+    timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
+        2, pipe_in_local_idle_loop_item_to_board_timelines, [board_timelines])
+    timely_pipe_in_local_idle_loop_msg_timer.start()
+    consumer = KafkaConsumer(
+        bootstrap_servers=FLAGS.kafka_server_url,
+        auto_offset_reset='latest',
+        enable_auto_commit=True,
+        group_id=str(uuid.uuid1()),
+        value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+    )
+    shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
+    shared_kafka_producer = KafkaProducer(bootstrap_servers=FLAGS.kafka_server_url,
+                                          value_serializer=lambda x: json.dumps(x).encode('utf-8'))
+    if boards == None:
+        return
+    consumer_str = ""
+    for index, value in enumerate(boards):
+        if index == 0:
+            consumer_str += value["serialNo"]
+        else:
+            consumer_str += "|" + value["serialNo"]
+    consumer.subscribe(pattern=consumer_str)
+    while True:
+        try:
+            # do a dummy poll to retrieve some message
+            consumer.poll()
+            logger.debug("process: {}, consumer.poll messages".format(process_name))
+            # go to end of the stream
+            consumer.seek_to_end()
+            for event in consumer:
+                event_data = event.value
+                if "sensorId" not in event_data or "@timestamp" not in event_data:
+                    continue
+                board_msg_id = event_data["id"]
+                # UTC datetime str, like: '2023-06-28T12:58:58.960Z'
+                board_msg_original_timestamp = event_data["@timestamp"]
+                board_id = event_data["sensorId"]
+                if board_id == "default_empty_id_please_manual_set_rv1126":
+                    continue
+
+                # if board_id != "E1634085712737341441":
+                #    continue
+
+                if board_id == "E1640262214042521601":
+                    continue
+
+                if board_id == "E1675418684153139201":
+                    continue
+
+                if "_dh" in board_id:
+                    continue
+
+                if is_time_diff_too_big(board_id, board_msg_original_timestamp, event.timestamp, datetime.datetime.now()):
+                    PERF_COUNTER_filtered_msg_count_by_time_diff_too_big += 1
+                    continue
+                perf_counter_work_time_start_time = time.time()
+                cur_board_timeline = [t for t in board_timelines if
+                                      t.board_id == board_id]
+                if not cur_board_timeline:
+                    cur_board_timeline = create_boardtimeline(board_id, shared_kafka_producer,
+                                                              shared_EventAlarmWebServiceNotifier, target_borads)
+                    board_timelines.append(cur_board_timeline)
+                else:
+                    cur_board_timeline = cur_board_timeline[0]
+                new_timeline_items = []
+                # indicates it's the object detection msg
+                if "objects" in event_data:
+                    if len(event_data["objects"]) == 0:
+                        new_timeline_items.append(
+                            board_timeline.TimelineItem(cur_board_timeline,
+                                                        board_timeline.TimelineItemType.OBJECT_DETECT,
+                                                        board_msg_original_timestamp,
+                                                        board_msg_id, ""))
+                    for obj_data in event_data["objects"]:
+                        new_timeline_items.append(
+                            board_timeline.TimelineItem(cur_board_timeline,
+                                                        board_timeline.TimelineItemType.OBJECT_DETECT,
+                                                        board_msg_original_timestamp,
+                                                        board_msg_id, obj_data))
+                    cur_board_timeline.add_items(new_timeline_items)
+                # indicates it's the sensor data reading msg
+                elif "sensors" in event_data and "sensorId" in event_data:
+                    # new_items = []
+                    for obj_data in event_data["sensors"]:
+                        if "speed" in obj_data:
+                            new_timeline_items.append(
+                                board_timeline.TimelineItem(cur_board_timeline,
+                                                            board_timeline.TimelineItemType.SENSOR_READ_SPEED,
+                                                            board_msg_original_timestamp,
+                                                            board_msg_id, obj_data))
+                            # cur_board_timeline.add_items([new_timeline_item])
+                        elif "pressure" in obj_data:
+                            new_timeline_items.append(
+                                board_timeline.TimelineItem(cur_board_timeline,
+                                                            board_timeline.TimelineItemType.SENSOR_READ_PRESSURE,
+                                                            board_msg_original_timestamp, board_msg_id, obj_data))
+                            # cur_board_timeline.add_items([new_timeline_item])
+                        elif "ACCELERATOR" in obj_data:
+                            new_timeline_items.append(
+                                board_timeline.TimelineItem(cur_board_timeline,
+                                                            board_timeline.TimelineItemType.SENSOR_READ_ACCELERATOR,
+                                                            board_msg_original_timestamp, board_msg_id, obj_data))
+                            # cur_board_timeline.add_items([new_timeline_item])
+                        elif "switchFault" in obj_data:
+                            new_timeline_items.append(
+                                board_timeline.TimelineItem(cur_board_timeline,
+                                                            board_timeline.TimelineItemType.SENSOR_READ_ELECTRIC_SWITCH,
+                                                            board_msg_original_timestamp, board_msg_id, obj_data))
+                        elif "detectPerson" in obj_data:
+                            new_timeline_items.append(
+                                board_timeline.TimelineItem(cur_board_timeline,
+                                                            board_timeline.TimelineItemType.SENSOR_READ_PEOPLE_DETECT,
+                                                            board_msg_original_timestamp, board_msg_id, obj_data))
+                        elif "cameraBlocked" in obj_data:
+                            new_timeline_items.append(
+                                board_timeline.TimelineItem(cur_board_timeline,
+                                                            board_timeline.TimelineItemType.CAMERA_BLOCKED,
+                                                            board_msg_original_timestamp, board_msg_id, obj_data))
+                        elif "eventType" in obj_data:
+                            new_timeline_items.append(
+                                board_timeline.TimelineItem(cur_board_timeline,
+                                                            board_timeline.TimelineItemType.CAMERA_VECHILE_EVENT,
+                                                            board_msg_original_timestamp, board_msg_id, obj_data))
+                    cur_board_timeline.add_items(new_timeline_items)
+                elif "update" in event_data:
+                    new_update_timeline_items = [board_timeline.TimelineItem(cur_board_timeline,
+                                                                             board_timeline.TimelineItemType.UPDATE_RESULT,
+                                                                             board_msg_original_timestamp,
+                                                                             board_msg_id,
+                                                                             event_data)]
+                    new_timeline_items.append(new_timeline_items)
+                    cur_board_timeline.add_items(new_update_timeline_items)
+                PERF_COUNTER_work_time_by_ms += (time.time() - perf_counter_work_time_start_time) * 1000
+                PERF_COUNTER_consumed_msg_count += 1
+        except Exception as e:
+            logger.exception("Major error caused by exception:")
+            print(e)
+            continue
+
+
+'''each process owned below variables, they're not shared between processes'''
 PERF_LOGGING_INTERVAL = 60
 PERF_COUNTER_consumed_msg_count = 0
 PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
 PERF_COUNTER_work_time_by_ms = 0
-timely_logging_perf_counter_timer = RepeatTimer(
-    PERF_LOGGING_INTERVAL, logging_perf_counter)
+
+GLOBAL_CONCURRENT_PROCESS_COUNT = 4
 if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     logger.info('%s is starting...', 'device_hub')
-
-    BOARD_TIMELINES = create_boardtimeline_from_web_service()
-    BOARD_TIMELINES_CONTAINERS = create_boardtimelinecontainer_from_web_service()
-    timely_pipe_in_local_idle_loop_msg_timer.start()
-    timely_logging_perf_counter_timer.start()
-    # except Exception as e:
-    # logging.error("Exception occurred", exc_info=True)
-    # or logging.exception("descriptive msg")  trace will be autoly appended
     parser = argparse.ArgumentParser()
     parser.add_argument('-v',
                         '--verbose',
@@ -284,145 +449,35 @@ if __name__ == '__main__':
                         help='kafka server URL. Default is xxx:9092.')
     FLAGS = parser.parse_args()
 
-    consumer = KafkaConsumer(
-        bootstrap_servers=FLAGS.kafka_server_url,
-        auto_offset_reset='latest',
-        enable_auto_commit=True,
-        group_id=str(uuid.uuid1()),
-        value_deserializer=lambda x: json.loads(x.decode('utf-8'))
-    )
+    concurrent_processes = []
+    get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
+                                              headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+    if get_all_board_ids_response.status_code != 200:
+        logger.error("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))
+        print("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))
+        exit(1)
+    json_result = get_all_board_ids_response.json()
+    if "result" in json_result:
+        total_board_count = len(json_result["result"])
+        logger.info("total board count from web service is: {}".format(str(total_board_count)))
+        print("total board count from web service is: {}".format(str(total_board_count)))
+        board_info_chunks = split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
+        chunk_index = 0
+        target_borads = get_xiaoquids("心泊家园（梅花苑）")
+        for ck in board_info_chunks:
+            process_name = str(chunk_index)
+            logger.info("process: {}, board count assigned: {}, they're: {}".format(
+                process_name, len(ck), ','.join([i['serialNo'] for i in ck])))
+            print("process: {}, board count assigned: {}".format(process_name, len(ck)))
+            p = Process(target=worker_of_process_board_msg, args=(ck, process_name,target_borads))
+            concurrent_processes.append(p)
+            p.start()
+            print("process: {} started".format(process_name))
+            chunk_index += 1
 
-    shared_kafka_producer = KafkaProducer(bootstrap_servers=FLAGS.kafka_server_url,
-                                          value_serializer=lambda x: json.dumps(x).encode('utf-8'))
-    # consumer.subscribe(pattern="1423820088517")
-    # consumer.subscribe(pattern="shaoLocalJsNxBoard")
-    # consumer.subscribe(pattern="E1630452176113373185")
-    # consumer.subscribe(pattern="^E[0-9]+$")
-    # consumer.subscribe(pattern="shaoLocalJts2gBoard")
-    # consumer.subscribe(pattern="^(E163|E160)[0-9]+$")
-    consumer.subscribe(pattern="^(E16)[0-9]+$")
-
-while True:
-    try:
-        # do a dummy poll to retrieve some message
-        consumer.poll()
-        logger.debug("consumer.poll messages")
-        # go to end of the stream
-        consumer.seek_to_end()
-        for event in consumer:
-            event_data = event.value
-            if "sensorId" not in event_data or "@timestamp" not in event_data:
-                continue
-            board_msg_id = event_data["id"]
-            # UTC datetime str, like: '2023-06-28T12:58:58.960Z'
-            board_msg_original_timestamp = event_data["@timestamp"]
-            board_id = event_data["sensorId"]
-            if board_id == "default_empty_id_please_manual_set_rv1126":
-                continue
-
-            # if board_id != "E1634085712737341441":
-            #    continue
-
-            if board_id == "E1640262214042521601":
-                continue
-
-            if board_id == "E1675418684153139201":
-                continue
-
-            if "_dh" in board_id:
-                continue
-
-            if is_time_diff_too_big(board_id, board_msg_original_timestamp, event.timestamp, datetime.datetime.now()):
-                PERF_COUNTER_filtered_msg_count_by_time_diff_too_big += 1
-                continue
-            perf_counter_work_time_start_time = time.time()
-
-            border_key = board_id[0:4]
-            cur_board_timeline_container = BOARD_TIMELINES_CONTAINERS.get(border_key)
-            if not cur_board_timeline_container:
-                cur_board_timeline_container = board_timeline_container.BoardTimeLineContainer(border_key, logging,
-                                                                                               shared_kafka_producer,
-                                                                                               shared_EventAlarmWebServiceNotifier)
-                BOARD_TIMELINES_CONTAINERS[border_key] = cur_board_timeline_container
-
-            cur_board_timeline_container.add_event_data(event_data)
-
-            continue
-            cur_board_timeline = [t for t in BOARD_TIMELINES if
-                                  t.board_id == board_id]
-            if not cur_board_timeline:
-                cur_board_timeline = create_boardtimeline(board_id, shared_kafka_producer)
-                BOARD_TIMELINES.append(cur_board_timeline)
-            else:
-                cur_board_timeline = cur_board_timeline[0]
-            # indicates it's the object detection msg
-            if "objects" in event_data:
-                new_timeline_items = []
-                if len(event_data["objects"]) == 0:
-                    new_timeline_items.append(
-                        board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.OBJECT_DETECT,
-                                                    board_msg_original_timestamp,
-                                                    board_msg_id, ""))
-                for obj_data in event_data["objects"]:
-                    new_timeline_items.append(
-                        board_timeline.TimelineItem(cur_board_timeline, board_timeline.TimelineItemType.OBJECT_DETECT,
-                                                    board_msg_original_timestamp,
-                                                    board_msg_id, obj_data))
-                cur_board_timeline.add_items(new_timeline_items)
-
-            # indicates it's the sensor data reading msg
-            elif "sensors" in event_data and "sensorId" in event_data:
-                new_items = []
-                for obj_data in event_data["sensors"]:
-                    if "speed" in obj_data:
-                        new_items.append(
-                            board_timeline.TimelineItem(cur_board_timeline,
-                                                        board_timeline.TimelineItemType.SENSOR_READ_SPEED,
-                                                        board_msg_original_timestamp,
-                                                        board_msg_id, obj_data))
-                        # cur_board_timeline.add_items([new_timeline_item])
-                    elif "pressure" in obj_data:
-                        new_items.append(
-                            board_timeline.TimelineItem(cur_board_timeline,
-                                                        board_timeline.TimelineItemType.SENSOR_READ_PRESSURE,
-                                                        board_msg_original_timestamp, board_msg_id, obj_data))
-                        # cur_board_timeline.add_items([new_timeline_item])
-                    elif "ACCELERATOR" in obj_data:
-                        new_items.append(
-                            board_timeline.TimelineItem(cur_board_timeline,
-                                                        board_timeline.TimelineItemType.SENSOR_READ_ACCELERATOR,
-                                                        board_msg_original_timestamp, board_msg_id, obj_data))
-                        # cur_board_timeline.add_items([new_timeline_item])
-                    elif "switchFault" in obj_data:
-                        new_items.append(
-                            board_timeline.TimelineItem(cur_board_timeline,
-                                                        board_timeline.TimelineItemType.SENSOR_READ_ELECTRIC_SWITCH,
-                                                        board_msg_original_timestamp, board_msg_id, obj_data))
-                    elif "detectPerson" in obj_data:
-                        new_items.append(
-                            board_timeline.TimelineItem(cur_board_timeline,
-                                                        board_timeline.TimelineItemType.SENSOR_READ_PEOPLE_DETECT,
-                                                        board_msg_original_timestamp, board_msg_id, obj_data))
-                    elif "cameraBlocked" in obj_data:
-                        new_items.append(
-                            board_timeline.TimelineItem(cur_board_timeline,
-                                                        board_timeline.TimelineItemType.CAMERA_BLOCKED,
-                                                        board_msg_original_timestamp, board_msg_id, obj_data))
-                    elif "eventType" in obj_data:
-                        new_items.append(
-                            board_timeline.TimelineItem(cur_board_timeline,
-                                                        board_timeline.TimelineItemType.CAMERA_VECHILE_EVENT,
-                                                        board_msg_original_timestamp, board_msg_id, obj_data))
-                cur_board_timeline.add_items(new_items)
-            elif "update" in event_data:
-                new_update_timeline_items = [board_timeline.TimelineItem(cur_board_timeline,
-                                                                         board_timeline.TimelineItemType.UPDATE_RESULT,
-                                                                         board_msg_original_timestamp, board_msg_id,
-                                                                         event_data)]
-                cur_board_timeline.add_items(new_update_timeline_items)
-            PERF_COUNTER_work_time_by_ms += (time.time() - perf_counter_work_time_start_time) * 1000
-            PERF_COUNTER_consumed_msg_count += 1
-    except Exception as e:
-        logger.exception("Major error caused by exception:")
-        print(e)
-        continue
+        while True:
+            time.sleep(1)
+    else:
+        logger.error("get all board ids failed, result not in response")
+        print("get all board ids failed, result not in response")
+        exit(1)
