@@ -65,7 +65,7 @@ class RepeatTimer(Timer):
 # shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
 
 
-def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str):
+def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str, lift_id: str):
     # these detectors instances are shared by all timelines
     event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
                        event_detector.DoorStateChangedEventDetector(logging),
@@ -97,7 +97,7 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                                         event_detectors,
                                         [  # event_alarm.EventAlarmDummyNotifier(logging),
                                             shared_EventAlarmWebServiceNotifier],
-                                        kafka_producer, target_borads)
+                                        kafka_producer, target_borads, lift_id)
 
 
 def logging_perf_counter(process_name: str):
@@ -171,6 +171,24 @@ def split_array_to_group_of_chunks(arr, group_count: int):
     import math
     chunk_size = math.ceil(len(arr)/group_count)
     return [arr[i:i + chunk_size] for i in range(0, len(arr), chunk_size)]
+
+
+def get_and_close_alarms():
+    get_all_open_alarms = requests.get("http://49.235.35.248:8028/yunwei/warning/getopenliftwarning",
+                                       headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+    if get_all_open_alarms.status_code != 200:
+        return ""
+    json_result1 = get_all_open_alarms.json()
+    if "result" in json_result1:
+        for index, value in enumerate(json_result1["result"]):
+            put_response = requests.put("http://49.235.35.248:8028/yunwei/warning/updatewarningmessagestatus",
+                                        headers={'Content-type': 'application/json', 'Accept': 'application/json'},
+                                        params={"liftId": value["liftId"],
+                                                "type": value["type"],
+                                                "warningMessageId": ""})
+            if put_response.status_code != 200 or put_response.json()["code"] != 200:
+                logger.debug("failed to close lift:{} alarm: {}".format(value["liftId"], value["name"]))
+    return ""
 
 
 def get_xiaoquids(xiaoqu_name:str):
@@ -274,8 +292,10 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
                 cur_board_timeline = [t for t in board_timelines if
                                       t.board_id == board_id]
                 if not cur_board_timeline:
+                    board_lift = [b for b in boards if b["serialNo"] == board_id]
+                    lift_id = "" if not board_lift else board_lift[0]["liftId"]
                     cur_board_timeline = create_boardtimeline(board_id, shared_kafka_producer,
-                                                              shared_EventAlarmWebServiceNotifier, target_borads)
+                                                              shared_EventAlarmWebServiceNotifier, target_borads, lift_id)
                     board_timelines.append(cur_board_timeline)
                 else:
                     cur_board_timeline = cur_board_timeline[0]
@@ -449,8 +469,10 @@ if __name__ == '__main__':
                         help='kafka server URL. Default is xxx:9092.')
     FLAGS = parser.parse_args()
 
+    get_and_close_alarms()
+
     concurrent_processes = []
-    get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
+    get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all?xiaoquName=心泊家园（梅花苑）",
                                               headers={'Content-type': 'application/json', 'Accept': 'application/json'})
     if get_all_board_ids_response.status_code != 200:
         logger.error("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))

@@ -15,6 +15,7 @@ class EventAlarmPriority(Enum):
     WARNING = 2
     ERROR = 3
     FATAL = 4
+    CLOSE = 5
 
 
 class EventAlarm:
@@ -61,7 +62,10 @@ class EventAlarmDummyNotifier(EventAlarmNotifierBase):
 class EventAlarmWebServiceNotifier:
     # URL = "http://49.235.97.14:8801/warning"
     # URL = "http://36.138.48.162:8801/warning"
-    URL = "https://api.glfiot.com/warning"
+    # URL = "https://api.glfiot.com/warning"
+    URL = "http://49.235.35.248:8028/warning"
+    URL_UPDATE = "http://49.235.35.248:8028/yunwei/warning/updatewarningmessagestatus"
+    URL_Gather = "http://49.235.35.248:8028/api/apiduijie/postliftsGathering"
     HEADERS = {'Content-type': 'application/json', 'Accept': 'application/json'}
 
     def __init__(self, logging):
@@ -81,6 +85,49 @@ class EventAlarmWebServiceNotifier:
                 targert_alarms = self.alarms.pop(0)
             if not targert_alarms:
                 time.sleep(1)
+            elif targert_alarms[0].code == "general_data":
+                temp_data = targert_alarms[0]
+                try:
+                    self.logger.info("board: {}, upload general data from {}".format(
+                        temp_data.event_detector.timeline.board_id,
+                        temp_data.event_detector.__class__.__name__))
+                    upload_response = requests.post(EventAlarmWebServiceNotifier.URL_Gather,
+                                                    headers=EventAlarmWebServiceNotifier.HEADERS,
+                                                    data=None,
+                                                    json=temp_data.data)
+                    if upload_response.status_code != 200 or upload_response.json()["code"] != 200:
+                        self.logger.error("board: {}, liftId:{} upload data from {} got error: {}".format(
+                            temp_data.event_detector.timeline.board_id,
+                            temp_data.event_detector.timeline.liftId,
+                            temp_data.event_detector.__class__.__name__, put_response.text[:500]))
+                except:
+                    self.logger.exception(
+                        "board: {}, general data upload from {} got exception.".format(
+                            temp_data.event_detector.timeline.board_id,
+                            temp_data.event_detector.__class__.__name__))
+            elif targert_alarms[0].priority == EventAlarmPriority.CLOSE:
+                temp_alarm = targert_alarms[0]
+                try:
+                    self.logger.info(
+                        "board: {}, close alarm from {}".format(
+                            temp_alarm.event_detector.timeline.board_id,
+                            temp_alarm.event_detector.__class__.__name__))
+                    put_response = requests.put(EventAlarmWebServiceNotifier.URL_UPDATE,
+                                                headers=EventAlarmWebServiceNotifier.HEADERS,
+                                                params={"liftId": temp_alarm.event_detector.timeline.liftId,
+                                                        "type": temp_alarm.code,
+                                                        "warningMessageId": ""})
+                    if put_response.status_code != 200 or put_response.json()["code"] != 200:
+                        self.logger.error(
+                            "board: {}, Notify alarm from {} got error: {}".format(
+                                temp_alarm.event_detector.timeline.board_id,
+                                temp_alarm.event_detector.__class__.__name__,
+                                put_response.text[:500]))
+                except:
+                    self.logger.exception(
+                        "board: {}, close alarm from {} got exception.".format(
+                            temp_alarm.event_detector.timeline.board_id,
+                            temp_alarm.event_detector.__class__.__name__))
             else:
                 post_data = None
                 target_alarm = targert_alarms[0]
