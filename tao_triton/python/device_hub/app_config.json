@@ -6,7 +6,7 @@
             "local_ebic_count": 5,
             "time_to_keep_successful_infer_result": 7,
             "keep_ebic_confid":0.5,
-            "max_infer_time_for_one_session":35,
+            "max_infer_time_for_one_session":48,
             "max_infer_count_for_one_session":3
         },
         "GasTankEnteringEventDetector": {

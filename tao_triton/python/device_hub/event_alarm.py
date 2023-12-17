@@ -21,7 +21,7 @@ class EventAlarmPriority(Enum):
 class EventAlarm:
     def __init__(self, event_detector, original_utc_timestamp: datetime,
                  priority: EventAlarmPriority,
-                 description: str, code="", data={}):
+                 description: str, code="", data={}, image_str=""):
         """
 
         @type event_detector: EventDetectorBase
@@ -33,7 +33,7 @@ class EventAlarm:
         self.original_utc_timestamp = original_utc_timestamp
         self.code = code
         self.data = data
-
+        self.imageText = image_str
 
 class EventAlarmNotifierBase:
     def __init__(self, logging):
@@ -62,10 +62,12 @@ class EventAlarmDummyNotifier(EventAlarmNotifierBase):
 class EventAlarmWebServiceNotifier:
     # URL = "http://49.235.97.14:8801/warning"
     # URL = "http://36.138.48.162:8801/warning"
-    # URL = "https://api.glfiot.com/warning"
-    URL = "http://49.235.35.248:8028/warning"
-    URL_UPDATE = "http://49.235.35.248:8028/yunwei/warning/updatewarningmessagestatus"
-    URL_Gather = "http://49.235.35.248:8028/api/apiduijie/postliftsGathering"
+    URL = "https://api.glfiot.com/warning"
+    URL_UPDATE = "https://api.glfiot.com/yunwei/warning/updatewarningmessagestatus"
+    URL_Gather = "https://api.glfiot.com/api/apiduijie/postliftsGathering"
+    # URL = "http://49.235.35.248:8028/warning"
+    # URL_UPDATE = "http://49.235.35.248:8028/yunwei/warning/updatewarningmessagestatus"
+    # URL_Gather = "http://49.235.35.248:8028/api/apiduijie/postliftsGathering"
     HEADERS = {'Content-type': 'application/json', 'Accept': 'application/json'}
 
     def __init__(self, logging):
@@ -76,7 +78,8 @@ class EventAlarmWebServiceNotifier:
     def notify(self, alarms: List[EventAlarm]):
         if not alarms or len(alarms) == 0:
             return
-        self.alarms.append(alarms)
+        # self.logger.debug("add alarm for:{}".format(alarms[0].event_detector.__class__.__name__))
+        self.alarms.extend(alarms)
 
     def processAlarms(self):
         while True:
@@ -85,8 +88,8 @@ class EventAlarmWebServiceNotifier:
                 targert_alarms = self.alarms.pop(0)
             if not targert_alarms:
                 time.sleep(1)
-            elif targert_alarms[0].code == "general_data":
-                temp_data = targert_alarms[0]
+            elif targert_alarms.code == "general_data":
+                temp_data = targert_alarms
                 try:
                     self.logger.info("board: {}, upload general data from {}".format(
                         temp_data.event_detector.timeline.board_id,
@@ -105,8 +108,8 @@ class EventAlarmWebServiceNotifier:
                         "board: {}, general data upload from {} got exception.".format(
                             temp_data.event_detector.timeline.board_id,
                             temp_data.event_detector.__class__.__name__))
-            elif targert_alarms[0].priority == EventAlarmPriority.CLOSE:
-                temp_alarm = targert_alarms[0]
+            elif targert_alarms.priority == EventAlarmPriority.CLOSE:
+                temp_alarm = targert_alarms
                 try:
                     self.logger.info(
                         "board: {}, close alarm from {}".format(
@@ -114,9 +117,10 @@ class EventAlarmWebServiceNotifier:
                             temp_alarm.event_detector.__class__.__name__))
                     put_response = requests.put(EventAlarmWebServiceNotifier.URL_UPDATE,
                                                 headers=EventAlarmWebServiceNotifier.HEADERS,
-                                                params={"liftId": temp_alarm.event_detector.timeline.liftId,
+                                                json={"liftId": temp_alarm.event_detector.timeline.liftId,
                                                         "type": temp_alarm.code,
-                                                        "warningMessageId": ""})
+                                                        "warningMessageId": "",
+                                                        "base64string": ""})
                     if put_response.status_code != 200 or put_response.json()["code"] != 200:
                         self.logger.error(
                             "board: {}, Notify alarm from {} got error: {}".format(
@@ -130,30 +134,34 @@ class EventAlarmWebServiceNotifier:
                             temp_alarm.event_detector.__class__.__name__))
             else:
                 post_data = None
-                target_alarm = targert_alarms[0]
+                target_alarm = targert_alarms
                 if target_alarm.event_detector.__class__.__name__ == event_detector.ElectricBicycleEnteringEventDetector.__name__:
                     post_data = {"device_id": target_alarm.event_detector.timeline.board_id, "warning_type": "007",
                                  "level": target_alarm.priority.value,
                                  "description": target_alarm.description,
                                  "original_timestamp": str(target_alarm.original_utc_timestamp),
+                                 "base64string": target_alarm.imageText,
                                  "data": target_alarm.data}
                 elif target_alarm.event_detector.__class__.__name__ == event_detector.GasTankEnteringEventDetector.__name__:
                     post_data = {"device_id": target_alarm.event_detector.timeline.board_id, "warning_type": "0021",
                                  "level": target_alarm.priority.value,
                                  "description": target_alarm.description,
                                  "original_timestamp": str(target_alarm.original_utc_timestamp),
+                                 "base64string": target_alarm.imageText,
                                  "data": target_alarm.data}
                 elif target_alarm.event_detector.__class__.__name__ == event_detector.DoorOpenedForLongtimeEventDetector.__name__:
                     post_data = {"device_id": target_alarm.event_detector.timeline.board_id, "warning_type": "008",
                                  "level": target_alarm.priority.value,
                                  "description": target_alarm.description,
                                  "original_timestamp": str(target_alarm.original_utc_timestamp),
+                                 "base64string": target_alarm.imageText,
                                  "data": target_alarm.data}
                 elif target_alarm.event_detector.__class__.__name__ == event_detector.DoorRepeatlyOpenAndCloseEventDetector.__name__:
                     post_data = {"device_id": target_alarm.event_detector.timeline.board_id, "warning_type": "004",
                                  "level": target_alarm.priority.value,
                                  "description": target_alarm.description,
                                  "original_timestamp": str(target_alarm.original_utc_timestamp),
+                                 "base64string": target_alarm.imageText,
                                  "data": target_alarm.data}
                 else:
                     post_data = {"device_id": target_alarm.event_detector.timeline.board_id,
@@ -161,13 +169,15 @@ class EventAlarmWebServiceNotifier:
                                  "level": target_alarm.priority.value,
                                  "description": target_alarm.description,
                                  "original_timestamp": str(target_alarm.original_utc_timestamp),
+                                 "base64string": target_alarm.imageText,
                                  "data": target_alarm.data}
                 try:
                     self.logger.info(
-                        "board: {}, Notifying alarm(by {}) with priority: {} at: {} -> {}".format(
+                        "board: {}, Notifying alarm(by {}) with priority: {} at: {} -> {},base64:{}".format(
                             target_alarm.event_detector.timeline.board_id,
                             target_alarm.event_detector.__class__.__name__,
-                            target_alarm.priority, str(target_alarm.original_utc_timestamp), target_alarm.description))
+                            target_alarm.priority, str(target_alarm.original_utc_timestamp), target_alarm.description,
+                            target_alarm.imageText))
 
                     # level: Debug=0, Info=1, Warning=2, Error=3, Fatal=4
                     post_response = requests.post(EventAlarmWebServiceNotifier.URL,

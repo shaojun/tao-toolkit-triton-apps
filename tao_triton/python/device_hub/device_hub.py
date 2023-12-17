@@ -174,18 +174,19 @@ def split_array_to_group_of_chunks(arr, group_count: int):
 
 
 def get_and_close_alarms():
-    get_all_open_alarms = requests.get("http://49.235.35.248:8028/yunwei/warning/getopenliftwarning",
+    get_all_open_alarms = requests.get("https://api.glfiot.com/yunwei/warning/getopenliftwarning",
                                        headers={'Content-type': 'application/json', 'Accept': 'application/json'})
     if get_all_open_alarms.status_code != 200:
         return ""
     json_result1 = get_all_open_alarms.json()
     if "result" in json_result1:
         for index, value in enumerate(json_result1["result"]):
-            put_response = requests.put("http://49.235.35.248:8028/yunwei/warning/updatewarningmessagestatus",
+            put_response = requests.put("https://api.glfiot.com/yunwei/warning/updatewarningmessagestatus",
                                         headers={'Content-type': 'application/json', 'Accept': 'application/json'},
-                                        params={"liftId": value["liftId"],
+                                        json={"liftId": value["liftId"],
                                                 "type": value["type"],
-                                                "warningMessageId": ""})
+                                                "warningMessageId": "",
+                                                "base64string": ""})
             if put_response.status_code != 200 or put_response.json()["code"] != 200:
                 logger.debug("failed to close lift:{} alarm: {}".format(value["liftId"], value["name"]))
     return ""
@@ -472,7 +473,7 @@ if __name__ == '__main__':
     get_and_close_alarms()
 
     concurrent_processes = []
-    get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all?xiaoquName=心泊家园（梅花苑）",
+    get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
                                               headers={'Content-type': 'application/json', 'Accept': 'application/json'})
     if get_all_board_ids_response.status_code != 200:
         logger.error("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))
