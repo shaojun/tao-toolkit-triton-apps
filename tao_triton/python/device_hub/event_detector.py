@@ -166,8 +166,8 @@ class DoorStateChangedEventDetector(EventDetectorBase):
         #                     i.original_timestamp_str == target_msg_original_timestamp_str]
 
         # target_items = recent_items
-        self.logger.debug(
-            "total length of recent items:{}, target items:{}".format(len(recent_items), len(target_items)))
+        # self.logger.debug(
+        #    "total length of recent items:{}, target items:{}".format(len(recent_items), len(target_items)))
         """
         for item in target_items:
             if "Vehicle|#|TwoWheeler" in item.raw_data or "|TwoWheeler|confirmed" in item.raw_data:
@@ -247,6 +247,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         # self.logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
         self.infer_confirmed_eb_history_list = []
         self.local_ebike_infer_result_list = []
+        self.alarm_raised = False
         self.close_alarm = False
 
         # purge previous temp files
@@ -439,8 +440,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             after_infer_used_time = (t2 - t1) * 1000
             self.logger.debug("board: {}, used time after infer: {}ms".format(
                 self.timeline.board_id, str(after_infer_used_time))[:5])
-        if self.close_alarm:
+        if self.close_alarm and self.alarm_raised:
             self.close_alarm = False
+            self.alarm_raised = False
             self.logger.debug("board: {}, close the ebike alarm".format(self.timeline.board_id))
             eb_entering_event_alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
@@ -466,6 +468,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         if self.raiseTheAlarm(infer_server_ebic_confid, ebike_confid_threshold) and abs(story) == 1:
             self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
                                                                    {"detail": "there's a EB incoming"})
+            self.alarm_raised = True
             event_alarms.append(
                 event_alarm.EventAlarm(self, timeline_item_original_timestamp, event_alarm.EventAlarmPriority.ERROR,
                                        "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
@@ -695,6 +698,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         EventDetectorBase.__init__(self, logging)
         # self.logger = logging.getLogger(__name__)
         self.logger = logging.getLogger("gasTankEnteringEventDetectorLogger")
+        self.need_close_alarm = False
 
     def prepare(self, timeline, event_detectors):
         """
@@ -732,12 +736,14 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         event_alarms = []
         gas_tank_items = [i for i in filtered_timeline_items if "Vehicle|#|gastank" in i.raw_data]
 
-        self.logger.debug("board:{},len gas tank item:{}, last_infer_timestamp:{} ".
-                          format(self.timeline.board_id, len(gas_tank_items), self.state_obj["last_infer_timestamp"]))
-        if self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj["last_infer_timestamp"] and \
-                len(gas_tank_items) == 0:
+        # self.logger.debug("board:{},len gas tank item:{}, last_infer_timestamp:{} ".
+        #                  format(self.timeline.board_id, len(gas_tank_items), self.state_obj["last_infer_timestamp"]))
+        if self.need_close_alarm and self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj["last_infer_timestamp"] and \
+                len(gas_tank_items) == 0 and \
+                (datetime.datetime.now()-self.state_obj["last_infer_timestamp"]).total_seconds() > 15:
             self.logger.debug("board:{} close gas tank entering".format(self.timeline.board_id))
-            self.state_obj["last_infer_timestamp"] = None
+            # self.state_obj["last_infer_timestamp"] = None
+            self.need_close_alarm = False
             event_alarms.append(
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
@@ -745,13 +751,18 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                                        "Close gas tank alarm", "0021"))
             return event_alarms
 
+        '''
         if self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj["last_infer_timestamp"]:
             for item in gas_tank_items:
                 item.consumed = True
             return event_alarms
+        '''
 
-        for item in gas_tank_items:
-            item.consumed = True
+        if len(gas_tank_items) > 0:
+            item = gas_tank_items[-1]
+            for item in gas_tank_items:
+                item.consumed = True
+
             if self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj["last_infer_timestamp"]:
                 # we don't want to report too freq
                 last_report_time_diff = (
@@ -759,10 +770,12 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                 # if last_report_time_diff <= 60 * 60 * 24:
 
                 if last_report_time_diff <= 60 * 60 * 24 * 15:
-                    continue
+                    return event_alarms
+                    # continue
             # self.logger.debug(
             #     "timeline_item in gas tank detect raw data:{}".format(item.raw_data))
             self.state_obj["last_infer_timestamp"] = datetime.datetime.now()
+            self.need_close_alarm = True
 
             sections = item.raw_data.split('|')
             edge_board_confidence = sections[len(sections) - 1]
@@ -1193,7 +1206,8 @@ class ElevatorOverspeedEventDetector(EventDetectorBase):
         surrived_item = [i for i in filtered_timeline_items if
                          (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED and
                           "speed" in i.raw_data and "maxVelocity" in i.raw_data and
-                          abs(i.raw_data["speed"]) > i.raw_data["maxVelocity"] and abs(i.raw_data["speed"] > 2.5))]
+                          abs(i.raw_data["speed"]) > i.raw_data["maxVelocity"] and abs(i.raw_data["speed"] > 2.5) and
+                          abs(i.raw_data["speed"] < 4))]
 
         if len(surrived_item) < 6:
             return None
@@ -1798,7 +1812,10 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
         # 最近一次电梯静止时间
         self.state_obj = {"latest_jingzhi_time_stamp": datetime.datetime.now()}
         self.state_obj = {"latest_yunxing_time_stamp": datetime.datetime.now()}
-        pass
+        for det in event_detectors:
+            if det.__class__.__name__ == DoorStateChangedEventDetector.__name__:
+                det.subscribe_on_property_changed(self)
+                break
 
     def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
         # self.logger.debug(
@@ -2216,6 +2233,10 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
         @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
         """
         self.timeline = timeline
+        for det in event_detectors:
+            if det.__class__.__name__ == DoorStateChangedEventDetector.__name__:
+                det.subscribe_on_property_changed(self)
+                break
 
     def on_property_changed_event_handler(self, src_detector: EventDetectorBase, property_name: str, data):
         # self.logger.debug(
@@ -2284,11 +2305,11 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                 last_speed_object = speed_timeline_items[-1]
                 previous_speed_oject = speed_timeline_items[-2]
                 speed = last_speed_object.raw_data["speed"]
-                if abs(last_speed_object.raw_data["speed"]) < 0.1 and \
-                        abs(previous_speed_oject.raw_data["speed"]) < 0.1:
+                if abs(last_speed_object.raw_data["speed"]) < 0.2 and \
+                        abs(previous_speed_oject.raw_data["speed"]) < 0.2:
                     code = "LIFTSTOP"
                 # 如果电梯在运动，比较楼层的变化判断向上、向下
-                elif not (abs(last_speed_object.raw_data["speed"]) < 0.1):
+                elif not (abs(last_speed_object.raw_data["speed"]) < 0.2):
                     storey_latest = storey_timeline_items[-1].raw_data["storey"]
                     storey_last_fifth = storey_timeline_items[-5].raw_data["storey"]
                     code = "LIFTDOWN" if storey_latest < storey_last_fifth else "LIFTUP"
@@ -2296,8 +2317,8 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
             storey = 0 if not len(storey_timeline_items) > 0 else storey_timeline_items[-1].raw_data["storey"]
             pressure = 0 if not len(storey_timeline_items) > 0 else storey_timeline_items[-1].raw_data["pressure"]
             if last_state_object and "code" in last_state_object:
-                if last_state_object["code"] == code and last_state_object["floor"] == storey and \
-                        last_state_object["hasPerson"] == hasPerson:
+                if last_state_object["code"] == code and last_state_object["floor"] == storey:
+                        # last_state_object["hasPerson"] == hasPerson:
                     return None
             if code != "":
                 self.state_obj = {"code": code, "floor": storey, "hasPerson": hasPerson,
