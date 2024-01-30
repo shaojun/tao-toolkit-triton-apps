@@ -568,7 +568,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
     def sendMessageToKafka(self, message):
         try:
-            if self.timeline.board_id in self.timeline.target_borads:
+            config_item = [i for i in self.timeline.configures if i["code"] == "kqzt"]
+            config_kqzt = 1 if len(config_item) == 0 else int(config_item[0]["value"])
+            if self.timeline.board_id in self.timeline.target_borads or config_kqzt == 0:
                 # self.logger.info("board:{}is in the target list".format(self.timeline.board_id))
                 return
             # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
@@ -738,9 +740,10 @@ class GasTankEnteringEventDetector(EventDetectorBase):
 
         # self.logger.debug("board:{},len gas tank item:{}, last_infer_timestamp:{} ".
         #                  format(self.timeline.board_id, len(gas_tank_items), self.state_obj["last_infer_timestamp"]))
-        if self.need_close_alarm and self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj["last_infer_timestamp"] and \
+        if self.need_close_alarm and self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj[
+            "last_infer_timestamp"] and \
                 len(gas_tank_items) == 0 and \
-                (datetime.datetime.now()-self.state_obj["last_infer_timestamp"]).total_seconds() > 15:
+                (datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds() > 15:
             self.logger.debug("board:{} close gas tank entering".format(self.timeline.board_id))
             # self.state_obj["last_infer_timestamp"] = None
             self.need_close_alarm = False
@@ -1090,8 +1093,11 @@ class PeopleStuckEventDetector(EventDetectorBase):
         # 如果在3秒内没有发现有人，那么不认为有困人
         if not object_person:
             return None
+
+        kunren_sj_item = [i for i in self.timeline.configures if i["code"] == "krsj"]
+        kunren_sj = 90 if len(kunren_sj_item) == 0 else int(kunren_sj_item[0]["value"])
         if (datetime.datetime.now(datetime.timezone.utc) - person_filtered_timeline_items[0].
-                original_timestamp).total_seconds() < 90:
+                original_timestamp).total_seconds() < kunren_sj:
             return None
         # speed
         speed_filtered_timeline_items = [i for i in filtered_timeline_items if i.item_type ==
@@ -1103,7 +1109,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
             time_diff = (datetime.datetime.now(
                 datetime.timezone.utc) - item.original_timestamp).total_seconds()
             # 如果120秒内电梯有在运动那么不认为困人
-            if time_diff <= 90 and abs(item.raw_data["speed"]) > 0.3:
+            if time_diff <= kunren_sj and abs(item.raw_data["speed"]) > 0.3:
                 is_quiescent = False
         if is_quiescent:
             new_state_obj = {"people_stuck": "stuck",
@@ -1306,9 +1312,9 @@ class DoorRepeatlyOpenAndCloseEventDetector(EventDetectorBase):
                         total_time_gap = (last_state_changed_times[-1] - last_state_changed_times[-3]
                                           + last_state_changed_times[-3] - last_state_changed_times[
                                               -5]).total_seconds()
-                        self.logger.debug(
-                            "total_time_gap:{}".format(total_time_gap))
-                        if total_time_gap <= 15:
+                        config_item = [i for i in self.timeline.configures if i["code"] == "ffkgm"]
+                        config_time = 15 if len(config_item) == 0 else int(config_item[0]["value"])
+                        if total_time_gap <= config_time:
                             '''
                             last_report_time = None if not ("last_report_time" in self.state_obj) else self.state_obj[
                                 "last_report_time"]
@@ -1766,19 +1772,20 @@ class DoorOpenedForLongtimeEventDetector(EventDetectorBase):
         if last_state_obj and (
                 datetime.datetime.now() - last_state_obj).total_seconds() > 10 and self.last_door_open_state_time is None:
             self.state_obj["last_notify_timestamp"] = None
-            self.logger.debug("close the long open alarm")
+
             result_alarms = [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                                     event_alarm.EventAlarmPriority.CLOSE, "长时间开门告警结束", "008")]
-            self.logger.debug("close long time open alarm Length:{}".format(len(result_alarms)))
             return result_alarms
 
         # state_obj 不为空怎代表上报过，如果此时的门状态依然为开，那么不重复告警
         if self.state_obj and self.state_obj["last_notify_timestamp"] and self.last_door_open_state_time:
             return None
 
+        config_item = [i for i in self.timeline.configures if i["code"] == "csjkm"]
+        config_time = 120 if len(config_item) == 0 else int(config_item[0]["value"])
         if self.last_door_open_state_time \
-                and (datetime.datetime.now() - self.last_door_open_state_time).total_seconds() >= 120:
+                and (datetime.datetime.now() - self.last_door_open_state_time).total_seconds() >= config_time:
             alarms = [event_alarm.EventAlarm(
                 self,
                 datetime.datetime.fromisoformat(
@@ -2318,7 +2325,7 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
             pressure = 0 if not len(storey_timeline_items) > 0 else storey_timeline_items[-1].raw_data["pressure"]
             if last_state_object and "code" in last_state_object:
                 if last_state_object["code"] == code and last_state_object["floor"] == storey:
-                        # last_state_object["hasPerson"] == hasPerson:
+                    # last_state_object["hasPerson"] == hasPerson:
                     return None
             if code != "":
                 self.state_obj = {"code": code, "floor": storey, "hasPerson": hasPerson,
@@ -2821,8 +2828,10 @@ class DetectDoorWarningSignLostEventDetector(EventDetectorBase):
             return None
 
         alarms = []
+        config_item = [i for i in self.timeline.configures if i["code"] == "ffkgm"]
+        config_time = 15 if len(config_item) == 0 else int(config_item[0]["value"])
         if ((datetime.datetime.now(datetime.timezone.utc) - self.state_obj[
-            "detect_door_warning_sign_time_stamp"]).total_seconds() > 1200):
+            "detect_door_warning_sign_time_stamp"]).total_seconds() > config_time):
             self.state_obj["notify_time"] = datetime.datetime.now()
             alarms.append(event_alarm.EventAlarm(
                 self,

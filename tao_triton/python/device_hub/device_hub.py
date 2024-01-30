@@ -130,6 +130,21 @@ def pipe_in_local_idle_loop_item_to_board_timelines(board_timelines: list):
                                                     str(uuid.uuid4()), "")
                     tl.add_items([local_idle_loop_item])
 
+def get_configurations(board_timelines: list):
+    get_config = requests.get("https://api.glfiot.com/api/apiduijie/gettermnodes",
+         headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+    if get_config.status_code != 200:
+        return
+    json_result = get_config.json()
+    valueable_config = []
+    if "data" in json_result:
+        for index, value in enumerate(json_result["data"]):
+            if value["code"] == "krsj" or value["code"] == "csjkm" or value["code"] == "ffkgm" or value["code"]=="mbyc" or \
+                    value["code"] == "kqzt":
+                valueable_config.append(value)
+    for tl in board_timelines:
+        tl.update_configs(valueable_config)
+
 
 def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAppliedTimeStamp: int,
                          dh_local_datetime: datetime.datetime):
@@ -237,6 +252,8 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
     timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
         2, pipe_in_local_idle_loop_item_to_board_timelines, [board_timelines])
     timely_pipe_in_local_idle_loop_msg_timer.start()
+    timely_get_config_timer = RepeatTimer(600, get_configurations, [board_timelines])
+    timely_get_config_timer.start()
     consumer = KafkaConsumer(
         bootstrap_servers=FLAGS.kafka_server_url,
         auto_offset_reset='latest',

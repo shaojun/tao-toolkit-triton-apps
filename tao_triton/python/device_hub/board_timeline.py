@@ -65,12 +65,18 @@ class BoardTimeline:
         self.event_alarm_notifiers = event_alarm_notifiers
         self.target_borads = target_borads
         self.liftId = lift_id
+        self.configures = []
         # self.producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
         #                              value_serializer=lambda x: dumps(x).encode('utf-8'))
         self.producer = producer
 
         for d in event_detectors:
             d.prepare(self, event_detectors)
+
+
+    def update_configs(self, configs:List):
+        self.configures.clear()
+        self.configures.extend(configs)
 
     def add_items(self, items: List[TimelineItem]):
         # self.logger.debug("board: {} is adding TimelineItem(s)...  type: {}".format(self.board_id, items[0].type.name))
