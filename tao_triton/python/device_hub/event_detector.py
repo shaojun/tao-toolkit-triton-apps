@@ -469,6 +469,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             self.__fire_on_property_changed_event_to_subscribers__("E-bic Entering",
                                                                    {"detail": "there's a EB incoming"})
             self.alarm_raised = True
+            self.close_alarm = False
             event_alarms.append(
                 event_alarm.EventAlarm(self, timeline_item_original_timestamp, event_alarm.EventAlarmPriority.ERROR,
                                        "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
@@ -817,6 +818,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
 
 #
 # 遮挡门告警	判断电梯发生遮挡门事件 1.电梯内有人 2.门处于打开状态 3.电梯静止
+# 将长时间开门告警结合在此处，如果没人，门打开超过一定时间则报长时间开门
 class BlockingDoorEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
@@ -880,11 +882,18 @@ class BlockingDoorEventDetector(EventDetectorBase):
         if self.state_obj and "last_notify_timestamp" in self.state_obj:
             last_state_object = self.state_obj["last_notify_timestamp"]
         # 提交告警结束
-        if last_state_object and self.canCloseTheAlarm(filtered_timeline_items):
+        if last_state_object and self.state_obj["alarm_code"] == "002" and self.canCloseTheAlarm(filtered_timeline_items):
             self.state_obj["last_notify_timestamp"] = None
+            self.state_obj["alarm_code"] = ""
             return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                            event_alarm.EventAlarmPriority.CLOSE, "", "002")]
+        elif last_state_object and self.state_obj["alarm_code"] == "008" and self.canCloseLongTimeOpen():
+             self.state_obj["last_notify_timestamp"] = None
+             self.state_obj["alarm_code"] = ""
+             return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                 event_alarm.EventAlarmPriority.CLOSE, "", "008")]
 
         # 如果已经产生过告警且没有结束，那么就不再处理
         if last_state_object:
@@ -898,18 +907,28 @@ class BlockingDoorEventDetector(EventDetectorBase):
         # 如果收到的开门状态时间还很短，那么不作遮挡判断
         if abs(door_open_time_diff) < 90:
             return None
+        # 是否符合长时间开门
+        config_item = [i for i in self.timeline.configures if i["code"] == "csjkm"]
+        config_time = 120 if len(config_item) == 0 else int(config_item[0]["value"])
+        can_raise_door_openned_long_time = False if abs(door_open_time_diff) < config_time else True
+
+        can_raise_door_blocked = True
         person_timeline_items = [i for i in filtered_timeline_items if
                                  i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
                                  "Person|#" in i.raw_data]
-        # 电梯内没有人 不判断遮挡
         if not len(person_timeline_items) > 0:
-            return None
-        latest_person_item = person_timeline_items[-1]
-        detect_person_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
+            can_raise_door_blocked = False
+        # 电梯内没有人 不判断遮挡
+        if len(person_timeline_items) > 0:
+            # can_raise_door_blocked = False
+            #return None
+            latest_person_item = person_timeline_items[-1]
+            detect_person_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
                                    latest_person_item.original_timestamp).total_seconds()
-        # 最近一次识别到人类已经有一段时间，那么可以认为电梯内没人
-        if detect_person_time_diff > 3:
-            return None
+            # 最近一次识别到人类已经有一段时间，那么可以认为电梯内没人
+            if detect_person_time_diff > 3:
+                can_raise_door_blocked = False
+            #return None
 
         '''
         last_state_object = None
@@ -927,7 +946,8 @@ class BlockingDoorEventDetector(EventDetectorBase):
                                 "speed" in i.raw_data]
         # 未能获取到电梯速度，无法判断电梯是否静止
         if not len(speed_timeline_items) > 2:
-            return None
+            can_raise_door_blocked = False
+            #return None
 
         new_state_object = None
         latest_speed_item = speed_timeline_items[-1]
@@ -939,15 +959,29 @@ class BlockingDoorEventDetector(EventDetectorBase):
         if abs(latest_speed_item_time_diff) < 4 and latest_speed_item.raw_data["speed"] < 0.1 and \
                 abs(third_speed_item_time_diff) < 6 and third_speed_item.raw_data["speed"] < 0.2:
             new_state_object = datetime.datetime.now()
-        if new_state_object:
+        else:
+            can_raise_door_blocked = False
+
+        if can_raise_door_blocked:
             self.logger.debug("board:{},遮挡门告警中，开门时长为{}s".format(self.timeline.board_id, door_open_time_diff))
             self.state_obj["last_notify_timestamp"] = new_state_object
+            self.state_obj["alarm_code"] = "002"
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.ERROR,
                                        "电梯门被遮挡", "002")]
-
+        elif can_raise_door_openned_long_time:
+            alarms = [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.ERROR,
+                "长时间处于开门状态 - 门开着超过一定时间的故障, 最近一次门状态转变为'开'的时间为: {}, 且持续时间 >= {}秒".format(
+                    door_state["notify_time"].strftime(
+                        "%d/%m/%Y %H:%M:%S"),
+                        (datetime.datetime.now() - door_state["notify_time"]).total_seconds()),"008")]
+            self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
+            self.state_obj["alarm_code"] = "008"
+            return alarms
         return None
 
     # 遮挡门告警发生后，电梯开始运行或关门状态持续30S
@@ -965,6 +999,17 @@ class BlockingDoorEventDetector(EventDetectorBase):
                 (datetime.datetime.now() - self.state_obj["door_state"]["notify_time"]).total_seconds() > 30:
             return True
 
+        return False
+
+    # 是否可以关闭长时：关门解除
+    def canCloseLongTimeOpen(self):
+        last_state_obj = None
+        if self.state_obj and "last_notify_timestamp" in self.state_obj and self.state_obj["last_notify_timestamp"]:
+            last_state_obj = self.state_obj["last_notify_timestamp"]
+        if last_state_obj and (datetime.datetime.now() - last_state_obj).total_seconds() > 10 and \
+              self.state_obj and "door_state" in self.state_obj and \
+                self.state_obj["door_state"]["new_state"] == "CLOSE":
+            return True
         return False
 
 
@@ -2755,22 +2800,32 @@ class DetectCameraBlockedEventDetector(EventDetectorBase):
         new_state_object = None
         if not len(filtered_timeline_items) > 0:
             return None
+
         target_timeline_item = filtered_timeline_items[-1]
         target_timeline_item.consumed = True
         if "cameraBlocked" in target_timeline_item.raw_data:
+            if self.timeline.board_id == "E1751790513117204481" and target_timeline_item.raw_data["cameraBlocked"]:
+                self.logger.debug("cameraBlocked:{}".format(target_timeline_item.raw_data["cameraBlocked"]))
             if target_timeline_item.raw_data["cameraBlocked"]:
                 description = "摄像头被遮挡，检测到的时间为：{}".format(
                     target_timeline_item.local_utc_timestamp.strftime("%d/%m/%Y %H:%M:%S"))
                 new_state_object = {"code": "009", "cameraBlocked": True, "message": description,
                                     "time_stamp": datetime.datetime.now()}
         if last_state_object:
-            last_report_time_diff = (
-                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
-            # 检测顶部有人5分钟报一次
-            if last_report_time_diff < 300:
+            if new_state_object == None:
+                self.state_obj = None
+                self.sendMessageToKafka("|TwoWheeler|confirmedExit")
+                alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                                     event_alarm.EventAlarmPriority.CLOSE,
+                                                     "close the EBike alarm", "007"))
+                return alarms
+            else:
                 return None
+
         if new_state_object:
             self.state_obj = new_state_object
+            '''
             alarms.append(event_alarm.EventAlarm(
                 self,
                 datetime.datetime.fromisoformat(
@@ -2778,7 +2833,38 @@ class DetectCameraBlockedEventDetector(EventDetectorBase):
                 event_alarm.EventAlarmPriority.WARNING,
                 new_state_object["message"],
                 "009"))
+            '''
+            self.sendMessageToKafka("Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
+            alarms.append(
+                event_alarm.EventAlarm(self,
+                                       datetime.datetime.fromisoformat(
+                                           datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                       event_alarm.EventAlarmPriority.ERROR,
+                                       "detected electric-bicycle due to camera block event","007", {}))
+            self.logger.debug("cameraBlocked boardId:{}".format(self.timeline.board_id))
         return alarms
+
+    def sendMessageToKafka(self, message):
+        try:
+            config_item = [i for i in self.timeline.configures if i["code"] == "kqzt"]
+            config_kqzt = 1 if len(config_item) == 0 else int(config_item[0]["value"])
+            if self.timeline.board_id in self.timeline.target_borads or config_kqzt == 0:
+                return
+            # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
+            # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
+            #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
+            obj_info_list = []
+            obj_info_list.append(message)
+            self.timeline.producer.send(self.timeline.board_id + "_dh", {
+                'version': '4.1',
+                'id': 1913,
+                '@timestamp': '{}'.format(datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                'sensorId': '{}'.format(self.timeline.board_id + "_dh"), 'objects': obj_info_list})
+            # self.timeline.producer.flush(5)
+            # producer.close()
+        except:
+            self.logger.exception(
+                "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
 
 
 # 门标
