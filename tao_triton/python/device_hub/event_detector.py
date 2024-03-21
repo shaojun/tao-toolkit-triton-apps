@@ -862,10 +862,13 @@ class BlockingDoorEventDetector(EventDetectorBase):
             @param timeline_items: List[TimelineItem]
             @return:
             """
+            # and "Person|#" in i.raw_data
             return [i for i in timeline_items if
                     not i.consumed
-                    and (i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "Person|#" in i.raw_data or
-                         (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED and "speed" in i.raw_data))]
+                    and (i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT or
+                         (
+                                 i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED and "speed" in i.raw_data)) and
+                    (datetime.datetime.now() - i.local_timestamp).total_seconds() < 120]
 
         return filter
 
@@ -882,18 +885,24 @@ class BlockingDoorEventDetector(EventDetectorBase):
         if self.state_obj and "last_notify_timestamp" in self.state_obj:
             last_state_object = self.state_obj["last_notify_timestamp"]
         # 提交告警结束
-        if last_state_object and self.state_obj["alarm_code"] == "002" and self.canCloseTheAlarm(filtered_timeline_items):
+        if last_state_object and self.state_obj["alarm_code"] == "002" and self.canCloseTheAlarm(
+                filtered_timeline_items):
             self.state_obj["last_notify_timestamp"] = None
             self.state_obj["alarm_code"] = ""
             return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                            event_alarm.EventAlarmPriority.CLOSE, "", "002")]
         elif last_state_object and self.state_obj["alarm_code"] == "008" and self.canCloseLongTimeOpen():
-             self.state_obj["last_notify_timestamp"] = None
-             self.state_obj["alarm_code"] = ""
-             return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
-                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                 event_alarm.EventAlarmPriority.CLOSE, "", "008")]
+            self.state_obj["last_notify_timestamp"] = None
+            self.state_obj["alarm_code"] = ""
+            return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                           event_alarm.EventAlarmPriority.CLOSE, "", "008")]
+
+        object_items = [i for i in filtered_timeline_items if
+                        i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT]
+        if len(object_items) == 0:
+            return None
 
         # 如果已经产生过告警且没有结束，那么就不再处理
         if last_state_object:
@@ -904,8 +913,10 @@ class BlockingDoorEventDetector(EventDetectorBase):
 
         door_open_time_diff = (datetime.datetime.now(
         ) - door_state["notify_time"]).total_seconds()
+        config_item_1 = [i for i in self.timeline.configures if i["code"] == "zdm"]
+        config_time_1 = 90 if len(config_item_1) == 0 else int(config_item_1[0]["value"])
         # 如果收到的开门状态时间还很短，那么不作遮挡判断
-        if abs(door_open_time_diff) < 90:
+        if abs(door_open_time_diff) < config_time_1:
             return None
         # 是否符合长时间开门
         config_item = [i for i in self.timeline.configures if i["code"] == "csjkm"]
@@ -921,14 +932,14 @@ class BlockingDoorEventDetector(EventDetectorBase):
         # 电梯内没有人 不判断遮挡
         if len(person_timeline_items) > 0:
             # can_raise_door_blocked = False
-            #return None
+            # return None
             latest_person_item = person_timeline_items[-1]
             detect_person_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
-                                   latest_person_item.original_timestamp).total_seconds()
+                                       latest_person_item.original_timestamp).total_seconds()
             # 最近一次识别到人类已经有一段时间，那么可以认为电梯内没人
             if detect_person_time_diff > 3:
                 can_raise_door_blocked = False
-            #return None
+            # return None
 
         '''
         last_state_object = None
@@ -947,20 +958,21 @@ class BlockingDoorEventDetector(EventDetectorBase):
         # 未能获取到电梯速度，无法判断电梯是否静止
         if not len(speed_timeline_items) > 2:
             can_raise_door_blocked = False
-            #return None
+            # return None
 
         new_state_object = None
-        latest_speed_item = speed_timeline_items[-1]
-        latest_speed_item_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
-                                       latest_speed_item.original_timestamp).total_seconds()
-        third_speed_item = speed_timeline_items[-3]
-        third_speed_item_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
-                                      third_speed_item.original_timestamp).total_seconds()
-        if abs(latest_speed_item_time_diff) < 4 and latest_speed_item.raw_data["speed"] < 0.1 and \
-                abs(third_speed_item_time_diff) < 6 and third_speed_item.raw_data["speed"] < 0.2:
-            new_state_object = datetime.datetime.now()
-        else:
-            can_raise_door_blocked = False
+        if len(speed_timeline_items) > 2:
+            latest_speed_item = speed_timeline_items[-1]
+            latest_speed_item_time_diff = (datetime.datetime.now(
+                datetime.timezone.utc) - latest_speed_item.original_timestamp).total_seconds()
+            third_speed_item = speed_timeline_items[-3]
+            third_speed_item_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
+                                          third_speed_item.original_timestamp).total_seconds()
+            if abs(latest_speed_item_time_diff) < 4 and latest_speed_item.raw_data["speed"] < 0.1 and \
+                    abs(third_speed_item_time_diff) < 6 and third_speed_item.raw_data["speed"] < 0.2:
+                new_state_object = datetime.datetime.now()
+            else:
+                can_raise_door_blocked = False
 
         if can_raise_door_blocked:
             self.logger.debug("board:{},遮挡门告警中，开门时长为{}s".format(self.timeline.board_id, door_open_time_diff))
@@ -974,11 +986,12 @@ class BlockingDoorEventDetector(EventDetectorBase):
         elif can_raise_door_openned_long_time:
             alarms = [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                event_alarm.EventAlarmPriority.ERROR,
-                "长时间处于开门状态 - 门开着超过一定时间的故障, 最近一次门状态转变为'开'的时间为: {}, 且持续时间 >= {}秒".format(
-                    door_state["notify_time"].strftime(
-                        "%d/%m/%Y %H:%M:%S"),
-                        (datetime.datetime.now() - door_state["notify_time"]).total_seconds()),"008")]
+                                             event_alarm.EventAlarmPriority.ERROR,
+                                             "长时间处于开门状态 - 门开着超过一定时间的故障, 最近一次门状态转变为'开'的时间为: {}, 且持续时间 >= {}秒".format(
+                                                 door_state["notify_time"].strftime(
+                                                     "%d/%m/%Y %H:%M:%S"),
+                                                 (datetime.datetime.now() - door_state["notify_time"]).total_seconds()),
+                                             "008")]
             self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
             self.state_obj["alarm_code"] = "008"
             return alarms
@@ -1007,7 +1020,7 @@ class BlockingDoorEventDetector(EventDetectorBase):
         if self.state_obj and "last_notify_timestamp" in self.state_obj and self.state_obj["last_notify_timestamp"]:
             last_state_obj = self.state_obj["last_notify_timestamp"]
         if last_state_obj and (datetime.datetime.now() - last_state_obj).total_seconds() > 10 and \
-              self.state_obj and "door_state" in self.state_obj and \
+                self.state_obj and "door_state" in self.state_obj and \
                 self.state_obj["door_state"]["new_state"] == "CLOSE":
             return True
         return False
@@ -1021,6 +1034,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         # self.logger = logging.getLogger(__name__)
         self.logger = logging.getLogger("peopleStuckEventDetector")
         self.state_obj = {"last_notify_timestamp": None}
+        self.last_report_close_time = None
 
     def prepare(self, timeline, event_detectors):
         """
@@ -1058,7 +1072,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
                     not i.consumed
                     and
                     ((i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and (
-                            "Person|#" in i.raw_data in i.raw_data)) or
+                            "Person|#" in i.raw_data in i.raw_data or "#|DoorWarningSign" in i.raw_data)) or
                      (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED))]
 
         return filter
@@ -1078,11 +1092,15 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if last_state_obj and ((datetime.datetime.now() - last_state_obj).total_seconds() > 600 or
                                self.canCloseAlarm(filtered_timeline_items)):
             self.state_obj["last_notify_timestamp"] = None
+            self.last_report_close_time = datetime.datetime.now()
             return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                            event_alarm.EventAlarmPriority.CLOSE, "", "001")]
 
         if last_state_obj:
+            return None
+
+        if self.last_report_close_time and (datetime.datetime.now() - self.last_report_close_time).total_seconds() < 60:
             return None
 
         door_state = None
@@ -1139,6 +1157,13 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if not object_person:
             return None
 
+        # 如果最近的人出现时没有门标则不认为困人
+        door_signs = [i for i in filtered_timeline_items if
+                      i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "#|DoorWarningSign" in i.raw_data
+                      and object_person.original_timestamp == i.original_timestamp]
+        if len(door_signs) == 0:
+            return None
+
         kunren_sj_item = [i for i in self.timeline.configures if i["code"] == "krsj"]
         kunren_sj = 90 if len(kunren_sj_item) == 0 else int(kunren_sj_item[0]["value"])
         if (datetime.datetime.now(datetime.timezone.utc) - person_filtered_timeline_items[0].
@@ -1161,8 +1186,12 @@ class PeopleStuckEventDetector(EventDetectorBase):
                              "last_report_timestamp": datetime.datetime.now()}
 
         if new_state_obj:
+            self.last_report_close_time = None
+            self.logger.debug("board:{} people count:{},latest person:{}".format(self.timeline.board_id,
+                                                                                 len(person_filtered_timeline_items),
+                                                                                 object_person.original_timestamp_str))
             # store it back, and it will be passed in at next call
-            self.state_obj["last_notify_timestamp"] = new_state_obj["last_report_timestamp"];
+            self.state_obj["last_notify_timestamp"] = new_state_obj["last_report_timestamp"]
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
@@ -1175,8 +1204,8 @@ class PeopleStuckEventDetector(EventDetectorBase):
     # 门开 或 轿厢内没人
     def canCloseAlarm(self, filtered_timeline_items):
         door_state = None
-        self.logger.debug("board:{} Check if can close the alarm which uploaded at:{}".
-                          format(self.timeline.board_id, str(self.state_obj["last_notify_timestamp"])))
+        # self.logger.debug("board:{} Check if can close the alarm which uploaded at:{}".
+        #                  format(self.timeline.board_id, str(self.state_obj["last_notify_timestamp"])))
         if self.state_obj and "door_state" in self.state_obj:
             door_state = self.state_obj["door_state"]
         # 门开
@@ -1612,6 +1641,7 @@ class DoorOpeningAtMovingEventDetector(EventDetectorBase):
                    board_timeline.TimelineItemType.OBJECT_DETECT]
         if len(objects) == 0:
             return None
+
         door_state = None if not (self.state_obj and "door_state" in self.state_obj) \
             else self.state_obj["door_state"]
         # 如果没有开门事件，则不认为有在运动中开门的事发生
@@ -2154,8 +2184,10 @@ class ElevatorJamsEventDetector(EventDetectorBase):
         target_persons = [i for i in filtered_timeline_items if i.board_msg_id == latest_person_object.board_msg_id
                           and i.original_timestamp_str == latest_person_object.original_timestamp_str]
         self.logger.debug("当前人数{}".format(len(target_persons)))
+        config_item = [i for i in self.timeline.configures if i["code"] == "dtyd"]
+        config_count = 5 if len(config_item) == 0 else int(config_item[0]["value"])
         # store it back, and it will be passed in at next call
-        if len(target_persons) > 5:
+        if len(target_persons) > config_count:
             if not self.state_obj:
                 self.state_obj = {}
             self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
@@ -2445,12 +2477,14 @@ class GyroscopeFaultEventDetector(EventDetectorBase):
                     datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
             if last_report_time_diff < 600:
                 return None
-        target_timeline_items = filtered_timeline_items[-5:]
+        config_item = [i for i in self.timeline.configures if i["code"] == "tlygz"]
+        config_count = 5 if len(config_item) == 0 else int(config_item[0]["value"])
+        target_timeline_items = filtered_timeline_items[-1 * config_count:]
         # 如果读取到的加速度值一直是零/相同
         latest_raw_acceleration = target_timeline_items[-1].raw_data["raw_acceleration"]
         result_timeline_items = [i for i in target_timeline_items if i.raw_data["raw_acceleration"] ==
                                  latest_raw_acceleration]
-        if len(result_timeline_items) == 5:
+        if len(result_timeline_items) == config_count:
             msg = "获取不到加速度" if latest_raw_acceleration == 0.000 else "连续五次获取到的加速度值相同"
             self.state_obj = {"code": "TLYJG", "message": msg,
                               "time_stamp": datetime.datetime.now()}
@@ -2465,7 +2499,7 @@ class GyroscopeFaultEventDetector(EventDetectorBase):
 
 
 #
-# 陀螺仪故障 1，获取不到温度值/气压值 2，连续5次读到的气压值相同（正常情况下，即使不动每次读取的值也不一样）
+# 光电感故障 1，获取不到温度值/气压值 2，连续5次读到的气压值相同（正常情况下，即使不动每次读取的值也不一样）
 # 3，收到光电信号时，气压值连续3次不在1楼标定的气压范围内
 class PressureFaultEventDetector(EventDetectorBase):
     def __init__(self, logging):
@@ -2502,18 +2536,20 @@ class PressureFaultEventDetector(EventDetectorBase):
                     datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
             if last_report_time_diff < 600:
                 return None
-        target_timeline_items = filtered_timeline_items[-5:]
+        config_item = [i for i in self.timeline.configures if i["code"] == "qyjgz"]
+        config_count = 5 if len(config_item) == 0 else int(config_item[0]["value"])
+        target_timeline_items = filtered_timeline_items[-1 * config_count:]
         # 如果读取到的气压值一直是零/相同
         latest_raw_pressure = target_timeline_items[-1].raw_data["pressure"]
         result_timeline_items = [i for i in target_timeline_items if i.raw_data["pressure"] ==
                                  latest_raw_pressure]
-        if len(result_timeline_items) == 5:
+        if len(result_timeline_items) == config_count:
             msg = "获取不到气压值" if latest_raw_pressure == 0.000 else "连续五次获取到的气压值相同"
             new_state_object = {"code": "TLYJG", "message": msg,
                                 "time_stamp": datetime.datetime.now()}
         result_timeline_items = [
             i for i in target_timeline_items if i.raw_data["temperature"] == 0.00]
-        if len(result_timeline_items) == 5:
+        if len(result_timeline_items) == config_count:
             msg = "气压计获取不到温度"
             if new_state_object:
                 new_state_object["message"] = new_state_object["message"] + ";" + msg
@@ -2681,7 +2717,9 @@ class DeviceOfflineEventDetector(EventDetectorBase):
 
         time_diff = (datetime.datetime.now(datetime.timezone.utc) - self.state_obj[
             "detect_device_time_stamp"]).total_seconds()
-        if time_diff < 6:
+        config_item = [i for i in self.timeline.configures if i["code"] == "sblx"]
+        config_count = 6 if len(config_item) == 0 else int(config_item[0]["value"])
+        if time_diff < config_count * 60:
             return None
         new_state_object = {"code": "0023",
                             "message": "边缘设备离线，最近一次获取到边缘设备信息的时间为{}".format(
@@ -2730,7 +2768,9 @@ class DetectPersonOnTopEventDetector(EventDetectorBase):
         alarms = []
         last_state_object = self.state_obj
         new_state_object = None
-        if not len(filtered_timeline_items) > 3:
+        config_item = [i for i in self.timeline.configures if i["code"] == "jdyr"]
+        config_count = 5 if len(config_item) == 0 else int(config_item[0]["value"])
+        if not len(filtered_timeline_items) > config_count:
             return None
         # target_timeline_item = filtered_timeline_items[-1]
         # target_timeline_item.consumed = True
@@ -2840,7 +2880,7 @@ class DetectCameraBlockedEventDetector(EventDetectorBase):
                                        datetime.datetime.fromisoformat(
                                            datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.ERROR,
-                                       "detected electric-bicycle due to camera block event","007", {}))
+                                       "detected electric-bicycle due to camera block event", "007", {}))
             self.logger.debug("cameraBlocked boardId:{}".format(self.timeline.board_id))
         return alarms
 

@@ -72,7 +72,7 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
                        # event_detector.GasTankEnteringEventDetector(logging),
-                       event_detector.DoorOpenedForLongtimeEventDetector(logging),
+                       # event_detector.DoorOpenedForLongtimeEventDetector(logging),
                        # event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
                        event_detector.ElevatorOverspeedEventDetector(logging),
                        # event_detector.TemperatureTooHighEventDetector(logging),
@@ -139,8 +139,9 @@ def get_configurations(board_timelines: list):
     valueable_config = []
     if "data" in json_result:
         for index, value in enumerate(json_result["data"]):
-            if value["code"] == "krsj" or value["code"] == "csjkm" or value["code"] == "ffkgm" or value["code"]=="mbyc" or \
-                    value["code"] == "kqzt":
+            if value["code"] == "krsj" or value["code"] == "csjkm" or value["code"] == "ffkgm" or value["code"] == "mbyc" or \
+                    value["code"] == "kqzt" or value["code"] == "dtyd" or value["code"] == "tlygz" or value["code"] == "sblx" or \
+                    value["code"] == "zdm" or value["code"] == "qyjgz":
                 valueable_config.append(value)
     for tl in board_timelines:
         tl.update_configs(valueable_config)
