@@ -215,7 +215,8 @@ class DoorStateChangedEventDetector(EventDetectorBase):
             self.__fire_on_property_changed_event_to_subscribers__(
                 "door_state",
                 {"last_state": "None" if last_state_obj is None else last_state_obj["last_door_state"],
-                 "new_state": new_state_obj["last_door_state"]})
+                 "new_state": new_state_obj["last_door_state"],
+                 "hasPerson": hasPereson})
             code = "DOOROPEN" if new_state_obj["last_door_state"] == "OPEN" else "DOORCLOSE"
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
@@ -1063,6 +1064,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
             if src_detector.__class__.__name__ == DoorStateChangedEventDetector.__name__ and \
                     property_name == "door_state":
                 self.state_obj["door_state"] = {"new_state": data["new_state"],
+                                                "has_person": data["hasPerson"],
                                                 "last_state": data["last_state"],
                                                 "notify_time": datetime.datetime.now(datetime.timezone.utc)}
 
@@ -1106,7 +1108,8 @@ class PeopleStuckEventDetector(EventDetectorBase):
         door_state = None
         if self.state_obj and "door_state" in self.state_obj:
             door_state = self.state_obj["door_state"]
-        if not door_state or door_state["new_state"] == "OPEN":
+        # 关门的时候没有人，那么不进行困人判断
+        if not door_state or door_state["new_state"] == "OPEN" or door_state["has_person"] == "N":
             return None
         # if door_state["last_state"] == "OPEN" and (
         #        datetime.datetime.now() - door_state["notify_time"]).total_seconds() < 20:
@@ -1139,7 +1142,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
             return None
         # object_person = None
         object_person = person_filtered_timeline_items[0]
-        if (datetime.datetime.now(datetime.timezone.utc) - object_person.original_timestamp).total_seconds() < 20:
+        if (datetime.datetime.now(datetime.timezone.utc) - object_person.original_timestamp).total_seconds() < 50:
             return None
         # self.logger.debug("困人检测中共发现{}人，最早目标出现在:{}".format(len(person_filtered_timeline_items),
         #                                                                  object_person.original_timestamp_str))
@@ -1191,7 +1194,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
                                                                                  len(person_filtered_timeline_items),
                                                                                  object_person.original_timestamp_str))
             # store it back, and it will be passed in at next call
-            self.state_obj["last_notify_timestamp"] = new_state_obj["last_report_timestamp"]
+            self.state_obj["last_notify_timestamp"] = new_state_obj["last_report_timestamp"];
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
