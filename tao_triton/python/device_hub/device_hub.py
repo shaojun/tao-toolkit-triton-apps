@@ -105,7 +105,7 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                        event_detector.DoorStateChangedEventDetector(logging),
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
-                       # event_detector.GasTankEnteringEventDetector(logging),
+                       event_detector.GasTankEnteringEventDetector(logging),
                        # event_detector.DoorOpenedForLongtimeEventDetector(logging),
                        # event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
                        event_detector.ElevatorOverspeedEventDetector(logging),
@@ -539,6 +539,7 @@ if __name__ == '__main__':
         board_info_chunks = split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
         chunk_index = 0
         target_borads = get_xiaoquids("心泊家园（梅花苑）")
+        target_borads = target_borads + get_xiaoquids("江南平安里")
         for ck in board_info_chunks:
             process_name = str(chunk_index)
             logger.info("process: {}, board count assigned: {}, they're: {}".format(
