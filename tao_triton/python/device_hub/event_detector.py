@@ -237,9 +237,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
     THROTTLE_Window_Depth = 2
     THROTTLE_Window_Time_By_Sec = 5
 
-    # infer to remote triton server based on a local image file, this is the temp folder to store the image file
+    # the lib triton_client used for infer to remote triton server is based on a local image file, after the infer done, the file will be cleared.
+    # this is the temp folder to store that temp image file
     temp_image_files_folder_name = "temp_infer_image_files"
 
+    infer_server_ip_and_port = "127.0.0.1:8000"
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
         # self.logger = logging.getLogger(__name__)
@@ -250,6 +252,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         self.local_ebike_infer_result_list = []
         self.alarm_raised = False
         self.close_alarm = False
+        if util.read_fast_from_app_config_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
+            self.infer_server_ip_and_port = "36.153.41.18:18000"
 
         # purge previous temp files
         if os.path.exists(self.temp_image_files_folder_name):
@@ -380,14 +384,58 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             try:
                 raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230722_tao',
                                                               '--mode', 'Classification',
-                                                              '-u', '127.0.0.1:8000',
+                                                              '-u', self.infer_server_ip_and_port,
                                                               '--output_path', './',
                                                               temp_cropped_image_file_full_name])
                 infered_class = raw_infer_results[0][0]['infer_class_name']
                 infer_server_current_ebic_confid = raw_infer_results[0][0]['infer_confid']
-            except:
+            except Exception as e:
+                self.logger.exception(  
+                    "tao_client.callable_main(with model: elenet_four_classes_230722_tao) rasised an exception: {}".format(e))
+                return
+            
+            try:
+                if util.read_fast_from_app_config_to_property(["detectors", 
+                                                               ElectricBicycleEnteringEventDetector.__name__,
+                                                               'second_infer'], 
+                                                               'enable') \
+                    and infered_class == 'electric_bicycle' \
+                    and infer_server_current_ebic_confid >= util.read_fast_from_app_config_to_property(["detectors", 
+                                                                 ElectricBicycleEnteringEventDetector.__name__],
+                                                                'ebic_confid'):
+                    second_infer_raw_infer_results = tao_client.callable_main(['-m', 'elenet_two_classes_240413_tao',
+                                                                '--mode', 'Classification',
+                                                                '-u', self.infer_server_ip_and_port,
+                                                                '--output_path', './',
+                                                                temp_cropped_image_file_full_name])
+                    #classes = ['eb', 'non_eb']
+                    second_infer_infered_class = second_infer_raw_infer_results[0][0]['infer_class_name']
+                    if second_infer_infered_class == 'eb':
+                        pass
+                    else:
+                        non_eb_threshold = util.read_fast_from_app_config_to_property(["detectors", 
+                                                                ElectricBicycleEnteringEventDetector.__name__,
+                                                                'second_infer'], 
+                                                                'still_treat_as_eb_if_non_eb_confid_less_or_equal_than')
+                        non_eb_confid = second_infer_raw_infer_results[0][0]['infer_confid']
+                        if non_eb_confid <= non_eb_threshold:
+                            pass
+                        else:
+                            self.logger.debug(
+                                "      board: {}, sink this eb(from 4 class model) due to detect as non_eb(from 2 class model) with confid: {}"
+                                .format(
+                                    self.timeline.board_id,
+                                    non_eb_confid))
+                            self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
+                                       infered_class, infer_server_current_ebic_confid, full_base64_image_file_text, "2nd_m_non_eb_{}___".format(str(non_eb_confid)[
+                                               :4]))
+                            # gives a fake class of eb and confid to make sure the following logic can be executed
+                            # following logic will treat this as eb with low confid and will not trigger alarm, but other logic will still be executed
+                            infered_class = 'electric_bicycle'
+                            infer_server_current_ebic_confid = 0.119
+            except Exception as e:
                 self.logger.exception(
-                    "tao_client.callable_main(...) rasised an exception:")
+                    "tao_client.callable_main(with 2nd model: elenet_two_classes_240413_tao) rasised an exception: {}".format(e))
                 return
 
             t1 = time.time()
@@ -487,7 +535,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         return event_alarms
 
     def save_sample_image(self, image_file_full_name, original_utc_timestamp: datetime, infered_class,
-                          infer_server_ebic_confid, full_base64_image_file_text):
+                          infer_server_ebic_confid, full_base64_image_file_text, dst_file_name_prefix=""):
         image_sample_path = os.path.join(
             ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
         if not os.path.exists(image_sample_path):
@@ -501,6 +549,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             pass
         else:
             file_name_prefix = infered_class + "_"
+        file_name_prefix = dst_file_name_prefix + file_name_prefix
         shutil.copyfile(image_file_full_name,
                         os.path.join(
                             image_sample_path,
@@ -569,6 +618,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         return result
 
     def sendMessageToKafka(self, message):
+        if util.read_fast_from_app_config_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
+            return
         try:
             config_item = [i for i in self.timeline.configures if i["code"] == "kqzt"]
             config_kqzt = 1 if len(config_item) == 0 else int(config_item[0]["value"])
