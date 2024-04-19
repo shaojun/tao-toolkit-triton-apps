@@ -765,13 +765,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
     # 本地识别到的电车在进行识别后，如果已经进行了max_infer_count(比如10次)次推理都不是电动车，那么在max_infer_time的
     # 时间段内将不再生成告警
-    # max_infer_count_for_one_session配置为0时作废该逻辑
+    # infering_stage__how_many_continuous_non_eb_see_then_enter_silent_period配置为0时作废该逻辑
     def needRaiseAlarm(self):
         result = False
 
         max_infer_count = util.read_fast_from_app_config_to_property(
             ["detectors", ElectricBicycleEnteringEventDetector.__name__],
-            'max_infer_count_for_one_session')
+            'infering_stage__how_many_continuous_non_eb_see_then_enter_silent_period')
 
         # 配置为0时作废该逻辑
         if max_infer_count == 0:
@@ -791,11 +791,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             return True
 
         # 如果第一次推理到现在已经超过配置的最大推理时间，则不影响原有逻辑
-        max_infer_time_for_one_session = util.read_fast_from_app_config_to_property(
+        infering_stage__when_see_many_non_eb_then_enter_silent_period_duration = util.read_fast_from_app_config_to_property(
             ["detectors", ElectricBicycleEnteringEventDetector.__name__],
-            'max_infer_time_for_one_session')
+            'infering_stage__when_see_many_non_eb_then_enter_silent_period_duration')
         if (datetime.datetime.now() - self.local_ebike_infer_result_list[0][
-            "infer_time"]).total_seconds() >= max_infer_time_for_one_session:
+            "infer_time"]).total_seconds() >= infering_stage__when_see_many_non_eb_then_enter_silent_period_duration:
             return True
 
         return result
