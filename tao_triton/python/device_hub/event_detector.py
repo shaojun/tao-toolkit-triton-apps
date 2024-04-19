@@ -846,6 +846,8 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
+        is_enabled = util.read_fast_from_app_config_to_board_control_level(
+            ["detectors", 'GasTankEnteringEventDetector', 'FeatureSwitchers'], self.timeline.board_id)
         event_alarms = []
         gas_tank_items = [i for i in filtered_timeline_items if "Vehicle|#|gastank" in i.raw_data]
 
@@ -854,10 +856,11 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         if self.need_close_alarm and self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj[
             "last_infer_timestamp"] and \
                 len(gas_tank_items) == 0 and \
-                (datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds() > 15:
+                (datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds() > 20:
             self.logger.debug("board:{} close gas tank entering".format(self.timeline.board_id))
             # self.state_obj["last_infer_timestamp"] = None
             self.need_close_alarm = False
+            self.sendMessageToKafka("|TwoWheeler|confirmedExit")
             event_alarms.append(
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
@@ -865,31 +868,32 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                                        "Close gas tank alarm", "0021"))
             return event_alarms
 
-        '''
-        if self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj["last_infer_timestamp"]:
+        if len(gas_tank_items) > 0:
+            self.state_obj["last_infer_timestamp"] = datetime.datetime.now()
+
+        # if self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj["last_infer_timestamp"]:
+        if self.need_close_alarm:
             for item in gas_tank_items:
                 item.consumed = True
             return event_alarms
-        '''
 
         if len(gas_tank_items) > 0:
             item = gas_tank_items[-1]
             for item in gas_tank_items:
                 item.consumed = True
-
+            '''
             if self.state_obj and "last_infer_timestamp" in self.state_obj and self.state_obj["last_infer_timestamp"]:
                 # we don't want to report too freq
                 last_report_time_diff = (
                         datetime.datetime.now() - self.state_obj["last_infer_timestamp"]).total_seconds()
                 # if last_report_time_diff <= 60 * 60 * 24:
 
-                if last_report_time_diff <= 60 * 60 * 24 * 15:
+                if last_report_time_diff <= 10:
                     return event_alarms
                     # continue
+            '''
             # self.logger.debug(
             #     "timeline_item in gas tank detect raw data:{}".format(item.raw_data))
-            self.state_obj["last_infer_timestamp"] = datetime.datetime.now()
-            self.need_close_alarm = True
 
             sections = item.raw_data.split('|')
             edge_board_confidence = sections[len(sections) - 1]
@@ -916,19 +920,42 @@ class GasTankEnteringEventDetector(EventDetectorBase):
 
             # is_enabled = util.read_fast_from_app_config_to_board_control_level(
             #    ["detectors", 'GasTankEnteringEventDetector', 'FeatureSwitchers'], self.timeline.board_id)
-            is_enabled = True
+            # is_enabled = True
             if is_enabled:
                 self.global_statistics_logger.debug("{} | {} | {}".format(
                     self.timeline.board_id,
                     "GasTankEnteringEventDetector_confirm_gastank",
                     "data: {}".format("")
                     ))
+                # self.state_obj["last_infer_timestamp"] = datetime.datetime.now()
+                self.need_close_alarm = True
+                self.sendMessageToKafka("Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
+                # self.sendMessageToKafka("test info")
                 event_alarms.append(
                     event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
                                            "detected gas tank entering elevator with board confid: {}".format(
                                                edge_board_confidence)))
             self.logger.debug("borad:{} raise gas tank entering alarm".format(self.timeline.board_id))
         return event_alarms
+
+    def sendMessageToKafka(self, message):
+        try:
+            config_item = [i for i in self.timeline.configures if i["code"] == "kqzt"]
+            config_kqzt = 1 if len(config_item) == 0 else int(config_item[0]["value"])
+            if self.timeline.board_id in self.timeline.target_borads or config_kqzt == 0:
+                return
+            obj_info_list = []
+            obj_info_list.append(message)
+            self.timeline.producer.send(self.timeline.board_id + "_dh", {
+                'version': '4.1',
+                'id': 1913,
+                '@timestamp': '{}'.format(datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                'sensorId': '{}'.format(self.timeline.board_id + "_dh"), 'objects': obj_info_list})
+            # self.timeline.producer.flush(5)
+            # producer.close()
+        except:
+            self.logger.exception(
+                "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
 
 
 #
