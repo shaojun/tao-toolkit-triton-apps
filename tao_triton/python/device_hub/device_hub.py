@@ -266,7 +266,10 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
         file_handlers = [config['handlers'][handler_name]
                          for handler_name in config['handlers'] if 'file_handler' in handler_name]
         for h in file_handlers:
-            h['filename'] = h['filename'].replace('log/', 'log/'+process_name+"/")
+            if 'global' in h['filename']:
+                pass
+            else:
+                h['filename'] = h['filename'].replace('log/', 'log/'+process_name+"/")
             if not os.path.exists('log/'+process_name+"/"):
                 os.makedirs('log/'+process_name+"/")
         logging.config.dictConfig(config)

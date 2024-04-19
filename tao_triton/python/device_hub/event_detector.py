@@ -247,6 +247,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         # self.logger = logging.getLogger(__name__)
         self.logger = logging.getLogger(
             "electricBicycleEnteringEventDetectorLogger")
+        self.global_statistics_logger = logging.getLogger(
+            "globalStatisticsLogger")
         # self.logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
         self.infer_confirmed_eb_history_list = []
         self.local_ebike_infer_result_list = []
@@ -380,8 +382,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             temp_image = Image.open(io.BytesIO(base64.decodebytes(
                 cropped_base64_image_file_text.encode('ascii'))))
             temp_image.save(temp_cropped_image_file_full_name)
-            t0 = time.time()
+            infer_start_time = time.time()
             try:
+                # self.global_statistics_logger.debug("{} | {} | {}".format(self.timeline.board_id, "1st_model_pre_infer",""))
                 raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230722_tao',
                                                               '--mode', 'Classification',
                                                               '-u', self.infer_server_ip_and_port,
@@ -389,7 +392,19 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                               temp_cropped_image_file_full_name])
                 infered_class = raw_infer_results[0][0]['infer_class_name']
                 infer_server_current_ebic_confid = raw_infer_results[0][0]['infer_confid']
+                self.global_statistics_logger.debug("{} | {} | {}".format(
+                    self.timeline.board_id, 
+                    "1st_model_post_infer",
+                    "infered_class: {}, infered_confid: {}, used_time: {}".format(
+                        infered_class,
+                        infer_server_current_ebic_confid,
+                        str(time.time() - infer_start_time)[:5])))
             except Exception as e:
+                self.global_statistics_logger.exception("{} | {} | {}".format(
+                    self.timeline.board_id, 
+                    "1st_model_post_infer",
+                    "exception: {}".format(e)
+                    ))
                 self.logger.exception(  
                     "tao_client.callable_main(with model: elenet_four_classes_230722_tao) rasised an exception: {}".format(e))
                 return
@@ -403,6 +418,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     and infer_server_current_ebic_confid >= util.read_fast_from_app_config_to_property(["detectors", 
                                                                  ElectricBicycleEnteringEventDetector.__name__],
                                                                 'ebic_confid'):
+                    # self.global_statistics_logger.debug("{} | {} | {}".format(
+                    #     self.timeline.board_id, 
+                    #     "2nd_model_pre_infer",
+                    #     ""))
                     second_infer_raw_infer_results = tao_client.callable_main(['-m', 'elenet_two_classes_240413_tao',
                                                                 '--mode', 'Classification',
                                                                 '-u', self.infer_server_ip_and_port,
@@ -410,7 +429,18 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                                 temp_cropped_image_file_full_name])
                     #classes = ['eb', 'non_eb']
                     second_infer_infered_class = second_infer_raw_infer_results[0][0]['infer_class_name']
+                    second_infer_infered_confid = second_infer_raw_infer_results[0][0]['infer_confid']
+                    self.global_statistics_logger.debug("{} | {} | {}".format(
+                        self.timeline.board_id,
+                        "2nd_model_post_infer",
+                        "infered_confid: {}, infered_confid: {}".format(second_infer_infered_class,second_infer_infered_confid) 
+                    ))
                     if second_infer_infered_class == 'eb':
+                        self.global_statistics_logger.debug("{} | {} | {}".format(
+                            self.timeline.board_id,
+                            "2nd_model_post_infer_confirm_eb",
+                            "eb_confid: {}".format(second_infer_infered_confid)
+                            ))
                         pass
                     else:
                         non_eb_threshold = util.read_fast_from_app_config_to_property(["detectors", 
@@ -418,9 +448,22 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                                 'second_infer'], 
                                                                 'still_treat_as_eb_if_non_eb_confid_less_or_equal_than')
                         non_eb_confid = second_infer_raw_infer_results[0][0]['infer_confid']
+                        
+                        # though 2nd model say it's non-eb, but for avoid too further hit down the accuracy, we still treat it as eb
+                        # if the non-eb confid is less than the threshold
                         if non_eb_confid <= non_eb_threshold:
+                            self.global_statistics_logger.debug("{} | {} | {}".format(
+                                self.timeline.board_id,
+                                "2nd_model_post_infer_confirm_eb",
+                                "non_eb_confid: {}".format(non_eb_confid)
+                                ))
                             pass
                         else:
+                            self.global_statistics_logger.debug("{} | {} | {}".format(
+                                self.timeline.board_id,
+                                "2nd_model_post_infer_sink_eb",
+                                "non_eb_confid: {}".format(non_eb_confid)
+                                ))
                             self.logger.debug(
                                 "      board: {}, sink this eb(from 4 class model) due to detect as non_eb(from 2 class model) with confid: {}"
                                 .format(
@@ -434,13 +477,18 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                             infered_class = 'electric_bicycle'
                             infer_server_current_ebic_confid = 0.119
             except Exception as e:
+                self.global_statistics_logger.exception("{} | {} | {}".format(
+                    self.timeline.board_id, 
+                    "2nd_model_post_infer",
+                    "exception: {}".format(e)
+                    ))
                 self.logger.exception(
                     "tao_client.callable_main(with 2nd model: elenet_two_classes_240413_tao) rasised an exception: {}".format(e))
                 return
 
             t1 = time.time()
 
-            infer_used_time = (t1 - t0) * 1000
+            infer_used_time = (t1 - infer_start_time) * 1000
             self.logger.debug(
                 "      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results/confid: {}/{}".format(
                     self.timeline.board_id, str(infer_used_time)[:5],
@@ -519,11 +567,21 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                                    {"detail": "there's a EB incoming"})
             self.alarm_raised = True
             self.close_alarm = False
+            self.global_statistics_logger.debug("{} | {} | {}".format(
+                self.timeline.board_id,
+                "ElectricBicycleEnteringEventDetector_rasie_eb_alarm",
+                ""
+                ))
             event_alarms.append(
                 event_alarm.EventAlarm(self, timeline_item_original_timestamp, event_alarm.EventAlarmPriority.ERROR,
                                        "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
                                            edge_board_confidence, infer_server_ebic_confid), "007", {}, image_str))
         else:
+            self.global_statistics_logger.debug("{} | {} | {}".format(
+                self.timeline.board_id,
+                "ElectricBicycleEnteringEventDetector_sink_eb_alarm",
+                "reason: low infer confid: {}, or not in story 1 or -1: {}".format(infer_server_ebic_confid, story)
+                ))
             self.logger.debug(
                 "      board: {}, sink this eb detect as server gives low confid: {}, "
                 "or not in story 1 or -1, current storey is:{} ".format(
@@ -860,6 +918,11 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             #    ["detectors", 'GasTankEnteringEventDetector', 'FeatureSwitchers'], self.timeline.board_id)
             is_enabled = True
             if is_enabled:
+                self.global_statistics_logger.debug("{} | {} | {}".format(
+                    self.timeline.board_id,
+                    "GasTankEnteringEventDetector_confirm_gastank",
+                    "data: {}".format("")
+                    ))
                 event_alarms.append(
                     event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
                                            "detected gas tank entering elevator with board confid: {}".format(

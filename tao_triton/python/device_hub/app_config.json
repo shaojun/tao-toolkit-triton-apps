@@ -13,7 +13,7 @@
             "max_infer_count_for_one_session": 3,
             "second_infer": {
                 "enable": true,
-                "still_treat_as_eb_if_non_eb_confid_less_or_equal_than": 0.6
+                "still_treat_as_eb_if_non_eb_confid_less_or_equal_than": 0.65
             }
         },
         "GasTankEnteringEventDetector": {
@@ -24,7 +24,7 @@
                 },
                 {
                     "TargetBoardId": "*",
-                    "Enable": true
+                    "Enable": false
                 }
             ]
         }
