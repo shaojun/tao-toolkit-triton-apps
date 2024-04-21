@@ -687,6 +687,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
             #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
+            self.logger.info("board:{} send message:{} to kafka".format(self.timeline.board_id, message))
             obj_info_list = []
             obj_info_list.append(message)
             self.timeline.producer.send(self.timeline.board_id + "_dh", {
@@ -725,7 +726,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         if len(surrived_items) == 0 and infer_result == 0 and len(self.local_ebike_infer_result_list) > 0 and \
                 self.local_ebike_infer_result_list[0]["confirm_send"] == True:
             self.local_ebike_infer_result_list[0]["confirm_send"] = False
-            self.logger.debug("send ebike confirm exit-1")
+            # self.logger.debug("send ebike confirm exit-1")
             self.close_alarm = True
             self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
 
@@ -736,7 +737,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         if infer_result == 0:
             return
         if len(self.local_ebike_infer_result_list) == 0:
-            self.logger.debug("send ebike confirm")
+            # self.logger.debug("send ebike confirm")
             self.sendMessageToKafka(
                 ("Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed"))
             self.local_ebike_infer_result_list.append(
@@ -759,7 +760,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 return
             if len(confirmed_result) < 2:
                 self.local_ebike_infer_result_list[0]["confirm_send"] = False
-                self.logger.debug("send ebike confirm exit")
+                # self.logger.debug("send ebike confirm exit")
                 self.close_alarm = True
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
 
