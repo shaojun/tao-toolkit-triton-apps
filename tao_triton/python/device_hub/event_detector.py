@@ -2567,13 +2567,13 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                 '''
                 guang_dian = 1 if storey == 1 else 0
                 # model7 识别人数 model8:轿厢顶人体感应 model10:光电感值 model4:液晶屏楼层 model2门状态
-                data = [{"model1": storey, "model2": self.door_state, "model3": code, "model4": storey,
+                data = {"model1": storey, "model2": self.door_state, "model3": code, "model4": storey,
                          "model5": pressure,
                          "model6": speed, "model7": person_count, "model8": sensor_detect_person,
                          "model9": acceleration,
                          "model10": guang_dian,
                          "createdDate": str(time),
-                         "liftId": self.timeline.liftId}]
+                         "liftId": self.timeline.liftId}
 
                 alarms.append(event_alarm.EventAlarm(
                     self, time,
