@@ -687,6 +687,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
             #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
+            self.logger.info("board:{} send message:{} to kafka".format(self.timeline.board_id, message))
             obj_info_list = []
             obj_info_list.append(message)
             self.timeline.producer.send(self.timeline.board_id + "_dh", {
@@ -725,7 +726,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         if len(surrived_items) == 0 and infer_result == 0 and len(self.local_ebike_infer_result_list) > 0 and \
                 self.local_ebike_infer_result_list[0]["confirm_send"] == True:
             self.local_ebike_infer_result_list[0]["confirm_send"] = False
-            self.logger.debug("send ebike confirm exit-1")
+            # self.logger.debug("send ebike confirm exit-1")
             self.close_alarm = True
             self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
 
@@ -736,7 +737,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         if infer_result == 0:
             return
         if len(self.local_ebike_infer_result_list) == 0:
-            self.logger.debug("send ebike confirm")
+            # self.logger.debug("send ebike confirm")
             self.sendMessageToKafka(
                 ("Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed"))
             self.local_ebike_infer_result_list.append(
@@ -759,7 +760,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 return
             if len(confirmed_result) < 2:
                 self.local_ebike_infer_result_list[0]["confirm_send"] = False
-                self.logger.debug("send ebike confirm exit")
+                # self.logger.debug("send ebike confirm exit")
                 self.close_alarm = True
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
 
@@ -2566,13 +2567,13 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                 '''
                 guang_dian = 1 if storey == 1 else 0
                 # model7 识别人数 model8:轿厢顶人体感应 model10:光电感值 model4:液晶屏楼层 model2门状态
-                data = [{"model1": storey, "model2": self.door_state, "model3": code, "model4": storey,
+                data = {"model1": storey, "model2": self.door_state, "model3": code, "model4": storey,
                          "model5": pressure,
                          "model6": speed, "model7": person_count, "model8": sensor_detect_person,
                          "model9": acceleration,
                          "model10": guang_dian,
                          "createdDate": str(time),
-                         "liftId": self.timeline.liftId}]
+                         "liftId": self.timeline.liftId}
 
                 alarms.append(event_alarm.EventAlarm(
                     self, time,
