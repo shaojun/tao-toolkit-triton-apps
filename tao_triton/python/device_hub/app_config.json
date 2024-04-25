@@ -1,6 +1,6 @@
 {
     "developer_debug": {
-        "enable_developer_local_debug_mode": true
+        "enable_developer_local_debug_mode": false
     },
     "detectors": {
         "ElectricBicycleEnteringEventDetector": {
