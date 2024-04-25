@@ -1,13 +1,20 @@
 {
+    "developer_debug": {
+        "enable_developer_local_debug_mode": true
+    },
     "detectors": {
         "ElectricBicycleEnteringEventDetector": {
             "EnableSendConfirmedEbEnteringMsgToKafka": true,
-            "ebic_confid": 0.85,
+            "ebic_confid": 0.76,
             "local_ebic_count": 5,
             "time_to_keep_successful_infer_result": 7,
-            "keep_ebic_confid":0.5,
-            "max_infer_time_for_one_session":35,
-            "max_infer_count_for_one_session":3
+            "keep_ebic_confid": 0.5,
+            "infering_stage__when_see_many_non_eb_then_enter_silent_period_duration": 48,
+            "infering_stage__how_many_continuous_non_eb_see_then_enter_silent_period": 3,
+            "second_infer": {
+                "enable": true,
+                "still_treat_as_eb_if_non_eb_confid_less_or_equal_than": 0.65
+            }
         },
         "GasTankEnteringEventDetector": {
             "FeatureSwitchers": [
@@ -17,7 +24,7 @@
                 },
                 {
                     "TargetBoardId": "*",
-                    "Enable": true
+                    "Enable": false
                 }
             ]
         }

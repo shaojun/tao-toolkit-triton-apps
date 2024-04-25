@@ -29,7 +29,7 @@ from multiprocessing import Process
 import event_detector
 import event_alarm
 import board_timeline
-from tao_triton.python.device_hub import board_timeline
+from tao_triton.python.device_hub import board_timeline, util
 from threading import Timer
 import uuid
 import json
@@ -65,15 +65,49 @@ class RepeatTimer(Timer):
 # shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
 
 
-def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str):
+def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str, lift_id: str):
+    if util.read_fast_from_app_config_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
+        event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
+                    #    event_detector.DoorStateChangedEventDetector(logging),
+                    #    event_detector.BlockingDoorEventDetector(logging),
+                    #    event_detector.PeopleStuckEventDetector(logging),
+                    #    # event_detector.GasTankEnteringEventDetector(logging),
+                    #    # event_detector.DoorOpenedForLongtimeEventDetector(logging),
+                    #    # event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
+                    #    event_detector.ElevatorOverspeedEventDetector(logging),
+                    #    # event_detector.TemperatureTooHighEventDetector(logging),
+                    #    # event_detector.PassagerVigorousExerciseEventDetector(logging),
+                    #    # event_detector.DoorOpeningAtMovingEventDetector(logging),
+                    #    # event_detector.ElevatorSuddenlyStoppedEventDetector(logging),
+                    #    # event_detector.ElevatorShockEventDetector(logging),
+                    #    event_detector.ElevatorMovingWithoutPeopleInEventDetector(logging),
+                    #    event_detector.ElevatorJamsEventDetector(logging),
+                    #    event_detector.ElevatorMileageEventDetector(logging),
+                    #    event_detector.ElevatorRunningStateEventDetector(logging),
+                    #    event_detector.UpdateResultEventDetector(logging),
+                    #    event_detector.GyroscopeFaultEventDetector(logging),
+                    #    event_detector.PressureFaultEventDetector(logging),
+                    #    event_detector.ElectricSwitchFaultEventDetector(logging),
+                    #    event_detector.DeviceOfflineEventDetector(logging),
+                    #    event_detector.DetectPersonOnTopEventDetector(logging),
+                    #    event_detector.DetectCameraBlockedEventDetector(logging),
+                       # event_detector.CameraDetectVehicleEventDetector(logging)
+                       ]
+        return board_timeline.BoardTimeline(logging, board_id, [],
+                                        event_detectors,
+                                        [  event_alarm.EventAlarmDummyNotifier(logging),
+                                            # shared_EventAlarmWebServiceNotifier
+                                            ],
+                                        kafka_producer, target_borads, lift_id)
+    # enable_developer_local_debug_mode
     # these detectors instances are shared by all timelines
     event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
                        event_detector.DoorStateChangedEventDetector(logging),
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
                        event_detector.GasTankEnteringEventDetector(logging),
-                       event_detector.DoorOpenedForLongtimeEventDetector(logging),
-                       event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
+                       # event_detector.DoorOpenedForLongtimeEventDetector(logging),
+                       # event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
                        event_detector.ElevatorOverspeedEventDetector(logging),
                        # event_detector.TemperatureTooHighEventDetector(logging),
                        # event_detector.PassagerVigorousExerciseEventDetector(logging),
@@ -97,7 +131,7 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                                         event_detectors,
                                         [  # event_alarm.EventAlarmDummyNotifier(logging),
                                             shared_EventAlarmWebServiceNotifier],
-                                        kafka_producer, target_borads)
+                                        kafka_producer, target_borads, lift_id)
 
 
 def logging_perf_counter(process_name: str):
@@ -129,6 +163,22 @@ def pipe_in_local_idle_loop_item_to_board_timelines(board_timelines: list):
                                                         datetime.timezone.utc).astimezone().isoformat(),
                                                     str(uuid.uuid4()), "")
                     tl.add_items([local_idle_loop_item])
+
+def get_configurations(board_timelines: list):
+    get_config = requests.get("https://api.glfiot.com/api/apiduijie/gettermnodes",
+         headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+    if get_config.status_code != 200:
+        return
+    json_result = get_config.json()
+    valueable_config = []
+    if "data" in json_result:
+        for index, value in enumerate(json_result["data"]):
+            if value["code"] == "krsj" or value["code"] == "csjkm" or value["code"] == "ffkgm" or value["code"] == "mbyc" or \
+                    value["code"] == "kqzt" or value["code"] == "dtyd" or value["code"] == "tlygz" or value["code"] == "sblx" or \
+                    value["code"] == "zdm" or value["code"] == "qyjgz":
+                valueable_config.append(value)
+    for tl in board_timelines:
+        tl.update_configs(valueable_config)
 
 
 def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAppliedTimeStamp: int,
@@ -173,6 +223,25 @@ def split_array_to_group_of_chunks(arr, group_count: int):
     return [arr[i:i + chunk_size] for i in range(0, len(arr), chunk_size)]
 
 
+def get_and_close_alarms():
+    get_all_open_alarms = requests.get("https://api.glfiot.com/yunwei/warning/getopenliftwarning",
+                                       headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+    if get_all_open_alarms.status_code != 200:
+        return ""
+    json_result1 = get_all_open_alarms.json()
+    if "result" in json_result1:
+        for index, value in enumerate(json_result1["result"]):
+            put_response = requests.put("https://api.glfiot.com/yunwei/warning/updatewarningmessagestatus",
+                                        headers={'Content-type': 'application/json', 'Accept': 'application/json'},
+                                        json={"liftId": value["liftId"],
+                                                "type": value["type"],
+                                                "warningMessageId": "",
+                                                "base64string": ""})
+            if put_response.status_code != 200 or put_response.json()["code"] != 200:
+                logger.debug("failed to close lift:{} alarm: {}".format(value["liftId"], value["name"]))
+    return ""
+
+
 def get_xiaoquids(xiaoqu_name:str):
     get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all?xiaoquName="+xiaoqu_name,
                                               headers={'Content-type': 'application/json', 'Accept': 'application/json'})
@@ -197,7 +266,10 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
         file_handlers = [config['handlers'][handler_name]
                          for handler_name in config['handlers'] if 'file_handler' in handler_name]
         for h in file_handlers:
-            h['filename'] = h['filename'].replace('log/', 'log/'+process_name+"/")
+            if 'global' in h['filename']:
+                pass
+            else:
+                h['filename'] = h['filename'].replace('log/', 'log/'+process_name+"/")
             if not os.path.exists('log/'+process_name+"/"):
                 os.makedirs('log/'+process_name+"/")
         logging.config.dictConfig(config)
@@ -218,6 +290,8 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
     timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
         2, pipe_in_local_idle_loop_item_to_board_timelines, [board_timelines])
     timely_pipe_in_local_idle_loop_msg_timer.start()
+    timely_get_config_timer = RepeatTimer(600, get_configurations, [board_timelines])
+    timely_get_config_timer.start()
     consumer = KafkaConsumer(
         bootstrap_servers=FLAGS.kafka_server_url,
         auto_offset_reset='latest',
@@ -274,8 +348,10 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
                 cur_board_timeline = [t for t in board_timelines if
                                       t.board_id == board_id]
                 if not cur_board_timeline:
+                    board_lift = [b for b in boards if b["serialNo"] == board_id]
+                    lift_id = "" if not board_lift else board_lift[0]["liftId"]
                     cur_board_timeline = create_boardtimeline(board_id, shared_kafka_producer,
-                                                              shared_EventAlarmWebServiceNotifier, target_borads)
+                                                              shared_EventAlarmWebServiceNotifier, target_borads, lift_id)
                     board_timelines.append(cur_board_timeline)
                 else:
                     cur_board_timeline = cur_board_timeline[0]
@@ -449,6 +525,8 @@ if __name__ == '__main__':
                         help='kafka server URL. Default is xxx:9092.')
     FLAGS = parser.parse_args()
 
+    get_and_close_alarms()
+
     concurrent_processes = []
     get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
                                               headers={'Content-type': 'application/json', 'Accept': 'application/json'})
@@ -464,6 +542,7 @@ if __name__ == '__main__':
         board_info_chunks = split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
         chunk_index = 0
         target_borads = get_xiaoquids("心泊家园（梅花苑）")
+        target_borads = target_borads + get_xiaoquids("江南平安里")
         for ck in board_info_chunks:
             process_name = str(chunk_index)
             logger.info("process: {}, board count assigned: {}, they're: {}".format(

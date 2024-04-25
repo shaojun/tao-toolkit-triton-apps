@@ -2,6 +2,7 @@
 *.log
 *.txt
 *.jpg
+*.png
 .vscode/launch.json
 .vscode/settings.json
 log/
