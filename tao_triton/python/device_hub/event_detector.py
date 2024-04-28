@@ -2989,8 +2989,6 @@ class DetectCameraBlockedEventDetector(EventDetectorBase):
         target_timeline_item = filtered_timeline_items[-1]
         target_timeline_item.consumed = True
         if "cameraBlocked" in target_timeline_item.raw_data:
-            if self.timeline.board_id == "E1751790513117204481" and target_timeline_item.raw_data["cameraBlocked"]:
-                self.logger.debug("cameraBlocked:{}".format(target_timeline_item.raw_data["cameraBlocked"]))
             if target_timeline_item.raw_data["cameraBlocked"]:
                 description = "摄像头被遮挡，检测到的时间为：{}".format(
                     target_timeline_item.local_utc_timestamp.strftime("%d/%m/%Y %H:%M:%S"))
@@ -2999,18 +2997,18 @@ class DetectCameraBlockedEventDetector(EventDetectorBase):
         if last_state_object:
             if new_state_object == None:
                 self.state_obj = None
-                self.sendMessageToKafka("|TwoWheeler|confirmedExit")
+                # self.sendMessageToKafka("|TwoWheeler|confirmedExit")
                 alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                                      event_alarm.EventAlarmPriority.CLOSE,
-                                                     "close the EBike alarm", "007"))
+                                                     "close camera blocked alarm", "009"))
                 return alarms
             else:
                 return None
 
         if new_state_object:
             self.state_obj = new_state_object
-            '''
+
             alarms.append(event_alarm.EventAlarm(
                 self,
                 datetime.datetime.fromisoformat(
@@ -3026,6 +3024,7 @@ class DetectCameraBlockedEventDetector(EventDetectorBase):
                                            datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.ERROR,
                                        "detected electric-bicycle due to camera block event", "007", {}))
+            '''
             self.logger.debug("cameraBlocked boardId:{}".format(self.timeline.board_id))
         return alarms
 
