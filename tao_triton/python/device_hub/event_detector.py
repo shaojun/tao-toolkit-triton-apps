@@ -417,7 +417,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     and infered_class == 'electric_bicycle' \
                     and infer_server_current_ebic_confid >= util.read_fast_from_app_config_to_property(["detectors", 
                                                                  ElectricBicycleEnteringEventDetector.__name__],
-                                                                'ebic_confid'):
+                                                                'ebic_confid')\
+                    and infer_server_current_ebic_confid < util.read_fast_from_app_config_to_property(["detectors", 
+                                                               ElectricBicycleEnteringEventDetector.__name__,
+                                                               'second_infer'], 
+                                                               'bypass_if_previous_model_eb_confid_greater_or_equal_than'):
                     # self.global_statistics_logger.debug("{} | {} | {}".format(
                     #     self.timeline.board_id, 
                     #     "2nd_model_pre_infer",

@@ -13,6 +13,7 @@
             "infering_stage__how_many_continuous_non_eb_see_then_enter_silent_period": 4,
             "second_infer": {
                 "enable": true,
+                "bypass_if_previous_model_eb_confid_greater_or_equal_than": 0.96,
                 "still_treat_as_eb_if_non_eb_confid_less_or_equal_than": 0.65
             }
         },
