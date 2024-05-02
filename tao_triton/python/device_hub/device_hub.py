@@ -24,6 +24,9 @@
 # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+import atexit
+import signal
+import sys
 import requests
 from multiprocessing import Process
 import event_detector
@@ -68,37 +71,38 @@ class RepeatTimer(Timer):
 def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str, lift_id: str):
     if util.read_fast_from_app_config_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
         event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
-                    #    event_detector.DoorStateChangedEventDetector(logging),
-                    #    event_detector.BlockingDoorEventDetector(logging),
-                    #    event_detector.PeopleStuckEventDetector(logging),
-                    #    # event_detector.GasTankEnteringEventDetector(logging),
-                    #    # event_detector.DoorOpenedForLongtimeEventDetector(logging),
-                    #    # event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
-                    #    event_detector.ElevatorOverspeedEventDetector(logging),
-                    #    # event_detector.TemperatureTooHighEventDetector(logging),
-                    #    # event_detector.PassagerVigorousExerciseEventDetector(logging),
-                    #    # event_detector.DoorOpeningAtMovingEventDetector(logging),
-                    #    # event_detector.ElevatorSuddenlyStoppedEventDetector(logging),
-                    #    # event_detector.ElevatorShockEventDetector(logging),
-                    #    event_detector.ElevatorMovingWithoutPeopleInEventDetector(logging),
-                    #    event_detector.ElevatorJamsEventDetector(logging),
-                    #    event_detector.ElevatorMileageEventDetector(logging),
-                    #    event_detector.ElevatorRunningStateEventDetector(logging),
-                    #    event_detector.UpdateResultEventDetector(logging),
-                    #    event_detector.GyroscopeFaultEventDetector(logging),
-                    #    event_detector.PressureFaultEventDetector(logging),
-                    #    event_detector.ElectricSwitchFaultEventDetector(logging),
-                    #    event_detector.DeviceOfflineEventDetector(logging),
-                    #    event_detector.DetectPersonOnTopEventDetector(logging),
-                    #    event_detector.DetectCameraBlockedEventDetector(logging),
-                       # event_detector.CameraDetectVehicleEventDetector(logging)
-                       ]
+                           #    event_detector.DoorStateChangedEventDetector(logging),
+                           #    event_detector.BlockingDoorEventDetector(logging),
+                           #    event_detector.PeopleStuckEventDetector(logging),
+                           #    # event_detector.GasTankEnteringEventDetector(logging),
+                           #    # event_detector.DoorOpenedForLongtimeEventDetector(logging),
+                           #    # event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
+                           #    event_detector.ElevatorOverspeedEventDetector(logging),
+                           #    # event_detector.TemperatureTooHighEventDetector(logging),
+                           #    # event_detector.PassagerVigorousExerciseEventDetector(logging),
+                           #    # event_detector.DoorOpeningAtMovingEventDetector(logging),
+                           #    # event_detector.ElevatorSuddenlyStoppedEventDetector(logging),
+                           #    # event_detector.ElevatorShockEventDetector(logging),
+                           #    event_detector.ElevatorMovingWithoutPeopleInEventDetector(logging),
+                           #    event_detector.ElevatorJamsEventDetector(logging),
+                           #    event_detector.ElevatorMileageEventDetector(logging),
+                           #    event_detector.ElevatorRunningStateEventDetector(logging),
+                           #    event_detector.UpdateResultEventDetector(logging),
+                           #    event_detector.GyroscopeFaultEventDetector(logging),
+                           #    event_detector.PressureFaultEventDetector(logging),
+                           #    event_detector.ElectricSwitchFaultEventDetector(logging),
+                           #    event_detector.DeviceOfflineEventDetector(logging),
+                           #    event_detector.DetectPersonOnTopEventDetector(logging),
+                           #    event_detector.DetectCameraBlockedEventDetector(logging),
+                           # event_detector.CameraDetectVehicleEventDetector(logging)
+                           ]
         return board_timeline.BoardTimeline(logging, board_id, [],
-                                        event_detectors,
-                                        [  event_alarm.EventAlarmDummyNotifier(logging),
-                                            # shared_EventAlarmWebServiceNotifier
-                                            ],
-                                        kafka_producer, target_borads, lift_id)
+                                            event_detectors,
+                                            [event_alarm.EventAlarmDummyNotifier(logging),
+                                             event_detector.DeviceOfflineEventDetector(
+                                                logging)
+                                             ],
+                                            kafka_producer, target_borads, lift_id)
     # enable_developer_local_debug_mode
     # these detectors instances are shared by all timelines
     event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
@@ -114,17 +118,21 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                        # event_detector.DoorOpeningAtMovingEventDetector(logging),
                        # event_detector.ElevatorSuddenlyStoppedEventDetector(logging),
                        # event_detector.ElevatorShockEventDetector(logging),
-                       event_detector.ElevatorMovingWithoutPeopleInEventDetector(logging),
+                       event_detector.ElevatorMovingWithoutPeopleInEventDetector(
+                           logging),
                        event_detector.ElevatorJamsEventDetector(logging),
                        event_detector.ElevatorMileageEventDetector(logging),
-                       event_detector.ElevatorRunningStateEventDetector(logging),
+                       event_detector.ElevatorRunningStateEventDetector(
+                           logging),
                        event_detector.UpdateResultEventDetector(logging),
                        event_detector.GyroscopeFaultEventDetector(logging),
                        event_detector.PressureFaultEventDetector(logging),
-                       event_detector.ElectricSwitchFaultEventDetector(logging),
+                       event_detector.ElectricSwitchFaultEventDetector(
+                           logging),
                        event_detector.DeviceOfflineEventDetector(logging),
                        event_detector.DetectPersonOnTopEventDetector(logging),
-                       event_detector.DetectCameraBlockedEventDetector(logging),
+                       event_detector.DetectCameraBlockedEventDetector(
+                           logging),
                        # event_detector.CameraDetectVehicleEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
@@ -139,10 +147,12 @@ def logging_perf_counter(process_name: str):
     global PERF_COUNTER_filtered_msg_count_by_time_diff_too_big
     global PERF_COUNTER_work_time_by_ms
     perf_logger = logging.getLogger("perfLogger")
-    perf_logger.warning("process: {}, consumed_msg_count: {}".format(process_name, PERF_COUNTER_consumed_msg_count))
+    perf_logger.warning("process: {}, consumed_msg_count: {}".format(
+        process_name, PERF_COUNTER_consumed_msg_count))
     perf_logger.warning("process: {}, filtered_msg_count_by_time_diff_too_big: {}".format(
         process_name, PERF_COUNTER_filtered_msg_count_by_time_diff_too_big))
-    perf_logger.warning("process: {}, work_time_by_ms: {}".format(process_name, PERF_COUNTER_work_time_by_ms))
+    perf_logger.warning("process: {}, work_time_by_ms: {}".format(
+        process_name, PERF_COUNTER_work_time_by_ms))
     # reset it
     PERF_COUNTER_consumed_msg_count = 0
     PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
@@ -164,9 +174,10 @@ def pipe_in_local_idle_loop_item_to_board_timelines(board_timelines: list):
                                                     str(uuid.uuid4()), "")
                     tl.add_items([local_idle_loop_item])
 
+
 def get_configurations(board_timelines: list):
     get_config = requests.get("https://api.glfiot.com/api/apiduijie/gettermnodes",
-         headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+                              headers={'Content-type': 'application/json', 'Accept': 'application/json'})
     if get_config.status_code != 200:
         return
     json_result = get_config.json()
@@ -232,17 +243,19 @@ def get_and_close_alarms():
     if "result" in json_result1:
         for index, value in enumerate(json_result1["result"]):
             put_response = requests.put("https://api.glfiot.com/yunwei/warning/updatewarningmessagestatus",
-                                        headers={'Content-type': 'application/json', 'Accept': 'application/json'},
+                                        headers={
+                                            'Content-type': 'application/json', 'Accept': 'application/json'},
                                         json={"liftId": value["liftId"],
-                                                "type": value["type"],
-                                                "warningMessageId": "",
-                                                "base64string": ""})
+                                              "type": value["type"],
+                                              "warningMessageId": "",
+                                              "base64string": ""})
             if put_response.status_code != 200 or put_response.json()["code"] != 200:
-                logger.debug("failed to close lift:{} alarm: {}".format(value["liftId"], value["name"]))
+                main_logger.debug("failed to close lift:{} alarm: {}".format(
+                    value["liftId"], value["name"]))
     return ""
 
 
-def get_xiaoquids(xiaoqu_name:str):
+def get_xiaoquids(xiaoqu_name: str):
     get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all?xiaoquName="+xiaoqu_name,
                                               headers={'Content-type': 'application/json', 'Accept': 'application/json'})
     if get_all_board_ids_response.status_code != 200:
@@ -250,7 +263,7 @@ def get_xiaoquids(xiaoqu_name:str):
 
     json_result = get_all_board_ids_response.json()
     if "result" in json_result:
-        target_boards=""
+        target_boards = ""
         for index, value in enumerate(json_result["result"]):
             if index == 0:
                 target_boards += value["serialNo"]
@@ -260,7 +273,7 @@ def get_xiaoquids(xiaoqu_name:str):
     return ""
 
 
-def worker_of_process_board_msg(boards: List, process_name: str, target_borads:str):
+def worker_of_process_board_msg(boards: List, process_name: str, target_borads: str):
     with open('log_config.yaml', 'r') as f:
         config = yaml.safe_load(f.read())
         file_handlers = [config['handlers'][handler_name]
@@ -269,7 +282,8 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
             if 'global' in h['filename']:
                 pass
             else:
-                h['filename'] = h['filename'].replace('log/', 'log/'+process_name+"/")
+                h['filename'] = h['filename'].replace(
+                    'log/', 'log/'+process_name+"/")
             if not os.path.exists('log/'+process_name+"/"):
                 os.makedirs('log/'+process_name+"/")
         logging.config.dictConfig(config)
@@ -277,9 +291,11 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
     global PERF_COUNTER_consumed_msg_count
     global PERF_COUNTER_filtered_msg_count_by_time_diff_too_big
     global PERF_COUNTER_work_time_by_ms
+    global GLOBAL_SHOULD_QUIT_EVERYTHING
 
-    logger = logging.getLogger(__name__)
-    logger.info('process: {} is running...'.format(process_name))
+    per_process_main_logger = logging.getLogger()
+    per_process_main_logger.info(
+        'process: {} is running...'.format(process_name))
 
     # duration is in seconds
     timely_logging_perf_counter_timer = RepeatTimer(
@@ -290,18 +306,20 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
     timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
         2, pipe_in_local_idle_loop_item_to_board_timelines, [board_timelines])
     timely_pipe_in_local_idle_loop_msg_timer.start()
-    timely_get_config_timer = RepeatTimer(600, get_configurations, [board_timelines])
+    timely_get_config_timer = RepeatTimer(
+        600, get_configurations, [board_timelines])
     timely_get_config_timer.start()
-    consumer = KafkaConsumer(
+    kafka_consumer = KafkaConsumer(
         bootstrap_servers=FLAGS.kafka_server_url,
         auto_offset_reset='latest',
         enable_auto_commit=True,
         group_id=str(uuid.uuid1()),
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
-    shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
-    shared_kafka_producer = KafkaProducer(bootstrap_servers=FLAGS.kafka_server_url,
-                                          value_serializer=lambda x: json.dumps(x).encode('utf-8'))
+    eventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(
+        logging)
+    kafka_producer = KafkaProducer(bootstrap_servers=FLAGS.kafka_server_url,
+                                   value_serializer=lambda x: json.dumps(x).encode('utf-8'))
     if boards == None:
         return
     consumer_str = ""
@@ -310,15 +328,18 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
             consumer_str += value["serialNo"]
         else:
             consumer_str += "|" + value["serialNo"]
-    consumer.subscribe(pattern=consumer_str)
-    while True:
+    kafka_consumer.subscribe(pattern=consumer_str)
+    while not GLOBAL_SHOULD_QUIT_EVERYTHING:
         try:
             # do a dummy poll to retrieve some message
-            consumer.poll()
-            logger.debug("process: {}, consumer.poll messages".format(process_name))
+            kafka_consumer.poll()
+            per_process_main_logger.debug(
+                "process: {}, consumer.poll messages".format(process_name))
             # go to end of the stream
-            consumer.seek_to_end()
-            for event in consumer:
+            kafka_consumer.seek_to_end()
+            for event in kafka_consumer:
+                if GLOBAL_SHOULD_QUIT_EVERYTHING:
+                    break
                 event_data = event.value
                 if "sensorId" not in event_data or "@timestamp" not in event_data:
                     continue
@@ -348,10 +369,11 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
                 cur_board_timeline = [t for t in board_timelines if
                                       t.board_id == board_id]
                 if not cur_board_timeline:
-                    board_lift = [b for b in boards if b["serialNo"] == board_id]
+                    board_lift = [
+                        b for b in boards if b["serialNo"] == board_id]
                     lift_id = "" if not board_lift else board_lift[0]["liftId"]
-                    cur_board_timeline = create_boardtimeline(board_id, shared_kafka_producer,
-                                                              shared_EventAlarmWebServiceNotifier, target_borads, lift_id)
+                    cur_board_timeline = create_boardtimeline(board_id, kafka_producer,
+                                                              eventAlarmWebServiceNotifier, target_borads, lift_id)
                     board_timelines.append(cur_board_timeline)
                 else:
                     cur_board_timeline = cur_board_timeline[0]
@@ -423,12 +445,34 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads:s
                                                                              event_data)]
                     new_timeline_items.append(new_timeline_items)
                     cur_board_timeline.add_items(new_update_timeline_items)
-                PERF_COUNTER_work_time_by_ms += (time.time() - perf_counter_work_time_start_time) * 1000
+                PERF_COUNTER_work_time_by_ms += (time.time() -
+                                                 perf_counter_work_time_start_time) * 1000
                 PERF_COUNTER_consumed_msg_count += 1
         except Exception as e:
-            logger.exception("Major error caused by exception:")
+            per_process_main_logger.exception(
+                "Major error caused by exception:")
             print(e)
             continue
+
+    try:
+        per_process_main_logger.critical(
+            "process: {} is exiting...".format(process_name))
+        timely_logging_perf_counter_timer.cancel()
+        timely_pipe_in_local_idle_loop_msg_timer.cancel()
+        timely_get_config_timer.cancel()
+
+        timely_logging_perf_counter_timer.join()
+        timely_pipe_in_local_idle_loop_msg_timer.join()
+        timely_get_config_timer.join()
+        kafka_consumer.close()
+        kafka_producer.close()
+        per_process_main_logger.critical("process: {} exited...".format(process_name))
+        print("process: {} exited...".format(process_name))
+    except Exception as e:
+        per_process_main_logger.exception(
+            "Major error caused by exception in exit:")
+        print(e)
+        return
 
 
 '''each process owned below variables, they're not shared between processes'''
@@ -438,9 +482,29 @@ PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
 PERF_COUNTER_work_time_by_ms = 0
 
 GLOBAL_CONCURRENT_PROCESS_COUNT = 4
+
+# a global flag to indicate whether all processes should exit
+GLOBAL_SHOULD_QUIT_EVERYTHING = False
+
+
+def exit_handler():
+    # print("Cleaning up before exit via exit_handler...")
+    global GLOBAL_SHOULD_QUIT_EVERYTHING
+    GLOBAL_SHOULD_QUIT_EVERYTHING = True
+
+
+def kill_handler(*args):
+    global GLOBAL_SHOULD_QUIT_EVERYTHING
+    GLOBAL_SHOULD_QUIT_EVERYTHING = True
+
+
+atexit.register(exit_handler)
+signal.signal(signal.SIGINT, kill_handler)
+signal.signal(signal.SIGTERM, kill_handler)
+
 if __name__ == '__main__':
-    logger = logging.getLogger(__name__)
-    logger.info('%s is starting...', 'device_hub')
+    main_logger = logging.getLogger()
+    main_logger.info('%s is starting...', 'device_hub')
     parser = argparse.ArgumentParser()
     parser.add_argument('-v',
                         '--verbose',
@@ -531,32 +595,56 @@ if __name__ == '__main__':
     get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
                                               headers={'Content-type': 'application/json', 'Accept': 'application/json'})
     if get_all_board_ids_response.status_code != 200:
-        logger.error("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))
-        print("get all board ids  failed, status code: {}".format(str(get_all_board_ids_response.status_code)))
+        main_logger.error("get all board ids  failed, status code: {}".format(
+            str(get_all_board_ids_response.status_code)))
+        print("get all board ids  failed, status code: {}".format(
+            str(get_all_board_ids_response.status_code)))
         exit(1)
     json_result = get_all_board_ids_response.json()
     if "result" in json_result:
         total_board_count = len(json_result["result"])
-        logger.info("total board count from web service is: {}".format(str(total_board_count)))
-        print("total board count from web service is: {}".format(str(total_board_count)))
-        board_info_chunks = split_array_to_group_of_chunks(json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
+        main_logger.info("total board count from web service is: {}".format(
+            str(total_board_count)))
+        print("total board count from web service is: {}".format(
+            str(total_board_count)))
+        board_info_chunks = split_array_to_group_of_chunks(
+            json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
         chunk_index = 0
         target_borads = get_xiaoquids("心泊家园（梅花苑）")
         target_borads = target_borads + get_xiaoquids("江南平安里")
         for ck in board_info_chunks:
             process_name = str(chunk_index)
-            logger.info("process: {}, board count assigned: {}, they're: {}".format(
+            main_logger.info("process: {}, board count assigned: {}, they're: {}".format(
                 process_name, len(ck), ','.join([i['serialNo'] for i in ck])))
-            print("process: {}, board count assigned: {}".format(process_name, len(ck)))
-            p = Process(target=worker_of_process_board_msg, args=(ck, process_name,target_borads))
+            print("process: {}, board count assigned: {}".format(
+                process_name, len(ck)))
+            p = Process(target=worker_of_process_board_msg,
+                        args=(ck, process_name, target_borads))
             concurrent_processes.append(p)
             p.start()
             print("process: {} started".format(process_name))
             chunk_index += 1
 
-        while True:
+        while not GLOBAL_SHOULD_QUIT_EVERYTHING:
             time.sleep(1)
+        print("all processes are exiting, will wait for all processes to exit...")
+        main_logger.critical(
+            "all processes are exiting, will wait for all processes to exit...")
+        time.sleep(5)
+        for p in concurrent_processes:
+            main_logger.critical(
+                "process: {} waiting for exit...".format(p.name))
+            print("process: {} waiting for exit...".format(p.name))
+            p.join()
+            main_logger.critical(
+                "process: {} join done".format(p.name))
+            print("     process: {} is_alive: {}".format(p.name, p.is_alive()))
+            print("     process: {} join done".format(p.name))
+            # print("     process: {} join done".format(p.name))
+
+        print("all processes are exited successfully.")
+        main_logger.critical("all processes are exited successfully.")
     else:
-        logger.error("get all board ids failed, result not in response")
+        main_logger.error("get all board ids failed, result not in response")
         print("get all board ids failed, result not in response")
         exit(1)
