@@ -279,11 +279,8 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
         file_handlers = [config['handlers'][handler_name]
                          for handler_name in config['handlers'] if 'file_handler' in handler_name]
         for h in file_handlers:
-            if 'global' in h['filename']:
-                pass
-            else:
-                h['filename'] = h['filename'].replace(
-                    'log/', 'log/'+process_name+"/")
+            h['filename'] = h['filename'].replace(
+                'log/', 'log/'+process_name+"/")
             if not os.path.exists('log/'+process_name+"/"):
                 os.makedirs('log/'+process_name+"/")
         logging.config.dictConfig(config)
@@ -466,7 +463,8 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
         timely_get_config_timer.join()
         kafka_consumer.close()
         kafka_producer.close()
-        per_process_main_logger.critical("process: {} exited...".format(process_name))
+        per_process_main_logger.critical(
+            "process: {} exited...".format(process_name))
         print("process: {} exited...".format(process_name))
     except Exception as e:
         per_process_main_logger.exception(
@@ -601,6 +599,9 @@ if __name__ == '__main__':
             str(get_all_board_ids_response.status_code)))
         exit(1)
     json_result = get_all_board_ids_response.json()
+
+    # below is a sample for local debug
+    # json_result = {"result":[{"id": "99994085712737341441","serialNo":"Test_New_board","liftId":"99994085712737341441"}]}
     if "result" in json_result:
         total_board_count = len(json_result["result"])
         main_logger.info("total board count from web service is: {}".format(
@@ -612,6 +613,9 @@ if __name__ == '__main__':
         chunk_index = 0
         target_borads = get_xiaoquids("心泊家园（梅花苑）")
         target_borads = target_borads + get_xiaoquids("江南平安里")
+
+        # below is a sample for local debug
+        # target_borads="Test_New_board"
         for ck in board_info_chunks:
             process_name = str(chunk_index)
             main_logger.info("process: {}, board count assigned: {}, they're: {}".format(

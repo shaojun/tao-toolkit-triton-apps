@@ -29,15 +29,15 @@ handlers:
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
-  global_statistics_logger_file_handler:
+  statistics_logger_file_handler:
     class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
     formatter: simple
-    filename: "log/global_statistics.log"
+    filename: "log/statistics.log"
     when: S
     interval: 86400
     backupCount: 1200
-    maxBytes: 40240000
+    maxBytes: 80240000
     encoding: utf8
   electricBicycleEnteringEventDetector_file_handler:
     class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
@@ -134,9 +134,9 @@ loggers:
     level: DEBUG
     handlers: []
     propagate: no
-  globalStatisticsLogger:
+  statisticsLogger:
     level: DEBUG
-    handlers: [global_statistics_logger_file_handler]
+    handlers: [statistics_logger_file_handler]
     propagate: no
   perfLogger:
     level: DEBUG

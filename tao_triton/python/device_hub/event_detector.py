@@ -247,8 +247,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         # self.logger = logging.getLogger(__name__)
         self.logger = logging.getLogger(
             "electricBicycleEnteringEventDetectorLogger")
-        self.global_statistics_logger = logging.getLogger(
-            "globalStatisticsLogger")
+        self.statistics_logger = logging.getLogger(
+            "statisticsLogger")
         # self.logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
         self.infer_confirmed_eb_history_list = []
         self.local_ebike_infer_result_list = []
@@ -384,7 +384,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             temp_image.save(temp_cropped_image_file_full_name)
             infer_start_time = time.time()
             try:
-                # self.global_statistics_logger.debug("{} | {} | {}".format(self.timeline.board_id, "1st_model_pre_infer",""))
+                # self.statistics_logger.debug("{} | {} | {}".format(self.timeline.board_id, "1st_model_pre_infer",""))
                 raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230722_tao',
                                                               '--mode', 'Classification',
                                                               '-u', self.infer_server_ip_and_port,
@@ -392,7 +392,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                               temp_cropped_image_file_full_name])
                 infered_class = raw_infer_results[0][0]['infer_class_name']
                 infer_server_current_ebic_confid = raw_infer_results[0][0]['infer_confid']
-                self.global_statistics_logger.debug("{} | {} | {}".format(
+                self.statistics_logger.debug("{} | {} | {}".format(
                     self.timeline.board_id, 
                     "1st_model_post_infer",
                     "infered_class: {}, infered_confid: {}, used_time: {}".format(
@@ -400,7 +400,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         infer_server_current_ebic_confid,
                         str(time.time() - infer_start_time)[:5])))
             except Exception as e:
-                self.global_statistics_logger.exception("{} | {} | {}".format(
+                self.statistics_logger.exception("{} | {} | {}".format(
                     self.timeline.board_id, 
                     "1st_model_post_infer",
                     "exception: {}".format(e)
@@ -422,7 +422,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                                ElectricBicycleEnteringEventDetector.__name__,
                                                                'second_infer'], 
                                                                'bypass_if_previous_model_eb_confid_greater_or_equal_than'):
-                    # self.global_statistics_logger.debug("{} | {} | {}".format(
+                    # self.statistics_logger.debug("{} | {} | {}".format(
                     #     self.timeline.board_id, 
                     #     "2nd_model_pre_infer",
                     #     ""))
@@ -434,13 +434,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     #classes = ['eb', 'non_eb']
                     second_infer_infered_class = second_infer_raw_infer_results[0][0]['infer_class_name']
                     second_infer_infered_confid = second_infer_raw_infer_results[0][0]['infer_confid']
-                    self.global_statistics_logger.debug("{} | {} | {}".format(
+                    self.statistics_logger.debug("{} | {} | {}".format(
                         self.timeline.board_id,
                         "2nd_model_post_infer",
                         "infered_confid: {}, infered_confid: {}".format(second_infer_infered_class,second_infer_infered_confid) 
                     ))
                     if second_infer_infered_class == 'eb':
-                        self.global_statistics_logger.debug("{} | {} | {}".format(
+                        self.statistics_logger.debug("{} | {} | {}".format(
                             self.timeline.board_id,
                             "2nd_model_post_infer_confirm_eb",
                             "eb_confid: {}".format(second_infer_infered_confid)
@@ -456,14 +456,14 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         # though 2nd model say it's non-eb, but for avoid too further hit down the accuracy, we still treat it as eb
                         # if the non-eb confid is less than the threshold
                         if non_eb_confid <= non_eb_threshold:
-                            self.global_statistics_logger.debug("{} | {} | {}".format(
+                            self.statistics_logger.debug("{} | {} | {}".format(
                                 self.timeline.board_id,
                                 "2nd_model_post_infer_confirm_eb",
                                 "non_eb_confid: {}".format(non_eb_confid)
                                 ))
                             pass
                         else:
-                            self.global_statistics_logger.debug("{} | {} | {}".format(
+                            self.statistics_logger.debug("{} | {} | {}".format(
                                 self.timeline.board_id,
                                 "2nd_model_post_infer_sink_eb",
                                 "non_eb_confid: {}".format(non_eb_confid)
@@ -481,7 +481,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                             infered_class = 'electric_bicycle'
                             infer_server_current_ebic_confid = 0.119
             except Exception as e:
-                self.global_statistics_logger.exception("{} | {} | {}".format(
+                self.statistics_logger.exception("{} | {} | {}".format(
                     self.timeline.board_id, 
                     "2nd_model_post_infer",
                     "exception: {}".format(e)
@@ -571,7 +571,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                                    {"detail": "there's a EB incoming"})
             self.alarm_raised = True
             self.close_alarm = False
-            self.global_statistics_logger.debug("{} | {} | {}".format(
+            self.statistics_logger.debug("{} | {} | {}".format(
                 self.timeline.board_id,
                 "ElectricBicycleEnteringEventDetector_rasie_eb_alarm",
                 ""
@@ -581,7 +581,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                        "detected electric-bicycle entering elevator with board confid: {}, server confid: {}".format(
                                            edge_board_confidence, infer_server_ebic_confid), "007", {}, image_str))
         else:
-            self.global_statistics_logger.debug("{} | {} | {}".format(
+            self.statistics_logger.debug("{} | {} | {}".format(
                 self.timeline.board_id,
                 "ElectricBicycleEnteringEventDetector_sink_eb_alarm",
                 "reason: low infer confid: {}, or not in story 1 or -1: {}".format(infer_server_ebic_confid, story)
@@ -816,6 +816,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         EventDetectorBase.__init__(self, logging)
         # self.logger = logging.getLogger(__name__)
         self.logger = logging.getLogger("gasTankEnteringEventDetectorLogger")
+        self.statistics_logger = logging.getLogger("statisticsLogger")
         self.need_close_alarm = False
 
     def prepare(self, timeline, event_detectors):
@@ -927,7 +928,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             #    ["detectors", 'GasTankEnteringEventDetector', 'FeatureSwitchers'], self.timeline.board_id)
             # is_enabled = True
             if is_enabled:
-                self.global_statistics_logger.debug("{} | {} | {}".format(
+                self.statistics_logger.debug("{} | {} | {}".format(
                     self.timeline.board_id,
                     "GasTankEnteringEventDetector_confirm_gastank",
                     "data: {}".format("")
