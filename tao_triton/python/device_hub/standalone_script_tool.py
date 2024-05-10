@@ -43,6 +43,7 @@ def function_purge_logs_by_file_name_datetime(path_to_logs_folder: str):
                 if (current_datetime - file_name_datetime).days > purge_logs_older_than_days:
                     try:
                         os.remove(file_path)
+                        print(f'Deleted file: {file_path}')
                     except:
                         print(f'Error deleting file: {file_path}')
 
