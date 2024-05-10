@@ -479,7 +479,7 @@ PERF_COUNTER_consumed_msg_count = 0
 PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
 PERF_COUNTER_work_time_by_ms = 0
 
-GLOBAL_CONCURRENT_PROCESS_COUNT = 4
+GLOBAL_CONCURRENT_PROCESS_COUNT = 6
 
 # a global flag to indicate whether all processes should exit
 GLOBAL_SHOULD_QUIT_EVERYTHING = False
