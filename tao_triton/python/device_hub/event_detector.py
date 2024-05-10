@@ -383,6 +383,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 cropped_base64_image_file_text.encode('ascii'))))
             temp_image.save(temp_cropped_image_file_full_name)
             infer_start_time = time.time()
+
+            # only used when 2nd model declined the eb detect from 1st model, and when decling, we should have done save the sample image
+            # the next save sample image should not be called anymore.
+            this_sample_image_already_saved = False
             try:
                 # self.statistics_logger.debug("{} | {} | {}".format(self.timeline.board_id, "1st_model_pre_infer",""))
                 raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230722_tao',
@@ -473,9 +477,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                 .format(
                                     self.timeline.board_id,
                                     non_eb_confid))
+                            
+                            this_sample_image_already_saved = True
+                            second_model_declined__sample_image_file_name_prefix = "2nd_m_non_eb_{}___".format(str(non_eb_confid)[:4])
                             self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
-                                       infered_class, infer_server_current_ebic_confid, full_base64_image_file_text, "2nd_m_non_eb_{}___".format(str(non_eb_confid)[
-                                               :4]))
+                                       infered_class, infer_server_current_ebic_confid, full_base64_image_file_text, second_model_declined__sample_image_file_name_prefix)
                             # gives a fake class of eb and confid to make sure the following logic can be executed
                             # following logic will treat this as eb with low confid and will not trigger alarm, but other logic will still be executed
                             infered_class = 'electric_bicycle'
@@ -500,8 +506,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
             # if infered_class == 'electric_bicycle':
             try:
-                self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
-                                       infered_class, infer_server_current_ebic_confid, full_base64_image_file_text)
+                if this_sample_image_already_saved == False:
+                    self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
+                                        infered_class, infer_server_current_ebic_confid, full_base64_image_file_text)
             except:
                 self.logger.exception(
                     "save_sample_image(...) rasised an exception:")
