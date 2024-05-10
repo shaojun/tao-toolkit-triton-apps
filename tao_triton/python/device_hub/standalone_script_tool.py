@@ -1,4 +1,3 @@
-import base64_tao_client
 from typing import List
 import os
 import time
@@ -42,7 +41,10 @@ def function_purge_logs_by_file_name_datetime(path_to_logs_folder: str):
                     file_name_datetime, '%Y-%m-%d_%H-%M-%S')
                 current_datetime = datetime.datetime.now()
                 if (current_datetime - file_name_datetime).days > purge_logs_older_than_days:
-                    os.remove(file_path)
+                    try:
+                        os.remove(file_path)
+                    except:
+                        print(f'Error deleting file: {file_path}')
 
 
 if __name__ == '__main__':
