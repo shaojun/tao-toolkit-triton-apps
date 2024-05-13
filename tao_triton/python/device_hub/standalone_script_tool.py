@@ -28,10 +28,11 @@ def function_purge_logs_by_file_name_datetime(path_to_logs_folder: str):
     This function will purge logs older than 2 days by comparing the datetime in the file name
     @param path_to_logs_folder: path to the logs folder, sample: /media/kevin/DATA1/tao-toolkit-triton-apps/tao_triton/python/device_hub/log
     """
-    purge_logs_older_than_days = 2
+    purge_logs_older_than_days: int = 2
     for root, dirs, files in os.walk(path_to_logs_folder):
         for file in files:
             file_path = os.path.join(root, file)
+            print("checking: {}".format(file_path))
             if os.path.isfile(file_path):
                 file_name = os.path.basename(file_path)
                 if '.log.' not in file_name:
@@ -40,12 +41,13 @@ def function_purge_logs_by_file_name_datetime(path_to_logs_folder: str):
                 file_name_datetime = datetime.datetime.strptime(
                     file_name_datetime, '%Y-%m-%d_%H-%M-%S')
                 current_datetime = datetime.datetime.now()
-                if (current_datetime - file_name_datetime).days > purge_logs_older_than_days:
+                kept_days = (current_datetime - file_name_datetime).days
+                if kept_days >= purge_logs_older_than_days:
                     try:
                         os.remove(file_path)
-                        print(f'Deleted file: {file_path}')
+                        print(f'    Deleted file: {file_path}')
                     except:
-                        print(f'Error deleting file: {file_path}')
+                        print(f'    !Error deleting file: {file_path}')
 
 
 if __name__ == '__main__':
