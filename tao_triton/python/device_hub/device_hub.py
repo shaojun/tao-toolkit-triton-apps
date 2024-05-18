@@ -353,8 +353,8 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                 if board_id == "E1640262214042521601":
                     continue
 
-                if board_id == "E1675418684153139201":
-                    continue
+                # if board_id == "E1675418684153139201":
+                #    continue
 
                 if "_dh" in board_id:
                     continue
