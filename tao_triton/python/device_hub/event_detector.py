@@ -16,7 +16,7 @@ from tao_triton.python.device_hub import util
 from tao_triton.python.entrypoints import tao_client
 from json import dumps
 import uuid
-
+import requests
 
 class EventDetectorBase:
     def __init__(self, logging):
@@ -695,6 +695,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if self.timeline.board_id in self.timeline.target_borads or config_kqzt == 0:
                 # self.logger.info("board:{}is in the target list".format(self.timeline.board_id))
                 return
+            if not self.blockDoorEnabled(self.timeline.board_id):
+                self.logger.info("board:{}.block door is disabled from web".format(self.timeline.board_id))
+                return
             # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
             #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
@@ -811,6 +814,23 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             return True
 
         return result
+
+    # Web获取阻梯是否开启
+    def blockDoorEnabled(self, deviceId: str):
+        try:
+            get_all_board_ids_response = requests.get(
+                "https://api.glfiot.com/api/apiduijie/getliftcontrol?serialNo=" + deviceId,
+                headers={'Content-type': 'application/json', 'Accept': 'application/json'},
+                timeout=1)
+            if get_all_board_ids_response.status_code != 200:
+                return False
+            json_result = get_all_board_ids_response.json()
+            if "data" in json_result:
+                return json_result["data"]
+            return False
+        except:
+            self.logger.exception("get lift control via web API (...) rasised an exception:")
+            return False
 
 
 #

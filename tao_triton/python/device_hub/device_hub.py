@@ -611,8 +611,8 @@ if __name__ == '__main__':
         board_info_chunks = split_array_to_group_of_chunks(
             json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
         chunk_index = 0
-        target_borads = get_xiaoquids("心泊家园（梅花苑）")
-        target_borads = target_borads + get_xiaoquids("江南平安里")
+        # target_borads = get_xiaoquids("心泊家园（梅花苑）")
+        # target_borads = target_borads + get_xiaoquids("江南平安里")
 
         # below is a sample for local debug
         # target_borads="Test_New_board"
@@ -623,7 +623,7 @@ if __name__ == '__main__':
             print("process: {}, board count assigned: {}".format(
                 process_name, len(ck)))
             p = Process(target=worker_of_process_board_msg,
-                        args=(ck, process_name, target_borads))
+                        args=(ck, process_name, ""))
             concurrent_processes.append(p)
             p.start()
             print("process: {} started".format(process_name))
