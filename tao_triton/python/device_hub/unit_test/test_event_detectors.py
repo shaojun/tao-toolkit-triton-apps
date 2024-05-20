@@ -23,7 +23,7 @@ class test_ElectricBicycleEnteringEventDetector(TestCase):
         sys.path.append(os.path.join(
             sys.path[1], 'tao_triton/python/device_hub'))
         from tao_triton.python.device_hub import event_alarm
-        from tao_triton.python.device_hub.event_detector import ElectricBicycleEnteringEventDetector
+        from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import ElectricBicycleEnteringEventDetector
 
         logging.getLogger(ElectricBicycleEnteringEventDetector.__name__).addHandler(
             logging.NullHandler())

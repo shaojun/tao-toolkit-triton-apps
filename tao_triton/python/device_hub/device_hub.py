@@ -29,7 +29,8 @@ import signal
 import sys
 import requests
 from multiprocessing import Process
-import event_detector
+import tao_triton.python.device_hub.event_detectors.event_detector as event_detector
+from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import ElectricBicycleEnteringEventDetector
 import event_alarm
 import board_timeline
 from tao_triton.python.device_hub import board_timeline, util
@@ -70,8 +71,9 @@ class RepeatTimer(Timer):
 
 def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str, lift_id: str):
     if util.read_fast_from_app_config_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
-        event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
-                           #    event_detector.DoorStateChangedEventDetector(logging),
+        event_detectors = [ElectricBicycleEnteringEventDetector(logging),
+                           event_detector.DoorStateChangedEventDetector(
+                               logging),
                            #    event_detector.BlockingDoorEventDetector(logging),
                            #    event_detector.PeopleStuckEventDetector(logging),
                            #    # event_detector.GasTankEnteringEventDetector(logging),
@@ -98,14 +100,12 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                            ]
         return board_timeline.BoardTimeline(logging, board_id, [],
                                             event_detectors,
-                                            [event_alarm.EventAlarmDummyNotifier(logging),
-                                             event_detector.DeviceOfflineEventDetector(
-                                                logging)
-                                             ],
+                                            [event_alarm.EventAlarmDummyNotifier(
+                                                logging)],
                                             kafka_producer, target_borads, lift_id)
     # enable_developer_local_debug_mode
     # these detectors instances are shared by all timelines
-    event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
+    event_detectors = [ElectricBicycleEnteringEventDetector(logging),
                        event_detector.DoorStateChangedEventDetector(logging),
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),

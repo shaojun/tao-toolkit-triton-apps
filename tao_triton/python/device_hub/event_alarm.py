@@ -4,7 +4,9 @@ import threading
 import time
 from enum import Enum
 from typing import List
-import event_detector
+import tao_triton.python.device_hub.event_detectors.event_detector as event_detector
+from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import ElectricBicycleEnteringEventDetector
+
 import requests
 
 
@@ -142,7 +144,7 @@ class EventAlarmWebServiceNotifier:
             else:
                 post_data = None
                 target_alarm = targert_alarms
-                if target_alarm.event_detector.__class__.__name__ == event_detector.ElectricBicycleEnteringEventDetector.__name__:
+                if target_alarm.event_detector.__class__.__name__ == ElectricBicycleEnteringEventDetector.__name__:
                     post_data = {"device_id": target_alarm.event_detector.timeline.board_id, "warning_type": "007",
                                  "level": target_alarm.priority.value,
                                  "description": target_alarm.description,

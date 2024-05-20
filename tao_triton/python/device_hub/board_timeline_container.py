@@ -48,7 +48,9 @@ from threading import Timer
 from tao_triton.python.device_hub import board_timeline
 import board_timeline
 import event_alarm
-import event_detector
+import tao_triton.python.device_hub.event_detectors.event_detector as event_detector
+from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import ElectricBicycleEnteringEventDetector
+
 from multiprocessing import Process
 
 with open('log_config.yaml', 'r') as f:
@@ -67,7 +69,7 @@ shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(l
 
 def create_boardtimeline(board_id: str, kafka_producer):
     # these detectors instances are shared by all timelines
-    event_detectors = [event_detector.ElectricBicycleEnteringEventDetector(logging),
+    event_detectors = [ElectricBicycleEnteringEventDetector(logging),
                        event_detector.DoorStateChangedEventDetector(logging),
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
