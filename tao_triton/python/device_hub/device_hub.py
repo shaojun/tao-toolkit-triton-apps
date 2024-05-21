@@ -62,6 +62,8 @@ with open('log_config.yaml', 'r') as f:
 
 class RepeatTimer(Timer):
     def run(self):
+        # run right now without waiting for the interval
+        self.function(*self.args, **self.kwargs)
         while not self.finished.wait(self.interval):
             self.function(*self.args, **self.kwargs)
 
@@ -175,21 +177,25 @@ def pipe_in_local_idle_loop_item_to_board_timelines(board_timelines: list):
                     tl.add_items([local_idle_loop_item])
 
 
-def get_configurations(board_timelines: list):
-    get_config = requests.get("https://api.glfiot.com/api/apiduijie/gettermnodes",
-                              headers={'Content-type': 'application/json', 'Accept': 'application/json'})
-    if get_config.status_code != 200:
+def get_configurations(board_timelines: list, logger):
+    try:
+        get_config = requests.get("https://api.glfiot.com/api/apiduijie/gettermnodes",
+                                  headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+        if get_config.status_code != 200:
+            return
+        json_result = get_config.json()
+        valueable_config = []
+        if "data" in json_result:
+            for index, value in enumerate(json_result["data"]):
+                if value["code"] == "krsj" or value["code"] == "csjkm" or value["code"] == "ffkgm" or value["code"] == "mbyc" or \
+                        value["code"] == "kqzt" or value["code"] == "dtyd" or value["code"] == "tlygz" or value["code"] == "sblx" or \
+                        value["code"] == "zdm" or value["code"] == "qyjgz":
+                    valueable_config.append(value)
+        for tl in board_timelines:
+            tl.update_configs(valueable_config)
+    except Exception as e:
+        logger.exception("device_hub, get_configurations error caused by exception:")
         return
-    json_result = get_config.json()
-    valueable_config = []
-    if "data" in json_result:
-        for index, value in enumerate(json_result["data"]):
-            if value["code"] == "krsj" or value["code"] == "csjkm" or value["code"] == "ffkgm" or value["code"] == "mbyc" or \
-                    value["code"] == "kqzt" or value["code"] == "dtyd" or value["code"] == "tlygz" or value["code"] == "sblx" or \
-                    value["code"] == "zdm" or value["code"] == "qyjgz":
-                valueable_config.append(value)
-    for tl in board_timelines:
-        tl.update_configs(valueable_config)
 
 
 def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAppliedTimeStamp: int,
@@ -304,7 +310,7 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
         2, pipe_in_local_idle_loop_item_to_board_timelines, [board_timelines])
     timely_pipe_in_local_idle_loop_msg_timer.start()
     timely_get_config_timer = RepeatTimer(
-        600, get_configurations, [board_timelines])
+        600, get_configurations, [board_timelines, per_process_main_logger])
     timely_get_config_timer.start()
     kafka_consumer = KafkaConsumer(
         bootstrap_servers=FLAGS.kafka_server_url,
