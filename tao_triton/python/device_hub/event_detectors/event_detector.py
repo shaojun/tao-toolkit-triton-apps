@@ -212,7 +212,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
-        is_enabled = util.read_fast_from_app_config_to_board_control_level(
+        is_enabled = util.read_config_fast_to_board_control_level(
             ["detectors", 'GasTankEnteringEventDetector', 'FeatureSwitchers'], self.timeline.board_id)
         event_alarms = []
         gas_tank_items = [i for i in filtered_timeline_items if "Vehicle|#|gastank" in i.raw_data]

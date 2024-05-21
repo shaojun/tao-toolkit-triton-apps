@@ -70,7 +70,7 @@ class RepeatTimer(Timer):
 
 
 def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str, lift_id: str):
-    if util.read_fast_from_app_config_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
+    if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
         event_detectors = [ElectricBicycleEnteringEventDetector(logging),
                            event_detector.DoorStateChangedEventDetector(
                                logging),

@@ -7,7 +7,7 @@ lastReadjsonConfigFileTime = None
 lastReadjsonConfigFileContent = None
 
 
-def read_fast_from_app_config(path: List[str]):
+def read_config_fast(path: List[str]):
     global lastReadjsonConfigFileTime
     global lastReadjsonConfigFileContent
     if lastReadjsonConfigFileTime is None or (datetime.datetime.now() - lastReadjsonConfigFileTime).seconds > 5:
@@ -28,8 +28,8 @@ def read_fast_from_app_config(path: List[str]):
         return json_result
 
 
-def read_fast_from_app_config_to_board_control_level(path_to_board_control_level_array: List[str], board_id: str):
-    board_control_level_configs = read_fast_from_app_config(
+def read_config_fast_to_board_control_level(path_to_board_control_level_array: List[str], board_id: str):
+    board_control_level_configs = read_config_fast(
         path_to_board_control_level_array)
     if board_control_level_configs:
         current_board_configs = [c for c in board_control_level_configs if
@@ -46,8 +46,8 @@ def read_fast_from_app_config_to_board_control_level(path_to_board_control_level
     return None
 
 
-def read_fast_from_app_config_to_property(path_to_property: List[str], property_name: str):
-    property_level_config = read_fast_from_app_config(
+def read_config_fast_to_property(path_to_property: List[str], property_name: str):
+    property_level_config = read_config_fast(
         path_to_property)
     if property_level_config:
         if property_name in property_level_config:
