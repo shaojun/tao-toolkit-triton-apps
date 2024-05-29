@@ -25,6 +25,8 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import atexit
+import multiprocessing
+from multiprocessing.connection import Connection
 import signal
 import sys
 import requests
@@ -43,7 +45,7 @@ import yaml
 import logging.config
 import logging
 import base64_tao_client
-from typing import List
+from typing import List, Tuple
 import os
 import time
 import datetime
@@ -194,7 +196,8 @@ def get_configurations(board_timelines: list, logger):
         for tl in board_timelines:
             tl.update_configs(valueable_config)
     except Exception as e:
-        logger.exception("device_hub, get_configurations error caused by exception:")
+        logger.exception(
+            "device_hub, get_configurations error caused by exception:")
         return
 
 
@@ -234,7 +237,7 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
     return False
 
 
-def split_array_to_group_of_chunks(arr, group_count: int):
+def split_array_to_group_of_chunks(arr: List[any], group_count: int):
     import math
     chunk_size = math.ceil(len(arr)/group_count)
     return [arr[i:i + chunk_size] for i in range(0, len(arr), chunk_size)]
@@ -261,6 +264,30 @@ def get_and_close_alarms():
     return ""
 
 
+def close_open_alarms(lift_ids: List[str]):
+    """
+    @param lift_ids: a list of lift id
+    """
+    all_open_alarms_response = requests.get("https://api.glfiot.com/yunwei/warning/getopenliftwarning",
+                                            headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+    if all_open_alarms_response.status_code != 200:
+        return ""
+    all_open_alarms_json_result = all_open_alarms_response.json()
+    open_alarms_on_target_lifts = [
+        alarm for alarm in all_open_alarms_json_result["result"] if alarm["liftId"] in lift_ids]
+    for open_alarm in open_alarms_on_target_lifts:
+        close_alarm_response = requests.put("https://api.glfiot.com/yunwei/warning/updatewarningmessagestatus",
+                                            headers={
+                                                'Content-type': 'application/json', 'Accept': 'application/json'},
+                                            json={"liftId": open_alarm["liftId"],
+                                                  "type": open_alarm["type"],
+                                                  "warningMessageId": "",
+                                                  "base64string": ""})
+        if close_alarm_response.status_code != 200 or close_alarm_response.json()["code"] != 200:
+            main_logger.debug("failed to close lift:{} alarm: {}".format(
+                open_alarm["liftId"], open_alarm["name"]))
+
+
 def get_xiaoquids(xiaoqu_name: str):
     get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all?xiaoquName="+xiaoqu_name,
                                               headers={'Content-type': 'application/json', 'Accept': 'application/json'})
@@ -279,7 +306,7 @@ def get_xiaoquids(xiaoqu_name: str):
     return ""
 
 
-def worker_of_process_board_msg(boards: List, process_name: str, target_borads: str):
+def worker_of_process_board_msg(boards: List, process_name: str, target_borads: str, conn: Connection):
     with open('log_config.yaml', 'r') as f:
         config = yaml.safe_load(f.read())
         file_handlers = [config['handlers'][handler_name]
@@ -334,13 +361,28 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
     kafka_consumer.subscribe(pattern=consumer_str)
     while not GLOBAL_SHOULD_QUIT_EVERYTHING:
         try:
+            per_process_main_logger.debug(
+                f"kafka_consumer is polling messages with topic pattern: {consumer_str}")
             # do a dummy poll to retrieve some message
             kafka_consumer.poll()
-            per_process_main_logger.debug(
-                "process: {}, consumer.poll messages".format(process_name))
             # go to end of the stream
             kafka_consumer.seek_to_end()
             for event in kafka_consumer:
+                if conn.poll():
+                    msg = conn.recv()
+                    if msg.startswith("command:exit"):
+                        per_process_main_logger.critical(
+                            f"process: {process_name} received exit command: {msg}")
+                        GLOBAL_SHOULD_QUIT_EVERYTHING = True
+                        break
+                    else:
+                        per_process_main_logger.info(
+                            f"received incremental board serialNo msg: {msg}")
+                        consumer_str += "|" + msg
+                        kafka_consumer.unsubscribe()
+                        kafka_consumer.subscribe(pattern=consumer_str)
+                        break
+
                 if GLOBAL_SHOULD_QUIT_EVERYTHING:
                     break
                 event_data = event.value
@@ -479,6 +521,49 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
         return
 
 
+def check_and_update_incremental_board_info_via_web_service_and_send_msg_to_process_via_conn(
+        running_processes: List[Process],
+        parent_and_child_connections: List[Tuple[Connection, Connection]]):
+    """
+    @param previous_board_infos: the board infos that had been handled in all processes.
+    sample: 
+    [{"id": "99994085712737341441","serialNo":"E1782703991956705305","liftId":"99994085712737341441"}]
+    """
+    global All_Board_Infos
+    try:
+        get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
+                                                  headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+        if get_all_board_ids_response.status_code != 200:
+            main_logger.error("re get all board ids  failed, status code: {}".format(
+                str(get_all_board_ids_response.status_code)))
+            print("re get all board ids  failed, status code: {}".format(
+                str(get_all_board_ids_response.status_code)))
+            return
+        if "result" not in get_all_board_ids_response.json():
+            main_logger.error(
+                "re get all board ids  failed, result not in response")
+            print("re get all board ids  failed, result not in response")
+            return
+        latest_all_board_infos = get_all_board_ids_response.json()["result"]
+        incremental = [
+            b for b in latest_all_board_infos if b["serialNo"] not in [p["serialNo"] for p in All_Board_Infos]]
+        if incremental:
+            # a simple balance strategy, select a process randomly to send the msg for loading the new boards
+            selected_process_index = datetime.datetime.now().second % len(running_processes)
+            main_logger.info("detected incremental board info, will load to process {}, all serialNo(count: {}): {}".format(
+                selected_process_index, len(incremental), ', '.join([i['serialNo'] for i in incremental])))
+            incremental_serialNo_str = "|".join(
+                [i['serialNo'] for i in incremental])
+            parent_and_child_connections[selected_process_index][0].send(
+                incremental_serialNo_str)
+            All_Board_Infos = latest_all_board_infos
+
+    except Exception as e:
+        main_logger.exception(
+            "check_and_update_incremental_board_info_via_web_service_and_send_msg_to_process_via_conn error caused by exception:")
+        return
+
+
 '''each process owned below variables, they're not shared between processes'''
 PERF_LOGGING_INTERVAL = 60
 PERF_COUNTER_consumed_msg_count = 0
@@ -489,6 +574,11 @@ GLOBAL_CONCURRENT_PROCESS_COUNT = 6
 
 # a global flag to indicate whether all processes should exit
 GLOBAL_SHOULD_QUIT_EVERYTHING = False
+
+# all loaded (by processes) board infos from web service
+# sample:
+# [{"id": "99994085712737341441","serialNo":"E1782703991956705305","liftId":"99994085712737341441"}]
+All_Board_Infos: List[any]
 
 
 def exit_handler():
@@ -595,66 +685,76 @@ if __name__ == '__main__':
 
     get_and_close_alarms()
 
-    concurrent_processes = []
-    get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
-                                              headers={'Content-type': 'application/json', 'Accept': 'application/json'})
-    if get_all_board_ids_response.status_code != 200:
-        main_logger.error("get all board ids  failed, status code: {}".format(
-            str(get_all_board_ids_response.status_code)))
-        print("get all board ids  failed, status code: {}".format(
-            str(get_all_board_ids_response.status_code)))
+    concurrent_processes: List[Process] = []
+    parent_and_child_connections: List[Tuple[Connection, Connection]] = []
+
+    get_all_board_infos_response = requests.get("https://api.glfiot.com/edge/all",
+                                                headers={'Content-type': 'application/json', 'Accept': 'application/json'})
+    if get_all_board_infos_response.status_code != 200:
+        main_logger.error("get all board infos failed, status code: {}".format(
+            str(get_all_board_infos_response.status_code)))
+        print("get all board infos failed, status code: {}".format(
+            str(get_all_board_infos_response.status_code)))
         exit(1)
-    json_result = get_all_board_ids_response.json()
+    if "result" not in get_all_board_infos_response.json():
+        main_logger.error("get all board infos failed, result not in response")
+        print("get all board infos failed, result not in response")
+        exit(1)
 
-    # below is a sample for local debug
-    # json_result = {"result":[{"id": "99994085712737341441","serialNo":"Test_New_board","liftId":"99994085712737341441"}]}
-    if "result" in json_result:
-        total_board_count = len(json_result["result"])
-        main_logger.info("total board count from web service is: {}".format(
-            str(total_board_count)))
-        print("total board count from web service is: {}".format(
-            str(total_board_count)))
-        board_info_chunks = split_array_to_group_of_chunks(
-            json_result["result"], GLOBAL_CONCURRENT_PROCESS_COUNT)
-        chunk_index = 0
-        # target_borads = get_xiaoquids("心泊家园（梅花苑）")
-        # target_borads = target_borads + get_xiaoquids("江南平安里")
+    # sample:
+    # [{"id": "99994085712737341441","serialNo":"E1782703991956705305","liftId":"99994085712737341441"}]
+    All_Board_Infos = get_all_board_infos_response.json()["result"]
 
-        # below is a sample for local debug
-        # target_borads="Test_New_board"
-        for ck in board_info_chunks:
-            process_name = str(chunk_index)
-            main_logger.info("process: {}, board count assigned: {}, they're: {}".format(
-                process_name, len(ck), ','.join([i['serialNo'] for i in ck])))
-            print("process: {}, board count assigned: {}".format(
-                process_name, len(ck)))
-            p = Process(target=worker_of_process_board_msg,
-                        args=(ck, process_name, ""))
-            concurrent_processes.append(p)
-            p.start()
-            print("process: {} started".format(process_name))
-            chunk_index += 1
+    # duration is in seconds
+    timely_check_incremental_board_info_timer = RepeatTimer(
+        15, check_and_update_incremental_board_info_via_web_service_and_send_msg_to_process_via_conn,
+        [concurrent_processes, parent_and_child_connections])
+    timely_check_incremental_board_info_timer.start()
 
-        while not GLOBAL_SHOULD_QUIT_EVERYTHING:
-            time.sleep(1)
-        print("all processes are exiting, will wait for all processes to exit...")
+    # below is a sample for local DEBUG use
+    # All_Board_Infos = [{"id": "99994085712737341441",
+    #                            "serialNo": "E1782703991956705305", "liftId": "99994085712737341441"}]
+    main_logger.info("total board info count from web service is: {}".format(
+        str(len(All_Board_Infos))))
+    print("total board info count from web service is: {}".format(
+        str(len(All_Board_Infos))))
+    board_info_chunks = split_array_to_group_of_chunks(
+        All_Board_Infos, GLOBAL_CONCURRENT_PROCESS_COUNT)
+    chunk_index = 0
+    # target_borads = get_xiaoquids("心泊家园（梅花苑）")
+    # target_borads = target_borads + get_xiaoquids("江南平安里")
+
+    for ck in board_info_chunks:
+        process_name = str(chunk_index)
+        main_logger.info("process: {}, board count assigned: {}, they're: {}".format(
+            process_name, len(ck), ','.join([i['serialNo'] for i in ck])))
+        print("process: {}, board count assigned: {}".format(
+            process_name, len(ck)))
+        parent_conn, child_conn = multiprocessing.Pipe()
+        parent_and_child_connections.append((parent_conn, child_conn))
+        p = Process(target=worker_of_process_board_msg,
+                    args=(ck, process_name, "", child_conn))
+        concurrent_processes.append(p)
+        p.start()
+        print("process: {} started".format(process_name))
+        chunk_index += 1
+
+    while not GLOBAL_SHOULD_QUIT_EVERYTHING:
+        time.sleep(1)
+    print("all processes are exiting, will wait for all processes to exit...")
+    main_logger.critical(
+        "all processes are exiting, will wait for all processes to exit...")
+    time.sleep(5)
+    for p in concurrent_processes:
         main_logger.critical(
-            "all processes are exiting, will wait for all processes to exit...")
-        time.sleep(5)
-        for p in concurrent_processes:
-            main_logger.critical(
-                "process: {} waiting for exit...".format(p.name))
-            print("process: {} waiting for exit...".format(p.name))
-            p.join()
-            main_logger.critical(
-                "process: {} join done".format(p.name))
-            print("     process: {} is_alive: {}".format(p.name, p.is_alive()))
-            print("     process: {} join done".format(p.name))
-            # print("     process: {} join done".format(p.name))
+            "process: {} waiting for exit...".format(p.name))
+        print("process: {} waiting for exit...".format(p.name))
+        p.join()
+        main_logger.critical(
+            "process: {} join done".format(p.name))
+        print("     process: {} is_alive: {}".format(p.name, p.is_alive()))
+        print("     process: {} join done".format(p.name))
+        # print("     process: {} join done".format(p.name))
 
-        print("all processes are exited successfully.")
-        main_logger.critical("all processes are exited successfully.")
-    else:
-        main_logger.error("get all board ids failed, result not in response")
-        print("get all board ids failed, result not in response")
-        exit(1)
+    print("all processes are exited successfully.")
+    main_logger.critical("all processes are exited successfully.")
