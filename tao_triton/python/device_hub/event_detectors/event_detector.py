@@ -18,7 +18,8 @@ from json import dumps
 import uuid
 import requests
 from tao_triton.python.device_hub.event_detectors.event_detector_base import EventDetectorBase
-from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import ElectricBicycleEnteringEventDetector
+from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import \
+    ElectricBicycleEnteringEventDetector
 
 
 #
@@ -292,7 +293,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                     self.timeline.board_id,
                     "GasTankEnteringEventDetector_confirm_gastank",
                     "data: {}".format("")
-                    ))
+                ))
                 # self.state_obj["last_infer_timestamp"] = datetime.datetime.now()
                 self.need_close_alarm = True
                 self.sendMessageToKafka("Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
@@ -341,6 +342,7 @@ class BlockingDoorEventDetector(EventDetectorBase):
         """
         self.timeline = timeline
         self.state_obj = {}
+        self.door_long_time_open_history = []
         for det in event_detectors:
             if det.__class__.__name__ == DoorStateChangedEventDetector.__name__:
                 det.subscribe_on_property_changed(self)
@@ -403,6 +405,9 @@ class BlockingDoorEventDetector(EventDetectorBase):
         elif last_state_object and self.state_obj["alarm_code"] == "008" and self.canCloseLongTimeOpen():
             self.state_obj["last_notify_timestamp"] = None
             self.state_obj["alarm_code"] = ""
+            if "giveup" in self.state_obj and self.state_obj["giveup"]:
+                self.state_obj["giveup"] = False
+                return None
             return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                            event_alarm.EventAlarmPriority.CLOSE, "", "008")]
@@ -502,6 +507,10 @@ class BlockingDoorEventDetector(EventDetectorBase):
                                              "008")]
             self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
             self.state_obj["alarm_code"] = "008"
+            self.state_obj["giveup"] = False
+            if self.giveUpTheLongTimeOpen(datetime.datetime.now()):
+                self.state_obj["giveup"] = True
+                return None
             return alarms
         return None
 
@@ -532,6 +541,34 @@ class BlockingDoorEventDetector(EventDetectorBase):
                 self.state_obj["door_state"]["new_state"] == "CLOSE":
             return True
         return False
+
+    def giveUpTheLongTimeOpen(self, alarm_time):
+        result = False
+        current_hour = datetime.datetime.now(datetime.timezone.utc).hour
+        survived_alarms = [a for a in self.door_long_time_open_history if
+                           (datetime.datetime.now() - a["time"]).total_seconds() > 10 * 60 * 60]
+        self.door_long_time_open_history = survived_alarms
+        target_alarms = [a for a in self.door_long_time_open_history if a["give_up"] == True]
+        # 如果没有上报过长时间开门则上报
+        if len(self.door_long_time_open_history) == 0:
+            result = False
+            self.door_long_time_open_history.append({"time": alarm_time, "give_up": False})
+        # 20:00-9:00 utc tiem 12:00 16:00  01:00
+        elif current_hour > 12 or current_hour < 1:
+            if len(target_alarms) < 9:
+                self.door_long_time_open_history.append({"time": alarm_time, "give_up": True})
+                result = True
+            else:
+                self.door_long_time_open_history.append({"time": alarm_time, "give_up": False})
+        else:
+            if len(target_alarms) < 6:
+                self.door_long_time_open_history.append({"time": alarm_time, "give_up": True})
+                result = True
+            else:
+                self.door_long_time_open_history.append({"time": alarm_time, "give_up": False})
+        if len(self.door_long_time_open_history) > 10:
+            self.door_long_time_open_history.pop(0)
+        return result
 
 
 #
@@ -668,10 +705,14 @@ class PeopleStuckEventDetector(EventDetectorBase):
             return None
 
         # 如果最近的人出现时没有门标则不认为困人
-        door_signs = [i for i in filtered_timeline_items if
-                      i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "#|DoorWarningSign" in i.raw_data
-                      and object_person.original_timestamp == i.original_timestamp]
-        if len(door_signs) == 0:
+        door_sign_with_person_count = 0
+        for person in reversed(person_filtered_timeline_items):
+            door_signs = [i for i in filtered_timeline_items if
+                          i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "#|DoorWarningSign" in i.raw_data
+                          and person.original_timestamp == i.original_timestamp]
+            if len(door_signs) > 0:
+                door_sign_with_person_count = door_sign_with_person_count + 1
+        if door_sign_with_person_count < 10:
             return None
 
         kunren_sj_item = [i for i in self.timeline.configures if i["code"] == "krsj"]
@@ -734,6 +775,20 @@ class PeopleStuckEventDetector(EventDetectorBase):
         object_person = filtered_person_timeline_items[-1]
         if (datetime.datetime.now(datetime.timezone.utc) - object_person.original_timestamp).total_seconds() > 10:
             return True
+
+        # speed
+        speed_filtered_timeline_items = [i for i in filtered_timeline_items if i.item_type ==
+                                         board_timeline.TimelineItemType.SENSOR_READ_SPEED]
+        if len(speed_filtered_timeline_items) > 0:
+            is_quiescent = True
+            for item in speed_filtered_timeline_items:
+                time_diff = (datetime.datetime.now(
+                    datetime.timezone.utc) - item.original_timestamp).total_seconds()
+                # 如果120秒内电梯有在运动那么不认为困人
+                if time_diff <= 120 and abs(item.raw_data["speed"]) > 0.3:
+                    is_quiescent = False
+            if not is_quiescent:
+                return True
         self.logger.debug("board:{} can not close the alarm which uploaded at:{}".format(self.timeline.board_id, str(
             self.state_obj["last_notify_timestamp"])))
         return False
@@ -1933,12 +1988,12 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                 guang_dian = 1 if storey == 1 else 0
                 # model7 识别人数 model8:轿厢顶人体感应 model10:光电感值 model4:液晶屏楼层 model2门状态
                 data = {"model1": storey, "model2": self.door_state, "model3": code, "model4": storey,
-                         "model5": pressure,
-                         "model6": speed, "model7": person_count, "model8": sensor_detect_person,
-                         "model9": acceleration,
-                         "model10": guang_dian,
-                         "createdDate": str(time),
-                         "liftId": self.timeline.liftId}
+                        "model5": pressure,
+                        "model6": speed, "model7": person_count, "model8": sensor_detect_person,
+                        "model9": acceleration,
+                        "model10": guang_dian,
+                        "createdDate": str(time),
+                        "liftId": self.timeline.liftId}
 
                 alarms.append(event_alarm.EventAlarm(
                     self, time,

@@ -191,7 +191,7 @@ def get_configurations(board_timelines: list, logger):
             for index, value in enumerate(json_result["data"]):
                 if value["code"] == "krsj" or value["code"] == "csjkm" or value["code"] == "ffkgm" or value["code"] == "mbyc" or \
                         value["code"] == "kqzt" or value["code"] == "dtyd" or value["code"] == "tlygz" or value["code"] == "sblx" or \
-                        value["code"] == "zdm" or value["code"] == "qyjgz":
+                        value["code"] == "zdm" or value["code"] == "qyjgz" or value["code"] == "gbzt":
                     valueable_config.append(value)
         for tl in board_timelines:
             tl.update_configs(valueable_config)
