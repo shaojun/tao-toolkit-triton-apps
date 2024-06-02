@@ -89,8 +89,6 @@ class DoorStateChangedEventDetector(EventDetectorBase):
 
         target_msg_original_timestamp_str = "" if len(
             recent_items) == 0 else recent_items[-1].original_timestamp_str
-        person_items = [i for i in filtered_timeline_items if
-                        "Person|#" in i.raw_data and i.original_timestamp_str == target_msg_original_timestamp_str]
 
         target_items = []
         count = 0
@@ -133,7 +131,7 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                     log_item.item_type,
                     log_item.raw_data,
                     log_item.original_timestamp_str))
-        hasPereson = "Y" if len(person_items) > 0 else "N"
+        hasPereson = "Y" if self.timeline.person_session["person_in"] else "N"
         for ri in target_items:
             if ri.item_type == board_timeline.TimelineItemType.LOCAL_IDLE_LOOP:
                 new_state_obj = {"last_door_state": "OPEN",
@@ -437,22 +435,11 @@ class BlockingDoorEventDetector(EventDetectorBase):
         can_raise_door_openned_long_time = False if abs(door_open_time_diff) < config_time else True
 
         can_raise_door_blocked = True
-        person_timeline_items = [i for i in filtered_timeline_items if
-                                 i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
-                                 "Person|#" in i.raw_data]
-        if not len(person_timeline_items) > 0:
-            can_raise_door_blocked = False
         # 电梯内没有人 不判断遮挡
-        if len(person_timeline_items) > 0:
-            # can_raise_door_blocked = False
-            # return None
-            latest_person_item = person_timeline_items[-1]
-            detect_person_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
-                                       latest_person_item.original_timestamp).total_seconds()
-            # 最近一次识别到人类已经有一段时间，那么可以认为电梯内没人
-            if detect_person_time_diff > 3:
-                can_raise_door_blocked = False
-            # return None
+        if not self.timeline.person_session["person_in"] or \
+                (datetime.datetime.now(datetime.timezone.utc) - self.timeline.person_session[
+                    "session_start_at"]).total_seconds() < 10:
+            can_raise_door_blocked = False
 
         '''
         last_state_object = None
@@ -471,6 +458,7 @@ class BlockingDoorEventDetector(EventDetectorBase):
         # 未能获取到电梯速度，无法判断电梯是否静止
         if not len(speed_timeline_items) > 2:
             can_raise_door_blocked = False
+            can_raise_door_openned_long_time = False
             # return None
 
         new_state_object = None
@@ -486,6 +474,7 @@ class BlockingDoorEventDetector(EventDetectorBase):
                 new_state_object = datetime.datetime.now()
             else:
                 can_raise_door_blocked = False
+                can_raise_door_openned_long_time = False
 
         if can_raise_door_blocked:
             self.logger.debug("board:{},遮挡门告警中，开门时长为{}s".format(self.timeline.board_id, door_open_time_diff))
@@ -526,7 +515,7 @@ class BlockingDoorEventDetector(EventDetectorBase):
 
         if self.state_obj and "door_state" in self.state_obj and \
                 self.state_obj["door_state"]["new_state"] == "CLOSE" and \
-                (datetime.datetime.now() - self.state_obj["door_state"]["notify_time"]).total_seconds() > 30:
+                (datetime.datetime.now() - self.state_obj["door_state"]["notify_time"]).total_seconds() > 5:
             return True
 
         return False
@@ -655,35 +644,28 @@ class PeopleStuckEventDetector(EventDetectorBase):
         # 关门的时候没有人，那么不进行困人判断
         if not door_state or door_state["new_state"] == "OPEN" or door_state["has_person"] == "N":
             return None
-        # if door_state["last_state"] == "OPEN" and (
-        #        datetime.datetime.now() - door_state["notify_time"]).total_seconds() < 20:
-        #    return None
+        kunren_sj_item = [i for i in self.timeline.configures if i["code"] == "krsj"]
+        kunren_sj = 90 if len(kunren_sj_item) == 0 else int(kunren_sj_item[0]["value"])
         # 如果门关上还未超出2分钟则不认为困人
         if door_state["new_state"] == "CLOSE" and (
-                datetime.datetime.now(datetime.timezone.utc) - door_state["notify_time"]).total_seconds() < 90:
+                datetime.datetime.now(datetime.timezone.utc) - door_state["notify_time"]).total_seconds() < kunren_sj:
             return None
-        '''
-        last_state_obj = None
-        if self.state_obj and "last_notify_timestamp" in self.state_obj:
-            last_state_obj = self.state_obj["last_notify_timestamp"]
 
         new_state_obj = None
-        if last_state_obj and "last_report_timestamp" in last_state_obj:
-            last_report_time_diff = (
-                datetime.datetime.now() - last_state_obj["last_report_timestamp"]).total_seconds()
-            # 如果短时间内上报过
-            if last_report_time_diff < 120:
-                return None
+
+        # 电梯内没人
+        if not self.timeline.person_session["person_in"] or self.timeline.person_session["session_start_at"] == None:
+            return None
         '''
-        new_state_obj = None
         # "Person|#"
         person_filtered_timeline_items = [i for i in filtered_timeline_items if
                                           i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "Person|#" in
                                           i.raw_data
                                           and (door_state["notify_time"] - i.original_timestamp).total_seconds() < 0]
+
         # 电梯内没人
         if len(person_filtered_timeline_items) < 20:
-            return None
+            return None       
         # object_person = None
         object_person = person_filtered_timeline_items[0]
         if (datetime.datetime.now(datetime.timezone.utc) - object_person.original_timestamp).total_seconds() < 50:
@@ -714,11 +696,11 @@ class PeopleStuckEventDetector(EventDetectorBase):
                 door_sign_with_person_count = door_sign_with_person_count + 1
         if door_sign_with_person_count < 10:
             return None
+        '''
 
-        kunren_sj_item = [i for i in self.timeline.configures if i["code"] == "krsj"]
-        kunren_sj = 90 if len(kunren_sj_item) == 0 else int(kunren_sj_item[0]["value"])
-        if (datetime.datetime.now(datetime.timezone.utc) - person_filtered_timeline_items[0].
-                original_timestamp).total_seconds() < kunren_sj:
+        # 人在电梯内的时间小于配置的困人时间
+        if (datetime.datetime.now(datetime.timezone.utc) - self.timeline.person_session[
+            "session_start_at"]).total_seconds() < kunren_sj:
             return None
         # speed
         speed_filtered_timeline_items = [i for i in filtered_timeline_items if i.item_type ==
@@ -738,9 +720,10 @@ class PeopleStuckEventDetector(EventDetectorBase):
 
         if new_state_obj:
             self.last_report_close_time = None
-            self.logger.debug("board:{} people count:{},latest person:{}".format(self.timeline.board_id,
-                                                                                 len(person_filtered_timeline_items),
-                                                                                 object_person.original_timestamp_str))
+            self.logger.debug("board:{},person session start at:{}".format(self.timeline.board_id,
+                                                                           self.timeline.person_session[
+                                                                               "session_start_at"].strftime(
+                                                                               "%d/%m/%Y %H:%M:%S")))
             # store it back, and it will be passed in at next call
             self.state_obj["last_notify_timestamp"] = new_state_obj["last_report_timestamp"];
             return [

@@ -66,6 +66,7 @@ class BoardTimeline:
         self.target_borads = target_borads
         self.liftId = lift_id
         self.configures = []
+        self.person_session = {"person_in":False,"session_start_at":None, "latest_person_item_time":None}
         # self.producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
         #                              value_serializer=lambda x: dumps(x).encode('utf-8'))
         self.producer = producer
@@ -80,6 +81,8 @@ class BoardTimeline:
 
     def add_items(self, items: List[TimelineItem]):
         # self.logger.debug("board: {} is adding TimelineItem(s)...  type: {}".format(self.board_id, items[0].type.name))
+        self.check_person_session(items)
+
         self.items += items
         if len(self.items) % 5 == 0:
             self.__purge_items()
@@ -152,3 +155,22 @@ class BoardTimeline:
         except:
             self.logger.exception(
                 "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
+
+    # items为新加入列表的项
+    def check_person_session(self, items: List[TimelineItem]):
+        person_items = [item for item in items if item.item_type==TimelineItemType.OBJECT_DETECT and "Person|#" in item.raw_data]
+        # 这一轮检测中有人
+        if len(person_items) > 0:
+            # 人在电梯里的session已经开始了，只需更新最近检测到人的时间
+            if self.person_session["person_in"]:
+                self.person_session["latest_person_item_time"] = person_items[0].original_timestamp
+            else:
+                self.person_session["person_in"] = True
+                self.person_session["session_start_at"] = person_items[0].original_timestamp
+                self.person_session["latest_person_item_time"] = person_items[0].original_timestamp
+        else:
+            # 这一轮上传中没有人，检查下最近一次检测到的人过去多长时间，超过4秒则认为没人
+            if self.person_session["person_in"] and (datetime.datetime.now(datetime.timezone.utc) - self.person_session["latest_person_item_time"]).total_seconds() > 4:
+                self.person_session["person_in"] = False
+                self.person_session["session_start_at"] = None
+                self.person_session["latest_person_item_time"] = None
