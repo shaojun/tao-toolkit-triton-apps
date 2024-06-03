@@ -75,10 +75,11 @@ class RepeatTimer(Timer):
 
 def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str, lift_id: str):
     if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
-        event_detectors = [ElectricBicycleEnteringEventDetector(logging),
-                           event_detector.DoorStateChangedEventDetector(
-                               logging),
-                           #    event_detector.BlockingDoorEventDetector(logging),
+        event_detectors = [#ElectricBicycleEnteringEventDetector(logging),
+                           #event_detector.DoorStateChangedEventDetector(logging),
+                           event_detector.DoorStateSessionDetector(logging),
+                           event_detector.RunningStateSessionDetector(logging),
+                           event_detector.BlockingDoorEventDetector(logging),
                            #    event_detector.PeopleStuckEventDetector(logging),
                            #    # event_detector.GasTankEnteringEventDetector(logging),
                            #    # event_detector.DoorOpenedForLongtimeEventDetector(logging),
@@ -110,6 +111,8 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
     # enable_developer_local_debug_mode
     # these detectors instances are shared by all timelines
     event_detectors = [ElectricBicycleEnteringEventDetector(logging),
+                       event_detector.DoorStateSessionDetector(logging),
+                       event_detector.RunningStateSessionDetector(logging),
                        event_detector.DoorStateChangedEventDetector(logging),
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
@@ -395,8 +398,8 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                 if board_id == "default_empty_id_please_manual_set_rv1126":
                     continue
 
-                # if board_id != "E1634085712737341441":
-                #    continue
+                #if board_id != "E1634085712737341441":
+                #   continue
 
                 if board_id == "E1640262214042521601":
                     continue
@@ -425,18 +428,19 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                 new_timeline_items = []
                 # indicates it's the object detection msg
                 if "objects" in event_data:
+                    is_frame_grayscale = False if not "is_frame_grayscale" in event_data else event_data["is_frame_grayscale"]
                     if len(event_data["objects"]) == 0:
                         new_timeline_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
                                                         board_timeline.TimelineItemType.OBJECT_DETECT,
                                                         board_msg_original_timestamp,
-                                                        board_msg_id, ""))
+                                                        board_msg_id, "", is_frame_grayscale))
                     for obj_data in event_data["objects"]:
                         new_timeline_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
                                                         board_timeline.TimelineItemType.OBJECT_DETECT,
                                                         board_msg_original_timestamp,
-                                                        board_msg_id, obj_data))
+                                                        board_msg_id, obj_data, is_frame_grayscale))
                     cur_board_timeline.add_items(new_timeline_items)
                 # indicates it's the sensor data reading msg
                 elif "sensors" in event_data and "sensorId" in event_data:
