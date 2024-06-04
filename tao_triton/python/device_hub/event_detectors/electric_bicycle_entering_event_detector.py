@@ -309,12 +309,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 i for i in self.timeline.configures if i["code"] == "kqzt"]
             config_kqzt = 1 if len(config_item) == 0 else int(
                 config_item[0]["value"])
-            if self.timeline.board_id in self.timeline.target_borads or config_kqzt == 0:
-                # self.logger.info("board:{}is in the target list".format(self.timeline.board_id))
-                return
-            if not self.blockDoorEnabled(self.timeline.board_id):
-                self.logger.info("board:{}.block door is disabled from web".format(
-                    self.timeline.board_id))
+            config_close_zt = [i for i in self.timeline.configures if i["code"] == "gbzt"]
+            gbzt = False if len(config_close_zt) == 0 else (self.timeline.board_id in config_close_zt[0]["value"])
+            if (config_kqzt == 0 or gbzt) and "|TwoWheeler|confirmed" in message:
+                self.logger.info("board:{} is in configured to disable block door".format(self.timeline.board_id))
                 return
             # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',

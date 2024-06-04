@@ -29,7 +29,8 @@ class TimelineItemType(int, Enum):
 class TimelineItem:
     def __init__(self, timeline: BoardTimeline, item_type: TimelineItemType, original_timestamp_str: str,
                  board_msg_id: str,
-                 raw_data: str):
+                 raw_data: str,
+                 is_frame_grayscale=False):
         """
 
         @type item_type: TimelineItemType
@@ -49,6 +50,8 @@ class TimelineItem:
         self.board_msg_id = board_msg_id
         self.raw_data = raw_data
         self.consumed = False
+        # 用于目标识别，暂放此处，当前识别物体是否在灰度情况下识别到
+        self.is_frame_grayscale = is_frame_grayscale
 
 
 class BoardTimeline:
@@ -66,20 +69,33 @@ class BoardTimeline:
         self.target_borads = target_borads
         self.liftId = lift_id
         self.configures = []
-        # self.producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
-        #                              value_serializer=lambda x: dumps(x).encode('utf-8'))
         self.producer = producer
+
+        self.person_session = {"person_in": False, "session_start_at": None, "latest_person_item_time": None,
+                               "person_count": 0}
+
+        self.door_state_session = {"door_state": "unkown", "session_start_at": None,
+                                   "latest_current_state_item_time": None,
+                                   "door_closed_no_doorsign_count": 0,
+                                   "is_frame_grayscale": True, "latest_grayscal_time": None}
+
+        self.lift_running_state_session = {"is_running": False,
+                                           "session_start_at": datetime.datetime.now(datetime.timezone.utc),
+                                           "latest_current_state_item_time": datetime.datetime.now(
+                                               datetime.timezone.utc),
+                                           "item_data": 0}
 
         for d in event_detectors:
             d.prepare(self, event_detectors)
 
-
-    def update_configs(self, configs:List):
+    def update_configs(self, configs: List):
         self.configures.clear()
         self.configures.extend(configs)
 
     def add_items(self, items: List[TimelineItem]):
         # self.logger.debug("board: {} is adding TimelineItem(s)...  type: {}".format(self.board_id, items[0].type.name))
+        self.check_person_session(items)
+
         self.items += items
         if len(self.items) % 5 == 0:
             self.__purge_items()
@@ -93,7 +109,9 @@ class BoardTimeline:
             t0 = time.time()
             new_alarms = None
             processing_items = None
-            if d.get_timeline_item_filter():
+            if d.is_session_detector:
+                processing_items = items
+            elif d.get_timeline_item_filter():
                 processing_items = d.get_timeline_item_filter()(self.items)
             elif self.items:
                 processing_items = self.items
@@ -111,7 +129,8 @@ class BoardTimeline:
             perf_time_used_by_ms = (t1 - t0) * 1000
             if perf_time_used_by_ms >= 600:
                 self.logger.info(
-                    "board: {}, {} detect used time(ms): {}".format(self.board_id, d.__class__.__name__, perf_time_used_by_ms))
+                    "board: {}, {} detect used time(ms): {}".format(self.board_id, d.__class__.__name__,
+                                                                    perf_time_used_by_ms))
 
         if event_alarms:
             t0 = time.time()
@@ -152,3 +171,27 @@ class BoardTimeline:
         except:
             self.logger.exception(
                 "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
+
+    # items为新加入列表的项
+    def check_person_session(self, items: List[TimelineItem]):
+        person_items = [item for item in items if
+                        item.item_type == TimelineItemType.OBJECT_DETECT and "Person|#" in item.raw_data]
+        # 这一轮检测中有人
+        if len(person_items) > 0:
+            # 人在电梯里的session已经开始了，只需更新最近检测到人的时间
+            if self.person_session["person_in"]:
+                self.person_session["latest_person_item_time"] = person_items[0].original_timestamp
+                self.person_session["person_count"] = len(person_items)
+            else:
+                self.person_session["person_in"] = True
+                self.person_session["session_start_at"] = person_items[0].original_timestamp
+                self.person_session["latest_person_item_time"] = person_items[0].original_timestamp
+                self.person_session["person_count"] = len(person_items)
+        else:
+            # 这一轮上传中没有人，检查下最近一次检测到的人过去多长时间，超过4秒则认为没人
+            if self.person_session["person_in"] and (datetime.datetime.now(datetime.timezone.utc) - self.person_session[
+                "latest_person_item_time"]).total_seconds() > 4:
+                self.person_session["person_in"] = False
+                self.person_session["session_start_at"] = None
+                self.person_session["latest_person_item_time"] = None
+                self.person_session["person_count"] = 0

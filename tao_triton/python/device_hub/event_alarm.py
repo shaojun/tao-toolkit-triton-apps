@@ -5,7 +5,8 @@ import time
 from enum import Enum
 from typing import List
 import tao_triton.python.device_hub.event_detectors.event_detector as event_detector
-from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import ElectricBicycleEnteringEventDetector
+from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import \
+    ElectricBicycleEnteringEventDetector
 
 import requests
 
@@ -186,6 +187,9 @@ class EventAlarmWebServiceNotifier:
                             target_alarm.event_detector.timeline.board_id,
                             target_alarm.event_detector.__class__.__name__,
                             target_alarm.priority, str(target_alarm.original_utc_timestamp), target_alarm.description))
+
+                    if datetime.datetime.now().second % 9 != 0 and post_data["warning_type"] == "008":
+                        continue
 
                     # level: Debug=0, Info=1, Warning=2, Error=3, Fatal=4
                     post_response = requests.post(EventAlarmWebServiceNotifier.URL,

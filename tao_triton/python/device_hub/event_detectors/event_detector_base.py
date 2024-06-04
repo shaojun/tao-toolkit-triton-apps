@@ -3,6 +3,7 @@ class EventDetectorBase:
         self.event_listeners = []
         self.state_obj: dict = None
         self.timeline = None
+        self.is_session_detector = False
 
     def prepare(self, timeline, event_detectors):
         """
