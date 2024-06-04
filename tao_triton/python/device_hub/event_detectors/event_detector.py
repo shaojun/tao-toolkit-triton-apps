@@ -128,12 +128,12 @@ class RunningStateSessionDetector(EventDetectorBase):
         # 如果有速度上传
         if len(object_items) > 0:
             if self.timeline.lift_running_state_session["is_running"]:
-                if object_items[0].raw_data["speed"] >= 0.1 or self.timeline.lift_running_state_session[
-                    "item_data"] > 0.1:
+                if abs(object_items[0].raw_data["speed"]) >= 0.1 or abs(self.timeline.lift_running_state_session[
+                                                                            "item_data"]) > 0.1:
                     self.timeline.lift_running_state_session["latest_current_state_item_time"] = datetime.datetime.now(
                         datetime.timezone.utc)
                     self.timeline.lift_running_state_session["item_data"] = object_items[0].raw_data["speed"]
-                elif self.timeline.lift_running_state_session["item_data"] < 0.1:
+                elif abs(self.timeline.lift_running_state_session["item_data"]) < 0.1:
                     self.timeline.lift_running_state_session["is_running"] = False
                     self.timeline.lift_running_state_session["latest_current_state_item_time"] = datetime.datetime.now(
                         datetime.timezone.utc)
@@ -142,8 +142,8 @@ class RunningStateSessionDetector(EventDetectorBase):
                         datetime.timezone.utc)
             else:
                 # 静止情况下，如果此次速度>0.1上次的速度也大于0.1则认为从静止变为运动
-                if object_items[0].raw_data["speed"] >= 0.1 and self.timeline.lift_running_state_session[
-                    "item_data"] > 0.1:
+                if abs(object_items[0].raw_data["speed"]) >= 0.1 and abs(self.timeline.lift_running_state_session[
+                                                                             "item_data"]) > 0.1:
                     self.timeline.lift_running_state_session["is_running"] = True
                     self.timeline.lift_running_state_session["session_start_at"] = datetime.datetime.now(
                         datetime.timezone.utc)
