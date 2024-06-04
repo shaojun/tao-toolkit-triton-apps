@@ -680,9 +680,7 @@ class BlockingDoorEventDetector(EventDetectorBase):
             return True
 
         # 没人
-        if not self.timeline.person_session["person_in"] and \
-                (datetime.datetime.now(datetime.timezone.utc) - self.timeline.person_session[
-                    "session_start_at"]).total_seconds() > 5:
+        if not self.timeline.person_session["person_in"]:
             return True
         '''
         if self.state_obj and "door_state" in self.state_obj and \
@@ -805,7 +803,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if self.state_obj and "last_notify_timestamp" in self.state_obj and self.state_obj["last_notify_timestamp"]:
             last_state_obj = self.state_obj["last_notify_timestamp"]
 
-        if last_state_obj and ((datetime.datetime.now() - last_state_obj).total_seconds() > 600 or
+        if last_state_obj and ((datetime.datetime.now() - last_state_obj).total_seconds() > 2 * 600 or
                                self.canCloseAlarm(filtered_timeline_items)):
             self.state_obj["last_notify_timestamp"] = None
             self.last_report_close_time = datetime.datetime.now()
@@ -813,23 +811,31 @@ class PeopleStuckEventDetector(EventDetectorBase):
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                            event_alarm.EventAlarmPriority.CLOSE, "", "001")]
 
-        if last_state_obj:
+        if last_state_obj != None:
             return None
 
         if self.last_report_close_time and (datetime.datetime.now() - self.last_report_close_time).total_seconds() < 60:
             return None
 
+        '''
         door_state = None
         if self.state_obj and "door_state" in self.state_obj:
             door_state = self.state_obj["door_state"]
         # 关门的时候没有人，那么不进行困人判断
         if not door_state or door_state["new_state"] == "OPEN" or door_state["has_person"] == "N":
             return None
+        '''
+
+        if self.timeline.door_state_session["door_state"] != "closed":
+            return None
+
         kunren_sj_item = [i for i in self.timeline.configures if i["code"] == "krsj"]
         kunren_sj = 90 if len(kunren_sj_item) == 0 else int(kunren_sj_item[0]["value"])
+
         # 如果门关上还未超出2分钟则不认为困人
-        if door_state["new_state"] == "CLOSE" and (
-                datetime.datetime.now(datetime.timezone.utc) - door_state["notify_time"]).total_seconds() < kunren_sj:
+        if self.timeline.door_state_session["door_state"] == "closed" and (
+                datetime.datetime.now(datetime.timezone.utc) - self.timeline.door_state_session[
+            "session_start_at"]).total_seconds() < kunren_sj:
             return None
 
         new_state_obj = None
@@ -843,17 +849,25 @@ class PeopleStuckEventDetector(EventDetectorBase):
             "session_start_at"]).total_seconds() < kunren_sj:
             return None
         # speed
+        '''
         speed_filtered_timeline_items = [i for i in filtered_timeline_items if i.item_type ==
                                          board_timeline.TimelineItemType.SENSOR_READ_SPEED]
         if len(speed_filtered_timeline_items) == 0:
             return None
-        is_quiescent = True
+
         for item in speed_filtered_timeline_items:
             time_diff = (datetime.datetime.now(
                 datetime.timezone.utc) - item.original_timestamp).total_seconds()
             # 如果120秒内电梯有在运动那么不认为困人
             if time_diff <= kunren_sj and abs(item.raw_data["speed"]) > 0.3:
                 is_quiescent = False
+        '''
+        is_quiescent = False
+        if self.timeline.lift_running_state_session["is_running"] == False and (
+                datetime.datetime.now(datetime.timezone.utc) - self.timeline.lift_running_state_session[
+            "session_start_at"]).total_seconds() > kunren_sj:
+            is_quiescent = True
+
         if is_quiescent:
             new_state_obj = {"people_stuck": "stuck",
                              "last_report_timestamp": datetime.datetime.now()}
@@ -877,6 +891,25 @@ class PeopleStuckEventDetector(EventDetectorBase):
 
     # 门开 或 轿厢内没人
     def canCloseAlarm(self, filtered_timeline_items):
+        # speed > 0
+        if self.timeline.lift_running_state_session["is_running"] and (
+                datetime.datetime.now(datetime.timezone.utc) - self.timeline.lift_running_state_session[
+            "session_start_at"]).total_seconds() > 2:
+            self.logger.debug("board:{} close the alarm due to lift is running")
+            return True
+
+        # person session
+        if not self.timeline.person_session["person_in"]:
+            self.logger.debug("board:{} close the alarm due to there's no person")
+            return True
+
+        # door state
+        if self.timeline.door_state_session["door_state"] == "open":
+            self.logger.debug("board:{} close the alarm due to door is open")
+            return True
+
+        return False
+        '''
         door_state = None
         # self.logger.debug("board:{} Check if can close the alarm which uploaded at:{}".
         #                  format(self.timeline.board_id, str(self.state_obj["last_notify_timestamp"])))
@@ -915,6 +948,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         self.logger.debug("board:{} can not close the alarm which uploaded at:{}".format(self.timeline.board_id, str(
             self.state_obj["last_notify_timestamp"])))
         return False
+        '''
 
 
 #
