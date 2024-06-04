@@ -631,7 +631,10 @@ class BlockingDoorEventDetector(EventDetectorBase):
                 can_raise_door_blocked = False
                 can_raise_door_openned_long_time = False
         '''
-        if self.timeline.lift_running_state_session["is_running"]:
+        if self.timeline.lift_running_state_session["is_running"] or (
+                self.timeline.lift_running_state_session["is_running"] == False and (
+                datetime.datetime.now(datetime.timezone.utc) - self.timeline.lift_running_state_session[
+            "session_start_at"]).total_seconds() < config_time_1):
             can_raise_door_blocked = False
             can_raise_door_openned_long_time = False
 
