@@ -535,7 +535,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 #     self.timeline.board_id,
                 #     "2nd_model_pre_infer",
                 #     ""))
-                second_infer_raw_infer_results = tao_client.callable_main(['-m', 'elenet_two_classes_240413_tao',
+                second_infer_raw_infer_results = tao_client.callable_main(['-m', 'elenet_two_classes_240602_tao',
                                                                            '--mode', 'Classification',
                                                                           '-u', self.infer_server_ip_and_port,
                                                                            '--output_path', './',
