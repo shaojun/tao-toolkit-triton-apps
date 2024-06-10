@@ -75,34 +75,34 @@ class RepeatTimer(Timer):
 
 def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str, lift_id: str):
     if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
-        event_detectors = [#ElectricBicycleEnteringEventDetector(logging),
-                           #event_detector.DoorStateChangedEventDetector(logging),
-                           event_detector.DoorStateSessionDetector(logging),
-                           event_detector.RunningStateSessionDetector(logging),
-                           event_detector.BlockingDoorEventDetector(logging),
-                           #    event_detector.PeopleStuckEventDetector(logging),
-                           #    # event_detector.GasTankEnteringEventDetector(logging),
-                           #    # event_detector.DoorOpenedForLongtimeEventDetector(logging),
-                           #    # event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
-                           #    event_detector.ElevatorOverspeedEventDetector(logging),
-                           #    # event_detector.TemperatureTooHighEventDetector(logging),
-                           #    # event_detector.PassagerVigorousExerciseEventDetector(logging),
-                           #    # event_detector.DoorOpeningAtMovingEventDetector(logging),
-                           #    # event_detector.ElevatorSuddenlyStoppedEventDetector(logging),
-                           #    # event_detector.ElevatorShockEventDetector(logging),
-                           #    event_detector.ElevatorMovingWithoutPeopleInEventDetector(logging),
-                           #    event_detector.ElevatorJamsEventDetector(logging),
-                           #    event_detector.ElevatorMileageEventDetector(logging),
-                           #    event_detector.ElevatorRunningStateEventDetector(logging),
-                           #    event_detector.UpdateResultEventDetector(logging),
-                           #    event_detector.GyroscopeFaultEventDetector(logging),
-                           #    event_detector.PressureFaultEventDetector(logging),
-                           #    event_detector.ElectricSwitchFaultEventDetector(logging),
-                           #    event_detector.DeviceOfflineEventDetector(logging),
-                           #    event_detector.DetectPersonOnTopEventDetector(logging),
-                           #    event_detector.DetectCameraBlockedEventDetector(logging),
-                           # event_detector.CameraDetectVehicleEventDetector(logging)
-                           ]
+        event_detectors = [  # ElectricBicycleEnteringEventDetector(logging),
+            # event_detector.DoorStateChangedEventDetector(logging),
+            event_detector.DoorStateSessionDetector(logging),
+            event_detector.RunningStateSessionDetector(logging),
+            event_detector.BlockingDoorEventDetector(logging),
+            #    event_detector.PeopleStuckEventDetector(logging),
+            #    # event_detector.GasTankEnteringEventDetector(logging),
+            #    # event_detector.DoorOpenedForLongtimeEventDetector(logging),
+            #    # event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
+            #    event_detector.ElevatorOverspeedEventDetector(logging),
+            #    # event_detector.TemperatureTooHighEventDetector(logging),
+            #    # event_detector.PassagerVigorousExerciseEventDetector(logging),
+            #    # event_detector.DoorOpeningAtMovingEventDetector(logging),
+            #    # event_detector.ElevatorSuddenlyStoppedEventDetector(logging),
+            #    # event_detector.ElevatorShockEventDetector(logging),
+            #    event_detector.ElevatorMovingWithoutPeopleInEventDetector(logging),
+            #    event_detector.ElevatorJamsEventDetector(logging),
+            #    event_detector.ElevatorMileageEventDetector(logging),
+            #    event_detector.ElevatorRunningStateEventDetector(logging),
+            #    event_detector.UpdateResultEventDetector(logging),
+            #    event_detector.GyroscopeFaultEventDetector(logging),
+            #    event_detector.PressureFaultEventDetector(logging),
+            #    event_detector.ElectricSwitchFaultEventDetector(logging),
+            #    event_detector.DeviceOfflineEventDetector(logging),
+            #    event_detector.DetectPersonOnTopEventDetector(logging),
+            #    event_detector.DetectCameraBlockedEventDetector(logging),
+            # event_detector.CameraDetectVehicleEventDetector(logging)
+        ]
         return board_timeline.BoardTimeline(logging, board_id, [],
                                             event_detectors,
                                             [event_alarm.EventAlarmDummyNotifier(
@@ -373,15 +373,20 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
             for event in kafka_consumer:
                 if conn.poll():
                     msg = conn.recv()
-                    if msg.startswith("command:exit"):
-                        per_process_main_logger.critical(
-                            f"process: {process_name} received exit command: {msg}")
-                        GLOBAL_SHOULD_QUIT_EVERYTHING = True
-                        break
+                    if isinstance(msg, str):
+                        if msg.startswith("command:exit"):
+                            per_process_main_logger.critical(
+                                f"process: {process_name} received exit command: {msg}")
+                            GLOBAL_SHOULD_QUIT_EVERYTHING = True
+                            break
                     else:
+                        # sample is like:
+                        # [{"serialNo": i['serialNo'], "liftId": i['liftId']}]
                         per_process_main_logger.info(
-                            f"received incremental board serialNo msg: {msg}")
-                        consumer_str += "|" + msg
+                            f"received incremental board serialNo and liftId msg: {msg}")
+                        boards.extend(msg)
+                        consumer_str += "|" + \
+                            "|".join([i['serialNo'] for i in msg])
                         kafka_consumer.unsubscribe()
                         kafka_consumer.subscribe(pattern=consumer_str)
                         break
@@ -398,7 +403,7 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                 if board_id == "default_empty_id_please_manual_set_rv1126":
                     continue
 
-                #if board_id != "E1634085712737341441":
+                # if board_id != "E1634085712737341441":
                 #   continue
 
                 if board_id == "E1640262214042521601":
@@ -428,7 +433,8 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                 new_timeline_items = []
                 # indicates it's the object detection msg
                 if "objects" in event_data:
-                    is_frame_grayscale = False if not "is_frame_grayscale" in event_data else event_data["is_frame_grayscale"]
+                    is_frame_grayscale = False if not "is_frame_grayscale" in event_data else event_data[
+                        "is_frame_grayscale"]
                     if len(event_data["objects"]) == 0:
                         new_timeline_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
@@ -554,12 +560,14 @@ def check_and_update_incremental_board_info_via_web_service_and_send_msg_to_proc
         if incremental:
             # a simple balance strategy, select a process randomly to send the msg for loading the new boards
             selected_process_index = datetime.datetime.now().second % len(running_processes)
-            main_logger.info("detected incremental board info, will load to process {}, all serialNo(count: {}): {}".format(
+            main_logger.info("detected incremental board info, will load to process {}, incremental info count: {}: {}".format(
                 selected_process_index, len(incremental), ', '.join([i['serialNo'] for i in incremental])))
-            incremental_serialNo_str = "|".join(
-                [i['serialNo'] for i in incremental])
+            # incremental_serialNo_str = "|".join(
+            #     [i['serialNo'] for i in incremental])
+            incremental_serialNo_and_liftId_info = [
+                {"id": i['liftId'], "serialNo": i['serialNo'], "liftId": i['liftId']} for i in incremental]
             parent_and_child_connections[selected_process_index][0].send(
-                incremental_serialNo_str)
+                incremental_serialNo_and_liftId_info)
             All_Board_Infos = latest_all_board_infos
 
     except Exception as e:
