@@ -719,7 +719,7 @@ if __name__ == '__main__':
 
     # duration is in seconds
     timely_check_incremental_board_info_timer = RepeatTimer(
-        15, check_and_update_incremental_board_info_via_web_service_and_send_msg_to_process_via_conn,
+        30, check_and_update_incremental_board_info_via_web_service_and_send_msg_to_process_via_conn,
         [concurrent_processes, parent_and_child_connections])
     timely_check_incremental_board_info_timer.start()
 
@@ -753,6 +753,7 @@ if __name__ == '__main__':
 
     while not GLOBAL_SHOULD_QUIT_EVERYTHING:
         time.sleep(1)
+    timely_check_incremental_board_info_timer.cancel()
     print("all processes are exiting, will wait for all processes to exit...")
     main_logger.critical(
         "all processes are exiting, will wait for all processes to exit...")
