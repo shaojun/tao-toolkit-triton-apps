@@ -1861,6 +1861,7 @@ class ElevatorJamsEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger("elevatorJamsEventDetectorLogger")
+        self.person_count_list = []
 
     def prepare(self, timeline, event_detectors):
         """
@@ -1892,10 +1893,19 @@ class ElevatorJamsEventDetector(EventDetectorBase):
         # 电梯拥堵配置
         config_item = [i for i in self.timeline.configures if i["code"] == "dtyd"]
         config_count = 5 if len(config_item) == 0 else int(config_item[0]["value"])
+
+        # 电梯内没人或者人数小于配置数量时清空记录
+        if not self.timeline.person_session["person_in"] or self.timeline.person_session[
+            "person_count"] <= config_count:
+            self.person_count_list = []
+
+        if self.timeline.person_session["person_in"] and self.timeline.person_session["person_count"] > config_count:
+            self.person_count_list.append(self.timeline.person_session["person_count"])
+
         if last_state_obj:
             last_report_time_diff = (datetime.datetime.now() - last_state_obj).total_seconds()
             if (not self.timeline.person_session["person_in"] or self.timeline.person_session[
-                "person_count"] < config_count) and last_report_time_diff > 20:
+                "person_count"] < config_count) and last_report_time_diff > 10:
                 self.state_obj["last_notify_timestamp"] = None
                 return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
@@ -1904,7 +1914,8 @@ class ElevatorJamsEventDetector(EventDetectorBase):
                 return None
 
         # 电梯内没人或者人数小于电梯拥堵配置的人数
-        if not self.timeline.person_session["person_in"] or self.timeline.person_session["person_count"] < config_count:
+        # if not self.timeline.person_session["person_in"] or self.timeline.person_session["person_count"] < config_count:
+        if len(self.person_count_list) < 3:
             return None
 
         # 人数大于配置人数
