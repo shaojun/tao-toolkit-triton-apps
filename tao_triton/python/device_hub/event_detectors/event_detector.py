@@ -107,7 +107,7 @@ class DoorStateSessionDetector(EventDetectorBase):
 class RunningStateSessionDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        self.logger = logging.getLogger("doorStateChangedEventDetectorLogger")
+        # self.logger = logging.getLogger("doorStateChangedEventDetectorLogger")
         self.is_session_detector = True
 
     def prepare(self, timeline, event_detectors):
@@ -258,6 +258,7 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                         item.raw_data,
                         item.original_timestamp_str))
         """
+        '''
         if len(target_items) > 0:
             log_item = target_items[0]
             self.logger.debug(
@@ -267,6 +268,7 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                     log_item.item_type,
                     log_item.raw_data,
                     log_item.original_timestamp_str))
+        '''
         hasPereson = "Y" if self.timeline.person_session["person_in"] else "N"
         for ri in target_items:
             if ri.item_type == board_timeline.TimelineItemType.LOCAL_IDLE_LOOP:
@@ -291,6 +293,10 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                  "new_state": new_state_obj["last_door_state"],
                  "hasPerson": hasPereson})
             code = "DOOROPEN" if new_state_obj["last_door_state"] == "OPEN" else "DOORCLOSE"
+            self.logger.debug("item in door state detect,board:{}, door state changed, new state is:{}".format(
+                self.timeline.board_id,
+                new_state_obj["last_door_state"]
+            ))
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),

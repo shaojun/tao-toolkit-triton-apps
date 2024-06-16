@@ -133,8 +133,9 @@ class EventAlarmWebServiceNotifier:
                                                       "base64string": ""})
                     if put_response.status_code != 200 or put_response.json()["code"] != 200:
                         self.logger.error(
-                            "board: {}, Notify alarm from {} got error: {}".format(
+                            "board: {}, liftId:{},Notify alarm from {} got error: {}".format(
                                 temp_alarm.event_detector.timeline.board_id,
+                                temp_alarm.event_detector.timeline.liftId,
                                 temp_alarm.event_detector.__class__.__name__,
                                 put_response.text[:500]))
                 except:
