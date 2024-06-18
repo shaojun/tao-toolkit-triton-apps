@@ -383,12 +383,15 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 "confirm_send"]:
             confirmed_result = [
                 i for i in self.local_ebike_infer_result_list if i["infer_result"] >= config_result]
-            config_result_85 = [
-                i for i in self.local_ebike_infer_result_list if i["infer_result"] >= 0.85]
+            # config_result_85 = [
+            #    i for i in self.local_ebike_infer_result_list if i["infer_result"] >= 0.85]
             # since the infer is so sure, then let it go through and not to cancel confirm
+            # 会导致偶然一帧高识别率导致虽未产生电车入梯告警但阻门取消不了
+            '''
             if len(config_result_85) > 0:
                 self.local_ebike_infer_result_list[0]["confirm_send"] = False
                 return
+            '''
             if len(confirmed_result) < 2:
                 self.local_ebike_infer_result_list[0]["confirm_send"] = False
                 # self.logger.debug("send ebike confirm exit")
