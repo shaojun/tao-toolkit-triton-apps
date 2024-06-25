@@ -149,7 +149,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                            event_alarm.EventAlarmPriority.ERROR,
                                            "detected electric-bicycle entering elevator", "007", {}, ""))
                 self.logger.debug(
-                    "board:{}, raise e-bike alarm and send block door to edge".format(self.timeline.board_id));
+                    "board:{}, raise e-bike alarm and send block door to edge".format(self.timeline.board_id))
+            elif is_ebike_session_open:
+                self.logger.debug(
+                    "board:{}, sink the open session due to the current_story:{}".format(self.timeline.board_id,
+                                                                                         current_story))
+
         return eb_entering_event_alarms
 
         if len(object_filtered_timeline_items) == 0:
