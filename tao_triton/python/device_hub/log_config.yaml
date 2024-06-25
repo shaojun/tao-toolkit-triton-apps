@@ -49,6 +49,16 @@ handlers:
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
+  electricBicycleInElevatorSession_file_handler:
+    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    level: DEBUG
+    formatter: simple
+    filename: "log/electricBicycleInElevatorSession.log"
+    when: S
+    interval: 86400
+    backupCount: 1200
+    maxBytes: 40240000
+    encoding: utf8
   doorStateChangedEventDetector_file_handler:
     class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
@@ -145,6 +155,10 @@ loggers:
   electricBicycleEnteringEventDetectorLogger:
     level: DEBUG
     handlers: [electricBicycleEnteringEventDetector_file_handler]
+    propagate: no
+  electricBicycleInElevatorSessionLogger:
+    level: DEBUG
+    handlers: [electricBicycleInElevatorSession_file_handler]
     propagate: no
   doorStateChangedEventDetectorLogger:
     level: DEBUG

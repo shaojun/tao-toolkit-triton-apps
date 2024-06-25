@@ -435,18 +435,19 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                 if "objects" in event_data:
                     is_frame_grayscale = False if not "is_frame_grayscale" in event_data else event_data[
                         "is_frame_grayscale"]
+                    version = False if not "version" in event_data else event_data["version"]
                     if len(event_data["objects"]) == 0:
                         new_timeline_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
                                                         board_timeline.TimelineItemType.OBJECT_DETECT,
                                                         board_msg_original_timestamp,
-                                                        board_msg_id, "", is_frame_grayscale))
+                                                        board_msg_id, "", is_frame_grayscale, version))
                     for obj_data in event_data["objects"]:
                         new_timeline_items.append(
                             board_timeline.TimelineItem(cur_board_timeline,
                                                         board_timeline.TimelineItemType.OBJECT_DETECT,
                                                         board_msg_original_timestamp,
-                                                        board_msg_id, obj_data, is_frame_grayscale))
+                                                        board_msg_id, obj_data, is_frame_grayscale, version))
                     cur_board_timeline.add_items(new_timeline_items)
                 # indicates it's the sensor data reading msg
                 elif "sensors" in event_data and "sensorId" in event_data:
