@@ -151,7 +151,11 @@ class ElectricBicycleInElevatorSession(SessionBase):
 
         if is_qua_board:
             self.save_sample_image(temp_cropped_image_file_full_name, object_detection_timeline_item.original_timestamp,
-                                   edge_board_confidence, edge_board_confidence, full_image_frame_base64_encode_text)
+                                   "electric_bicycle", edge_board_confidence, full_image_frame_base64_encode_text)
+            self.logger.debug("qua board id:{}, infer class electric_bicycle, board confidence:{}".format(
+                self.timeline.board_id,
+                edge_board_confidence
+            ))
             return "electric_bicycle", edge_board_confidence, edge_board_confidence, full_image_frame_base64_encode_text
 
         # only used when 2nd model declined the eb detect from 1st model, and when decling,
