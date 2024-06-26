@@ -154,9 +154,9 @@ class ElectricBicycleInElevatorSession(SessionBase):
                                    "electric_bicycle", edge_board_confidence, full_image_frame_base64_encode_text)
             self.logger.debug("qua board id:{}, infer class electric_bicycle, board confidence:{}".format(
                 self.timeline.board_id,
-                edge_board_confidence
+                edge_board_confidence / 100
             ))
-            return "electric_bicycle", edge_board_confidence, edge_board_confidence, full_image_frame_base64_encode_text
+            return "electric_bicycle", edge_board_confidence / 100, edge_board_confidence / 100, full_image_frame_base64_encode_text
 
         # only used when 2nd model declined the eb detect from 1st model, and when decling,
         # the part of 2nd model logic should have done save the sample image.
