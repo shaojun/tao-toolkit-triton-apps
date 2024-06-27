@@ -109,7 +109,8 @@ class ElectricBicycleInElevatorSession(SessionBase):
                 if packed_infer_result == None:
                     continue
                 infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
-                self.UpdateEbikeSession(infered_class, infer_server_current_ebic_confid)
+                is_qua_board = item.version == "4.1qua"
+                self.UpdateEbikeSession(infered_class, infer_server_current_ebic_confid, is_qua_board)
         except Exception as e:
             self.logger.exception("{} | {} | {}".format(
                 self.timeline.board_id, "feed", "exception: {}".format(e)))
@@ -149,7 +150,9 @@ class ElectricBicycleInElevatorSession(SessionBase):
             cropped_base64_image_file_text.encode('ascii'))))
         temp_image.save(temp_cropped_image_file_full_name)
 
-        if is_qua_board:
+        if is_qua_board and util.read_config_fast_to_property(["detectors",
+                                                               self.electric_bicycle_detector_name],
+                                                              'enable_infer_for_kua_board') == False:
             self.save_sample_image(temp_cropped_image_file_full_name, object_detection_timeline_item.original_timestamp,
                                    "electric_bicycle", edge_board_confidence, full_image_frame_base64_encode_text)
             self.logger.debug("qua board id:{}, infer class electric_bicycle, board confidence:{}".format(
@@ -328,7 +331,12 @@ class ElectricBicycleInElevatorSession(SessionBase):
     # avoid a single spike eb event mis-trigger alarm, set to 1 for disable the feature
     # we noticed some cases that like a bicycle entering, most of the frames can be infered as bicycle which is correct,
     # but sometimes, a Single frame can be infered as eb, which is wrong, here is trying to avoid this case
-    def CheckIfThrottleNeeded(self, confirmed_confid):
+    def CheckIfThrottleNeeded(self, confirmed_confid, is_qua_board=False):
+        if is_qua_board and util.read_config_fast_to_property(["detectors",
+                                                               self.electric_bicycle_detector_name],
+                                                              'enable_throttle_for_kua_board') == False:
+            return False
+
         self.infer_confirmed_eb_history_list.append({"infer_time": datetime.datetime.now()})
         # remove multiple expired items at once from a list
         expired_items = [i for i in self.infer_confirmed_eb_history_list if
@@ -348,7 +356,7 @@ class ElectricBicycleInElevatorSession(SessionBase):
     # a 已处于入梯状态 非电车判断是否符合出梯条件
     # b 电动车还未入梯 考虑是否进入静默期
     # 如果没有电车图片上传，infer_class传空字符串， infer_server_current_ebic_confid传0用来判断session是否结束
-    def UpdateEbikeSession(self, infer_class, infer_server_current_ebic_confid):
+    def UpdateEbikeSession(self, infer_class, infer_server_current_ebic_confid, is_qua_board=False):
         # self.logger.debug("board:{}, in UpdateEbikeSession, infer_class:{}, confid:{}".format(
         #    self.timeline.board_id, infer_class, infer_server_current_ebic_confid
         # ))
@@ -374,7 +382,7 @@ class ElectricBicycleInElevatorSession(SessionBase):
                                              "confid": infer_server_current_ebic_confid,
                                              "time_stamp": datetime.datetime.now()})
         # 检查是否处于静默期，如果在静默期内，不做session处理
-        if self.CheckIfInSlientDuration(ebic_confid):
+        if self.CheckIfInSlientDuration(ebic_confid, is_qua_board):
             if self.state == SessionState.OPEN:
                 self._state = SessionState.CLOSE
                 self._close_time = datetime.datetime.now()
@@ -392,7 +400,7 @@ class ElectricBicycleInElevatorSession(SessionBase):
                 # 推理结果为电动车，分两种情况 1，电动车还未入梯，需检车是否符合入梯条件 2，已经入梯了，只需更新最近一次成功推理的时间
                 self.latest_infer_success = datetime.datetime.now()
                 if self._state == SessionState.CLOSE:
-                    if not self.CheckIfThrottleNeeded(infer_server_current_ebic_confid):
+                    if not self.CheckIfThrottleNeeded(infer_server_current_ebic_confid, is_qua_board):
                         self._state = SessionState.OPEN
                         self._open_time = datetime.datetime.now()
                         self.logger.debug(
@@ -438,7 +446,12 @@ class ElectricBicycleInElevatorSession(SessionBase):
     # 1，一轮图片的前n张都是非电车或者识别出的可信都都低于配置的阈值
     # 2，如果第一张图片的时间已经超过了静默时间，则静默结束
     # 问题：静默期结束是否需要清空inferlist??
-    def CheckIfInSlientDuration(self, ebic_confid):
+    def CheckIfInSlientDuration(self, ebic_confid, is_qua_board=False):
+        if is_qua_board and util.read_config_fast_to_property(["detectors",
+                                                               self.electric_bicycle_detector_name],
+                                                              'enable_silent_period_for_kua_board') == False:
+            self.silent_period = False
+            return False
         max_infer_count = util.read_config_fast_to_property(["detectors", self.electric_bicycle_detector_name],
                                                             'infering_stage__how_many_continuous_non_eb_see_then_enter_silent_period')
 

@@ -12,6 +12,9 @@
             "how_long_to_treat_eb_exit_when_no_image_uploded": 5,
             "infering_stage__when_see_many_non_eb_then_enter_silent_period_duration": 48,
             "infering_stage__how_many_continuous_non_eb_see_then_enter_silent_period": 4,
+            "enable_infer_for_kua_board": false,
+            "enable_silent_period_for_kua_board":true,
+            "enable_throttle_for_kua_board": false,
             "second_infer": {
                 "enable": true,
                 "bypass_if_previous_model_eb_confid_greater_or_equal_than": 0.96,
