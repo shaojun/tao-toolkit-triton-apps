@@ -133,7 +133,7 @@ class EventAlarmWebServiceNotifier:
                                                       "base64string": ""})
                     if put_response.status_code != 200 or put_response.json()["code"] != 200:
                         self.logger.error(
-                            "board: {}, liftId:{},Notify alarm from {} got error: {}".format(
+                            "board: {}, liftId:{}, Notify alarm from {} got error: {}".format(
                                 temp_alarm.event_detector.timeline.board_id,
                                 temp_alarm.event_detector.timeline.liftId,
                                 temp_alarm.event_detector.__class__.__name__,
@@ -189,8 +189,8 @@ class EventAlarmWebServiceNotifier:
                             target_alarm.event_detector.__class__.__name__,
                             target_alarm.priority, str(target_alarm.original_utc_timestamp), target_alarm.description))
 
-                    if datetime.datetime.now().second % 9 != 0 and post_data["warning_type"] == "008":
-                        continue
+                    # if datetime.datetime.now().second % 9 != 0 and post_data["warning_type"] == "008":
+                    #    continue
 
                     # level: Debug=0, Info=1, Warning=2, Error=3, Fatal=4
                     post_response = requests.post(EventAlarmWebServiceNotifier.URL,
