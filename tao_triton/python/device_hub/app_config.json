@@ -17,7 +17,7 @@
             "enable_throttle_for_kua_board": false,
             "second_infer": {
                 "enable": true,
-                "bypass_if_previous_model_eb_confid_greater_or_equal_than": 0.96,
+                "bypass_if_previous_model_eb_confid_greater_or_equal_than": 0.999,
                 "still_treat_as_eb_if_non_eb_confid_less_or_equal_than": 0.1
             }
         },

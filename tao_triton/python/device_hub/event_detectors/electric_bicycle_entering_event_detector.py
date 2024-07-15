@@ -530,7 +530,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         this_sample_image_already_saved = False
         try:
             # self.statistics_logger.debug("{} | {} | {}".format(self.timeline.board_id, "1st_model_pre_infer",""))
-            raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230722_tao',
+            raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_240714_tao',
                                                           '--mode', 'Classification',
                                                           '-u', self.infer_server_ip_and_port,
                                                           '--output_path', './',
@@ -576,7 +576,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 #     self.timeline.board_id,
                 #     "2nd_model_pre_infer",
                 #     ""))
-                second_infer_raw_infer_results = tao_client.callable_main(['-m', 'elenet_two_classes_240602_tao',
+                second_infer_raw_infer_results = tao_client.callable_main(['-m', 'elenet_two_classes_240705_tao',
                                                                            '--mode', 'Classification',
                                                                            '-u', self.infer_server_ip_and_port,
                                                                            '--output_path', './',
