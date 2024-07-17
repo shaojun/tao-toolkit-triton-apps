@@ -806,6 +806,8 @@ class PeopleStuckEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
+        self.logger.debug("board:{}, entering stuck detector".format(self.timeline.board_id))
+
         # "Person|#"
         # return EventAlarm(EventAlarmPriority.Error, "detected PeopleStuckEvent")
         last_state_obj = None
@@ -836,6 +838,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         '''
 
         if self.timeline.door_state_session["door_state"] != "closed":
+            self.logger.debug("board:{}, skip stuck detect door is open".format(self.timeline.board_id))
             return None
 
         kunren_sj_item = [i for i in self.timeline.configures if i["code"] == "krsj"]
@@ -845,17 +848,22 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if self.timeline.door_state_session["door_state"] == "closed" and (
                 datetime.datetime.now(datetime.timezone.utc) - self.timeline.door_state_session[
             "session_start_at"]).total_seconds() < kunren_sj:
+            self.logger.debug("board:{}, skip stuck detect door closed at:{}".format(self.timeline.board_id,
+                                                                                     self.timeline.door_state_session["session_start_at"].strftime("%d/%m/%Y %H:%M:%S")))
             return None
 
         new_state_obj = None
 
         # 电梯内没人
         if not self.timeline.person_session["person_in"] or self.timeline.person_session["session_start_at"] == None:
+            self.logger.debug("board:{}, skip stuck detect person session closed".format(self.timeline.board_id))
             return None
 
         # 人在电梯内的时间小于配置的困人时间
         if (datetime.datetime.now(datetime.timezone.utc) - self.timeline.person_session[
             "session_start_at"]).total_seconds() < kunren_sj:
+            self.logger.debug("board:{}, skip stuck detect person session start at:{}".format(self.timeline.board_id,
+                                                                                     self.timeline.person_session["session_start_at"].strftime("%d/%m/%Y %H:%M:%S")))
             return None
         # speed
         '''
