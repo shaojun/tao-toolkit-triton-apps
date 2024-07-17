@@ -62,7 +62,8 @@ if __name__ == '__main__':
         # "elenet_four_classes_230417_tao",
         # "elenet_four_classes_230620_tao",
         # "elenet_four_classes_230702_tao",
-        "elenet_two_classes_240413_tao"
+        "elenet_two_classes_240602_tao",
+        "elenet_two_classes_240705_tao"
     ]
     classes = ['eb', 'non_eb']
     model_statistics = {}

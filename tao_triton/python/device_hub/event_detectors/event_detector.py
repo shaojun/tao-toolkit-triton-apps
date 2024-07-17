@@ -25,7 +25,7 @@ from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_even
 class DoorStateSessionDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        self.logger = logging.getLogger("doorStateChangedEventDetectorLogger")
+        self.logger = logging.getLogger("doorStateSessionLogger")
         self.is_session_detector = True
 
     def prepare(self, timeline, event_detectors):
@@ -62,6 +62,8 @@ class DoorStateSessionDetector(EventDetectorBase):
                     self.timeline.door_state_session["session_start_at"] = None
                     self.timeline.door_state_session["latest_current_state_item_time"] = None
                     self.timeline.door_state_session["door_closed_no_doorsign_count"] = 0
+                    self.logger.debug("board:{} set door state to unkown due to the grey frame".format(
+                        self.timeline.board_id))
                 self.timeline.door_state_session["is_frame_grayscale"] = True
                 self.timeline.door_state_session["latest_grayscal_time"] = datetime.datetime.now(datetime.timezone.utc)
             else:
@@ -74,6 +76,8 @@ class DoorStateSessionDetector(EventDetectorBase):
                         self.timeline.door_state_session["session_start_at"] = door_sign_items[0].original_timestamp
                         self.timeline.door_state_session["latest_current_state_item_time"] = door_sign_items[
                             0].original_timestamp
+                        self.logger.debug(
+                            "board:{} change door state to closed, door sign received".format(self.timeline.board_id))
                     else:
                         self.timeline.door_state_session["latest_current_state_item_time"] = door_sign_items[
                             0].original_timestamp
@@ -87,6 +91,10 @@ class DoorStateSessionDetector(EventDetectorBase):
                                 datetime.timezone.utc)
                             self.timeline.door_state_session["latest_current_state_item_time"] = datetime.datetime.now(
                                 datetime.timezone.utc)
+                            self.logger.debug(
+                                "board:{} change door state to open, the count for no door warning sign:{}".format(
+                                    self.timeline.board_id,
+                                    self.timeline.door_state_session["door_closed_no_doorsign_count"]))
                             self.timeline.door_state_session["door_closed_no_doorsign_count"] = 0
                         elif self.timeline.door_state_session["door_state"] == "closed":
                             self.timeline.door_state_session["door_closed_no_doorsign_count"] += 1
@@ -97,6 +105,8 @@ class DoorStateSessionDetector(EventDetectorBase):
                             self.timeline.door_state_session["latest_current_state_item_time"] = datetime.datetime.now(
                                 datetime.timezone.utc)
                             self.timeline.door_state_session["door_closed_no_doorsign_count"] = 0
+                            self.logger.debug(
+                                "board:{} change door state to open, previous is unkown".format(self.timeline.board_id))
                     else:
                         # 门已经处于开的状态，只更新最近一次保持门状态的时间
                         self.timeline.door_state_session["latest_current_state_item_time"] = datetime.datetime.now(
@@ -107,7 +117,7 @@ class DoorStateSessionDetector(EventDetectorBase):
 class RunningStateSessionDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        # self.logger = logging.getLogger("doorStateChangedEventDetectorLogger")
+        self.logger = logging.getLogger("runningStateSessionLogger")
         self.is_session_detector = True
 
     def prepare(self, timeline, event_detectors):
@@ -140,6 +150,8 @@ class RunningStateSessionDetector(EventDetectorBase):
                     self.timeline.lift_running_state_session["item_data"] = object_items[0].raw_data["speed"]
                     self.timeline.lift_running_state_session["session_start_at"] = datetime.datetime.now(
                         datetime.timezone.utc)
+                    self.logger.debug("board:{} close running session, current speed is:{}".format(
+                        self.timeline.board_id, object_items[0].raw_data["speed"]))
             else:
                 # 静止情况下，如果此次速度>0.1上次的速度也大于0.1则认为从静止变为运动
                 if abs(object_items[0].raw_data["speed"]) >= 0.1 and abs(self.timeline.lift_running_state_session[
@@ -150,6 +162,8 @@ class RunningStateSessionDetector(EventDetectorBase):
                     self.timeline.lift_running_state_session["latest_current_state_item_time"] = datetime.datetime.now(
                         datetime.timezone.utc)
                     self.timeline.lift_running_state_session["item_data"] = object_items[0].raw_data["speed"]
+                    self.logger.debug("board:{} running session start, current speed is:{}".format(
+                        self.timeline.board_id, object_items[0].raw_data["speed"]))
                 else:
                     # 如果此处跟上一次或这次的速度< 0.1则认为还是处于静止状态
                     self.timeline.lift_running_state_session["latest_current_state_item_time"] = datetime.datetime.now(
@@ -293,10 +307,12 @@ class DoorStateChangedEventDetector(EventDetectorBase):
                  "new_state": new_state_obj["last_door_state"],
                  "hasPerson": hasPereson})
             code = "DOOROPEN" if new_state_obj["last_door_state"] == "OPEN" else "DOORCLOSE"
+            '''
             self.logger.debug("item in door state detect,board:{}, door state changed, new state is:{}".format(
                 self.timeline.board_id,
                 new_state_obj["last_door_state"]
             ))
+            '''
             return [
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
@@ -545,11 +561,11 @@ class BlockingDoorEventDetector(EventDetectorBase):
         elif last_state_object and self.state_obj["alarm_code"] == "008" and self.canCloseLongTimeOpen():
             self.state_obj["last_notify_timestamp"] = None
             self.state_obj["alarm_code"] = ""
-            '''
+
             if "giveup" in self.state_obj and self.state_obj["giveup"]:
                 self.state_obj["giveup"] = False
                 return None
-            '''
+
             return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                            event_alarm.EventAlarmPriority.CLOSE, "", "008")]
@@ -664,12 +680,12 @@ class BlockingDoorEventDetector(EventDetectorBase):
                                              "008")]
             self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
             self.state_obj["alarm_code"] = "008"
-            '''
+
             self.state_obj["giveup"] = False
             if self.giveUpTheLongTimeOpen(datetime.datetime.now()):
                 self.state_obj["giveup"] = True
                 return None
-            '''
+
             return alarms
         return None
 
@@ -721,6 +737,9 @@ class BlockingDoorEventDetector(EventDetectorBase):
 
     def giveUpTheLongTimeOpen(self, alarm_time):
         result = False
+        if alarm_time.second % 9 != 0:
+            result = True
+        return result
         current_hour = datetime.datetime.now(datetime.timezone.utc).hour
         survived_alarms = [a for a in self.door_long_time_open_history if
                            (datetime.datetime.now() - a["time"]).total_seconds() > 10 * 60 * 60]
@@ -901,8 +920,12 @@ class PeopleStuckEventDetector(EventDetectorBase):
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.ERROR,
-                                       "{}发现有人困在电梯内".format(
-                                           new_state_obj["last_report_timestamp"].strftime("%d/%m/%Y %H:%M:%S")),
+                                       "{}发现有人困在电梯内，乘客进入时间为{}, 梯门关闭时间：{}".format(
+                                           new_state_obj["last_report_timestamp"].strftime("%d/%m/%Y %H:%M:%S"),
+                                           self.timeline.person_session["session_start_at"].strftime(
+                                               "%d/%m/%Y %H:%M:%S"),
+                                           self.timeline.door_state_session["session_start_at"].strftime(
+                                               "%d/%m/%Y %H:%M:%S")),
                                        "001")]
         return None
 

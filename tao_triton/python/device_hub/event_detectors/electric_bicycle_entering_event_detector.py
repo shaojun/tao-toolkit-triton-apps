@@ -18,6 +18,8 @@ from json import dumps
 import uuid
 import requests
 from tao_triton.python.device_hub.event_detectors.event_detector_base import EventDetectorBase
+
+
 #
 # 电动车检测告警（电动车入梯)
 class ElectricBicycleEnteringEventDetector(EventDetectorBase):
@@ -40,6 +42,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             "electricBicycleEnteringEventDetectorLogger")
         self.statistics_logger = logging.getLogger(
             "statisticsLogger")
+        self.state_obj = {"last_notify_timestamp": None}
         # self.logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
         self.infer_confirmed_eb_history_list = []
         self.local_ebike_infer_result_list = []
@@ -102,6 +105,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
+        temp = str(self.timeline.ebik_session.state)
+        # 是否有电动车
+        is_ebike_session_open = False
+        if self.timeline.ebik_session and str(self.timeline.ebik_session.state) == "SessionState.OPEN":
+            is_ebike_session_open = True
+
         eb_entering_event_alarms = []
         object_filtered_timeline_items = [i for i in filtered_timeline_items if
                                           i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT]
@@ -110,11 +119,44 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         current_story = 0
         if len(story_filtered_timeline_items) > 0:
             current_story = story_filtered_timeline_items[-1].raw_data["storey"]
-        # self.logger.debug(
-        #     "ElectricBicycleEnteringEventDetector object len:{},story_length:{},board:{},current_story:{}".format(
-        #         len(object_filtered_timeline_items),
-        #         len(story_filtered_timeline_items),
-        #         self.timeline.board_id, current_story))
+
+        # 已上报过报警,判断是否需要关闭告警1,session close 2,告警上传超过20分钟关闭告警
+        if "last_notify_timestamp" in self.state_obj and self.state_obj["last_notify_timestamp"]:
+            if is_ebike_session_open == False or (datetime.datetime.now() -
+                                                  self.state_obj["last_notify_timestamp"]).total_seconds() > 20 * 60:
+                self.logger.debug(
+                    "board: {}, is_ebik_session_open:{}, close the ebike alarm and send confirm exit to edge".format(
+                        self.timeline.board_id, str(is_ebike_session_open)))
+                # 取消阻梯
+                self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
+                # 关闭告警
+                eb_entering_event_alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                                                       event_alarm.EventAlarmPriority.CLOSE,
+                                                                       "close the EBike alarm", "007"))
+                self.state_obj["last_notify_timestamp"] = None
+        else:
+            # 未上报过告警满足条件1，楼层 2，session open
+            if is_ebike_session_open and abs(current_story) == 1:
+                self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
+                if util.read_config_fast_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
+                                                     'EnableSendConfirmedEbEnteringMsgToKafka'):
+                    confirmedmsg = "Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed"
+                    self.sendMessageToKafka(confirmedmsg)
+                eb_entering_event_alarms.append(
+                    event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                        datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                           event_alarm.EventAlarmPriority.ERROR,
+                                           "detected electric-bicycle entering elevator", "007", {}, ""))
+                self.logger.debug(
+                    "board:{}, raise e-bike alarm and send block door to edge".format(self.timeline.board_id))
+            elif is_ebike_session_open:
+                self.logger.debug(
+                    "board:{}, sink the open session due to the current_story:{}".format(self.timeline.board_id,
+                                                                                         current_story))
+
+        return eb_entering_event_alarms
+
         if len(object_filtered_timeline_items) == 0:
             ebike_confid_threshold = util.read_config_fast_to_property(
                 ["detectors", ElectricBicycleEnteringEventDetector.__name__],
@@ -163,8 +205,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 "board: {}, close the ebike alarm".format(self.timeline.board_id))
             eb_entering_event_alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                event_alarm.EventAlarmPriority.CLOSE,
-                "close the EBike alarm", "007"))
+                                                                   event_alarm.EventAlarmPriority.CLOSE,
+                                                                   "close the EBike alarm", "007"))
         return eb_entering_event_alarms
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
@@ -201,7 +243,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.timeline.board_id,
                 "ElectricBicycleEnteringEventDetector_sink_eb_alarm",
                 "reason: low infer confid: {}, or not in story 1 or -1: {}".format(infer_server_ebic_confid, story)
-                ))
+            ))
             self.logger.debug(
                 "      board: {}, sink this eb detect as server gives low confid: {}, "
                 "or not in story 1 or -1, current storey is:{} ".format(
@@ -232,7 +274,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         os.path.join(
                             image_sample_path,
                             file_name_prefix + str(infer_server_ebic_confid)[
-                                :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
+                                               :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
 
         if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
             temp_full_image = Image.open(io.BytesIO(
@@ -292,7 +334,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.ebike_state["exit_time"] = ""
             elif self.ebike_state["latest_infer_success"] != "" and (
                     temp_time - self.ebike_state[
-                        "latest_infer_success"]).total_seconds() > time_to_keep_successful_infer_result:
+                "latest_infer_success"]).total_seconds() > time_to_keep_successful_infer_result:
                 self.ebike_state["latest_infer_success"] = ""
                 self.ebike_state["exit_time"] = temp_time
                 self.close_alarm = True
@@ -380,7 +422,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         self.local_ebike_infer_result_list.append(
             {"infer_result": infer_result, "confirm_send": False, "infer_time": datetime.datetime.now()})
         if len(self.local_ebike_infer_result_list) >= local_ebike_count and self.local_ebike_infer_result_list[0][
-                "confirm_send"]:
+            "confirm_send"]:
             confirmed_result = [
                 i for i in self.local_ebike_infer_result_list if i["infer_result"] >= config_result]
             config_result_85 = [
@@ -428,7 +470,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             ["detectors", ElectricBicycleEnteringEventDetector.__name__],
             'infering_stage__when_see_many_non_eb_then_enter_silent_period_duration')
         if (datetime.datetime.now() - self.local_ebike_infer_result_list[0][
-                "infer_time"]).total_seconds() >= infering_stage__when_see_many_non_eb_then_enter_silent_period_duration:
+            "infer_time"]).total_seconds() >= infering_stage__when_see_many_non_eb_then_enter_silent_period_duration:
             return True
 
         return result
@@ -488,9 +530,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         this_sample_image_already_saved = False
         try:
             # self.statistics_logger.debug("{} | {} | {}".format(self.timeline.board_id, "1st_model_pre_infer",""))
-            raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_230722_tao',
+            raw_infer_results = tao_client.callable_main(['-m', 'elenet_four_classes_240714_tao',
                                                           '--mode', 'Classification',
-                                                         '-u', self.infer_server_ip_and_port,
+                                                          '-u', self.infer_server_ip_and_port,
                                                           '--output_path', './',
                                                           temp_cropped_image_file_full_name])
             infered_class = raw_infer_results[0][0]['infer_class_name']
@@ -510,7 +552,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 "exception: {}".format(e)
             ))
             self.logger.exception(
-                "tao_client.callable_main(with model: elenet_four_classes_230722_tao) rasised an exception: {}".format(e))
+                "tao_client.callable_main(with model: elenet_four_classes_230722_tao) rasised an exception: {}".format(
+                    e))
             return
 
         try:
@@ -521,21 +564,21 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     'enable') \
                     and infered_class == 'electric_bicycle' \
                     and infer_server_current_ebic_confid >= \
-                util.read_config_fast_to_property(["detectors",
-                                                   ElectricBicycleEnteringEventDetector.__name__],
-                                                  'ebic_confid')\
+                    util.read_config_fast_to_property(["detectors",
+                                                       ElectricBicycleEnteringEventDetector.__name__],
+                                                      'ebic_confid') \
                     and infer_server_current_ebic_confid < \
-                util.read_config_fast_to_property(["detectors",
-                                                   ElectricBicycleEnteringEventDetector.__name__,
-                                                   'second_infer'],
-                                                  'bypass_if_previous_model_eb_confid_greater_or_equal_than'):
+                    util.read_config_fast_to_property(["detectors",
+                                                       ElectricBicycleEnteringEventDetector.__name__,
+                                                       'second_infer'],
+                                                      'bypass_if_previous_model_eb_confid_greater_or_equal_than'):
                 # self.statistics_logger.debug("{} | {} | {}".format(
                 #     self.timeline.board_id,
                 #     "2nd_model_pre_infer",
                 #     ""))
-                second_infer_raw_infer_results = tao_client.callable_main(['-m', 'elenet_two_classes_240602_tao',
+                second_infer_raw_infer_results = tao_client.callable_main(['-m', 'elenet_two_classes_240705_tao',
                                                                            '--mode', 'Classification',
-                                                                          '-u', self.infer_server_ip_and_port,
+                                                                           '-u', self.infer_server_ip_and_port,
                                                                            '--output_path', './',
                                                                            temp_cropped_image_file_full_name])
                 # classes = ['eb', 'non_eb']
@@ -586,8 +629,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         this_sample_image_already_saved = True
                         second_model_declined__sample_image_file_name_prefix = "2nd_m_non_eb_{}___".format(
                             str(non_eb_confid)[:4])
-                        self.save_sample_image(temp_cropped_image_file_full_name, object_detection_timeline_item.original_timestamp,
-                                               infered_class, infer_server_current_ebic_confid, full_image_frame_base64_encode_text, second_model_declined__sample_image_file_name_prefix)
+                        self.save_sample_image(temp_cropped_image_file_full_name,
+                                               object_detection_timeline_item.original_timestamp,
+                                               infered_class, infer_server_current_ebic_confid,
+                                               full_image_frame_base64_encode_text,
+                                               second_model_declined__sample_image_file_name_prefix)
                         infered_class = 'other_unknown_stuff'
                         infer_server_current_ebic_confid = non_eb_confid
         except Exception as e:
@@ -597,7 +643,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 "exception: {}".format(e)
             ))
             self.logger.exception(
-                "tao_client.callable_main(with 2nd model: elenet_two_classes_240413_tao) rasised an exception: {}".format(e))
+                "tao_client.callable_main(with 2nd model: elenet_two_classes_240413_tao) rasised an exception: {}".format(
+                    e))
             return
 
         t1 = time.time()
@@ -611,8 +658,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         # if infered_class == 'electric_bicycle':
         try:
             if this_sample_image_already_saved == False:
-                self.save_sample_image(temp_cropped_image_file_full_name, object_detection_timeline_item.original_timestamp,
-                                       infered_class, infer_server_current_ebic_confid, full_image_frame_base64_encode_text)
+                self.save_sample_image(temp_cropped_image_file_full_name,
+                                       object_detection_timeline_item.original_timestamp,
+                                       infered_class, infer_server_current_ebic_confid,
+                                       full_image_frame_base64_encode_text)
         except:
             self.logger.exception(
                 "save_sample_image(...) rasised an exception:")

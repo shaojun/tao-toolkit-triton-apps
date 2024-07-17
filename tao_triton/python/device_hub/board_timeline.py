@@ -7,6 +7,8 @@ from typing import List
 
 from kafka import KafkaProducer
 
+from tao_triton.python.device_hub.event_session.manager import ElectricBicycleInElevatorSession
+
 
 class TimelineItemType(int, Enum):
     # the item is sent by object detect app
@@ -30,7 +32,8 @@ class TimelineItem:
     def __init__(self, timeline: BoardTimeline, item_type: TimelineItemType, original_timestamp_str: str,
                  board_msg_id: str,
                  raw_data: str,
-                 is_frame_grayscale=False):
+                 is_frame_grayscale=False,
+                 version=""):
         """
 
         @type item_type: TimelineItemType
@@ -52,6 +55,8 @@ class TimelineItem:
         self.consumed = False
         # 用于目标识别，暂放此处，当前识别物体是否在灰度情况下识别到
         self.is_frame_grayscale = is_frame_grayscale
+        # version 主要用来辨别是否来自旷明主板4.1qua
+        self.version = version
 
 
 class BoardTimeline:
@@ -70,6 +75,7 @@ class BoardTimeline:
         self.liftId = lift_id
         self.configures = []
         self.producer = producer
+        self.ebik_session =  ElectricBicycleInElevatorSession(logging, self)
 
         self.person_session = {"person_in": False, "session_start_at": None, "latest_person_item_time": None,
                                "person_count": 0}
@@ -104,6 +110,8 @@ class BoardTimeline:
         # if len(items) == 1 and items[0].raw_data == '':
         #    return
 
+        # ebik session
+        self.ebik_session.feed(items)
         event_alarms = []
         for d in self.event_detectors:
             t0 = time.time()
