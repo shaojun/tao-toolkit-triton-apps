@@ -317,8 +317,9 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
         for h in file_handlers:
             h['filename'] = h['filename'].replace(
                 'log/', 'log/'+process_name+"/")
-            if not os.path.exists('log/'+process_name+"/"):
-                os.makedirs('log/'+process_name+"/")
+            per_process_log_folder = os.path.dirname(h['filename'])
+            if not os.path.exists(per_process_log_folder):
+                os.makedirs(per_process_log_folder)
         logging.config.dictConfig(config)
 
     global PERF_COUNTER_consumed_msg_count

@@ -77,6 +77,9 @@ class ElectricBicycleInElevatorSession(SessionBase):
         self.infer_server_ip_and_port = "127.0.0.1:8000"
         if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
             self.infer_server_ip_and_port = "36.153.41.18:18000"
+        if util.read_config_fast_to_property(["detectors", self.electric_bicycle_detector_name], "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH") is not None:
+            ElectricBicycleInElevatorSession.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = util.read_config_fast_to_property(
+                ["detectors", self.electric_bicycle_detector_name], "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH")
         # the lib triton_client used for infer to remote triton server is based on a local image file, after the infer done, the file will be cleared.
         # this is the temp folder to store that temp image file
         self.temp_image_files_folder_name = "temp_infer_image_files"
@@ -86,7 +89,8 @@ class ElectricBicycleInElevatorSession(SessionBase):
         self.infer_confirmed_eb_history_list = []
         self.silent_period = False
         self.latest_infer_success = None
-        self.logger = logging.getLogger("electricBicycleInElevatorSessionLogger")
+        self.logger = logging.getLogger(
+            "electricBicycleInElevatorSessionLogger")
         self.statistics_logger = logging.getLogger("statisticsLogger")
         self.timeline = timeline
 
@@ -110,7 +114,8 @@ class ElectricBicycleInElevatorSession(SessionBase):
                     continue
                 infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
                 is_qua_board = item.version == "4.1qua"
-                self.UpdateEbikeSession(infered_class, infer_server_current_ebic_confid, is_qua_board)
+                self.UpdateEbikeSession(
+                    infered_class, infer_server_current_ebic_confid, is_qua_board)
         except Exception as e:
             self.logger.exception("{} | {} | {}".format(
                 self.timeline.board_id, "feed", "exception: {}".format(e)))
@@ -133,7 +138,8 @@ class ElectricBicycleInElevatorSession(SessionBase):
 
         # the last but one is the detected and cropped object image file with base64 encoded text,
         # and the section is prefixed with-> base64_image_data:
-        cropped_base64_image_file_text = sections[len(sections) - 2][len("base64_image_data:"):]
+        cropped_base64_image_file_text = sections[len(
+            sections) - 2][len("base64_image_data:"):]
 
         # the last but two is the OPTIONAL, full image file with base64 encoded text,
         # and the section is prefixed with-> full_base64_image_data:
@@ -311,7 +317,8 @@ class ElectricBicycleInElevatorSession(SessionBase):
             os.makedirs(image_sample_path)
         board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
             datetime.datetime.now().tzinfo).strftime("%Y_%m%d_%H%M_%S_%f")[:-3])
-        dh_local_timestamp_str = str(datetime.datetime.now().strftime("%H%M_%S_%f")[:-3])
+        dh_local_timestamp_str = str(
+            datetime.datetime.now().strftime("%H%M_%S_%f")[:-3])
         file_name_prefix = ''
         if infered_class == 'electric_bicycle':
             pass
@@ -322,9 +329,10 @@ class ElectricBicycleInElevatorSession(SessionBase):
                         os.path.join(
                             image_sample_path,
                             file_name_prefix + str(infer_server_ebic_confid)[
-                                               :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
+                                :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
         if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
-            temp_full_image = Image.open(io.BytesIO(base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
+            temp_full_image = Image.open(io.BytesIO(
+                base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
             temp_full_image.save(os.path.join(image_sample_path,
                                               str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
 
@@ -337,7 +345,8 @@ class ElectricBicycleInElevatorSession(SessionBase):
                                                               'enable_throttle_for_kua_board') == False:
             return False
 
-        self.infer_confirmed_eb_history_list.append({"infer_time": datetime.datetime.now()})
+        self.infer_confirmed_eb_history_list.append(
+            {"infer_time": datetime.datetime.now()})
         # remove multiple expired items at once from a list
         expired_items = [i for i in self.infer_confirmed_eb_history_list if
                          (datetime.datetime.now() - i[
@@ -386,7 +395,8 @@ class ElectricBicycleInElevatorSession(SessionBase):
             if self.state == SessionState.OPEN:
                 self._state = SessionState.CLOSE
                 self._close_time = datetime.datetime.now()
-            self.logger.debug("board:{} sink the image due to the slient duration".format(self.timeline.board_id))
+            self.logger.debug("board:{} sink the image due to the slient duration".format(
+                self.timeline.board_id))
             return
 
         time_to_keep_successful_infer_result = util.read_config_fast_to_property(
@@ -433,7 +443,7 @@ class ElectricBicycleInElevatorSession(SessionBase):
             # 推理结果为非电动车, 但当前已经处于电动车入梯的状态 1, 距最后一次推理成功已经超过配置的时间
             if self._state == SessionState.OPEN and self.latest_infer_success != None and \
                     (
-                            datetime.datetime.now() - self.latest_infer_success).total_seconds() > time_to_keep_successful_infer_result:
+                        datetime.datetime.now() - self.latest_infer_success).total_seconds() > time_to_keep_successful_infer_result:
                 self._state = SessionState.CLOSE
                 self._close_time = datetime.datetime.now()
                 self.latest_infer_success = None
@@ -470,7 +480,8 @@ class ElectricBicycleInElevatorSession(SessionBase):
             if len(self.ebike_infer_result_list) > max_infer_count:
                 self.ebike_infer_result_list = []
             self.silent_start_at = None
-            self.logger.debug("board:{}, slient duration end".format(self.timeline.board_id))
+            self.logger.debug(
+                "board:{}, slient duration end".format(self.timeline.board_id))
             return False
 
         if len(self.ebike_infer_result_list) < max_infer_count:
@@ -487,14 +498,16 @@ class ElectricBicycleInElevatorSession(SessionBase):
                 if self.silent_period == False:
                     self.silent_period = True
                     self.silent_start_at = datetime.datetime.now()
-                    self.logger.debug("board:{}, slient duration start".format(self.timeline.board_id))
+                    self.logger.debug(
+                        "board:{}, slient duration start".format(self.timeline.board_id))
             elif len(surrived_items) == 0 and (datetime.datetime.now() -
                                                self.ebike_infer_result_list[0][
                                                    "time_stamp"]).total_seconds() >= infering_stage__when_see_many_non_eb_then_enter_silent_period_duration:
                 self.silent_period = False
                 self.ebike_infer_result_list = []
                 self.silent_start_at = None
-                self.logger.debug("board:{}, slient duration end".format(self.timeline.board_id))
+                self.logger.debug(
+                    "board:{}, slient duration end".format(self.timeline.board_id))
         return self.silent_period
 
 
