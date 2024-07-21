@@ -317,8 +317,9 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
         for h in file_handlers:
             h['filename'] = h['filename'].replace(
                 'log/', 'log/'+process_name+"/")
-            if not os.path.exists('log/'+process_name+"/"):
-                os.makedirs('log/'+process_name+"/")
+            per_process_log_folder = os.path.dirname(h['filename'])
+            if not os.path.exists(per_process_log_folder):
+                os.makedirs(per_process_log_folder)
         logging.config.dictConfig(config)
 
     global PERF_COUNTER_consumed_msg_count
@@ -356,16 +357,19 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
     if boards == None:
         return
     consumer_str = ""
+    consumer_topics = []
     for index, value in enumerate(boards):
         if index == 0:
             consumer_str += value["serialNo"]
+            consumer_topics.append(value["serialNo"])
         else:
             consumer_str += "|" + value["serialNo"]
-    kafka_consumer.subscribe(pattern=consumer_str)
+            consumer_topics.append(value["serialNo"])
+    kafka_consumer.subscribe(topics=consumer_topics)
     while not GLOBAL_SHOULD_QUIT_EVERYTHING:
         try:
             per_process_main_logger.debug(
-                f"kafka_consumer is polling messages with topic pattern: {consumer_str}")
+                f"kafka_consumer is polling messages with topics: {consumer_str}")
             # do a dummy poll to retrieve some message
             kafka_consumer.poll()
             # go to end of the stream
@@ -583,7 +587,7 @@ PERF_COUNTER_consumed_msg_count = 0
 PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
 PERF_COUNTER_work_time_by_ms = 0
 
-GLOBAL_CONCURRENT_PROCESS_COUNT = 10
+GLOBAL_CONCURRENT_PROCESS_COUNT = 16
 
 # a global flag to indicate whether all processes should exit
 GLOBAL_SHOULD_QUIT_EVERYTHING = False
