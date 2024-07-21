@@ -4,6 +4,7 @@
     },
     "detectors": {
         "ElectricBicycleEnteringEventDetector": {
+            "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH": "ebic_image_samples",
             "EnableSendConfirmedEbEnteringMsgToKafka": true,
             "EnableSendConfirmedToLocalWhenFirstImageReceived": true,
             "ebic_confid": 0.82,
@@ -14,7 +15,7 @@
             "infering_stage__when_see_many_non_eb_then_enter_silent_period_duration": 48,
             "infering_stage__how_many_continuous_non_eb_see_then_enter_silent_period": 4,
             "enable_infer_for_kua_board": false,
-            "enable_silent_period_for_kua_board":true,
+            "enable_silent_period_for_kua_board": true,
             "enable_throttle_for_kua_board": false,
             "second_infer": {
                 "enable": true,
