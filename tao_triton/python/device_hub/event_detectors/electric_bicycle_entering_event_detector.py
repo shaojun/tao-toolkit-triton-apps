@@ -44,6 +44,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             "statisticsLogger")
         self.state_obj = {"last_notify_timestamp": None}
         # self.logger.debug('{} is initing...'.format('ElectricBicycleEnteringEventDetector'))
+
+        self.send_confirm_to_local_for_first_image_time = None
+
         self.infer_confirmed_eb_history_list = []
         self.local_ebike_infer_result_list = []
         self.alarm_raised = False
@@ -111,6 +114,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         if self.timeline.ebik_session and str(self.timeline.ebik_session.state) == "SessionState.OPEN":
             is_ebike_session_open = True
 
+
         eb_entering_event_alarms = []
         object_filtered_timeline_items = [i for i in filtered_timeline_items if
                                           i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT]
@@ -128,6 +132,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     "board: {}, is_ebik_session_open:{}, close the ebike alarm and send confirm exit to edge".format(
                         self.timeline.board_id, str(is_ebike_session_open)))
                 # 取消阻梯
+                self.send_confirm_to_local_for_first_image_time = None
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
                 # 关闭告警
                 eb_entering_event_alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
@@ -136,8 +141,23 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                                        "close the EBike alarm", "007"))
                 self.state_obj["last_notify_timestamp"] = None
         else:
+            #第一张图片开始阻梯
+            if self.send_confirm_to_local_for_first_image_time==None and \
+                abs(current_story) == 1 and \
+                len(object_filtered_timeline_items) > 0 and \
+                self.timeline.ebik_session and \
+                len(self.timeline.ebik_session.ebike_infer_result_list) == 1 and \
+                util.read_config_fast_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
+                                                  'EnableSendConfirmedToLocalWhenFirstImageReceived'):
+                self.send_confirm_to_local_for_first_image_time = datetime.datetime.now()
+                self.sendMessageToKafka("Vehicle|#|TwoWheeler|TwoWheeler|confirmed")
+                self.logger.debug("board:{}, send confirm to local, first image,len of list:{}".format(
+                    self.timeline.board_id, len(self.timeline.ebik_session.ebike_infer_result_list)))
+
             # 未上报过告警满足条件1，楼层 2，session open
             if is_ebike_session_open and abs(current_story) == 1:
+                # 如果满足告警条件则不需要关注第一张阻梯是否取消
+                self.send_confirm_to_local_for_first_image_time = None
                 self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
                 if util.read_config_fast_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
                                                      'EnableSendConfirmedEbEnteringMsgToKafka'):
@@ -154,7 +174,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.logger.debug(
                     "board:{}, sink the open session due to the current_story:{}".format(self.timeline.board_id,
                                                                                          current_story))
-
+            #第一张图片时发送了阻梯，超过5秒还未触发session需要解除
+            if self.send_confirm_to_local_for_first_image_time != None and \
+            (datetime.datetime.now()-self.send_confirm_to_local_for_first_image_time).total_seconds()>5:
+                self.send_confirm_to_local_for_first_image_time = None
+                self.logger.debug("board:{}, cancle the local confirm,len of list:{}".format(
+                    self.timeline.board_id, len(self.timeline.ebik_session.ebike_infer_result_list)))
+                self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
         return eb_entering_event_alarms
 
         if len(object_filtered_timeline_items) == 0:

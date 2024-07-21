@@ -5,6 +5,7 @@
     "detectors": {
         "ElectricBicycleEnteringEventDetector": {
             "EnableSendConfirmedEbEnteringMsgToKafka": true,
+            "EnableSendConfirmedToLocalWhenFirstImageReceived": true,
             "ebic_confid": 0.82,
             "local_ebic_count": 5,
             "time_to_keep_successful_infer_result": 7,
