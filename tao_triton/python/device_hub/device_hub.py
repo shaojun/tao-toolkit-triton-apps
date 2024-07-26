@@ -149,23 +149,6 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                                         kafka_producer, target_borads, lift_id)
 
 
-def logging_perf_counter(process_name: str):
-    global PERF_COUNTER_consumed_msg_count
-    global PERF_COUNTER_filtered_msg_count_by_time_diff_too_big
-    global PERF_COUNTER_work_time_by_ms
-    perf_logger = logging.getLogger("perfLogger")
-    perf_logger.warning("process: {}, consumed_msg_count: {}".format(
-        process_name, PERF_COUNTER_consumed_msg_count))
-    perf_logger.warning("process: {}, filtered_msg_count_by_time_diff_too_big: {}".format(
-        process_name, PERF_COUNTER_filtered_msg_count_by_time_diff_too_big))
-    perf_logger.warning("process: {}, work_time_by_ms: {}".format(
-        process_name, PERF_COUNTER_work_time_by_ms))
-    # reset it
-    PERF_COUNTER_consumed_msg_count = 0
-    PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
-    PERF_COUNTER_work_time_by_ms = 0
-
-
 def pipe_in_local_idle_loop_item_to_board_timelines(board_timelines: list):
     if board_timelines:
         for tl in board_timelines:
@@ -221,21 +204,23 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
         kafkaServerAppliedTimeStamp / 1e3).astimezone(board_timestamp_utc_datetime.tzinfo)
     dh_local_utc_datetime = dh_local_datetime.astimezone(
         board_timestamp_utc_datetime.tzinfo)
-    time_diff_between_board_and_kafka = (board_timestamp_utc_datetime -
-                                         kafka_server_received_msg_utc_datetime).total_seconds()
-    if abs(time_diff_between_board_and_kafka) >= 10:
+    time_diff_by_sub_kafka_to_board = (kafka_server_received_msg_utc_datetime
+                                       - board_timestamp_utc_datetime
+                                       ).total_seconds()
+    if abs(time_diff_by_sub_kafka_to_board) >= 5:
         # log every 10 seconds for avoid log flooding
         if datetime.datetime.now().second % 10 == 0:
-            logging.warning("time_diff between board and kafka is too big: %s for board with id: %s",
-                            time_diff_between_board_and_kafka, board_id)
+            logging.warning(
+                f"time_diff (kafka - board) is too big: {time_diff_by_sub_kafka_to_board}s for board: {board_id}, board network upload slow or un-synced datetime?")
         return True
-    time_diff_between_kafka_and_dh_local = (kafka_server_received_msg_utc_datetime -
-                                            dh_local_utc_datetime).total_seconds()
-    if abs(time_diff_between_kafka_and_dh_local) >= 4:
+    time_diff_by_sub_dh_to_kafka = (dh_local_utc_datetime
+                                    - kafka_server_received_msg_utc_datetime
+                                    ).total_seconds()
+    if abs(time_diff_by_sub_dh_to_kafka) >= 4:
         # log every 10 seconds for avoid log flooding
         if datetime.datetime.now().second % 10 == 0:
-            logging.warning("time_diff between kafka and dh_local is too big: %s for board with id: %s",
-                            time_diff_between_kafka_and_dh_local, board_id)
+            logging.warning(
+                f"time_diff (dh_local - kafka) is too big: {time_diff_by_sub_dh_to_kafka}s for board: {board_id}, dh process slow?")
         return True
     return False
 
@@ -322,19 +307,12 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                 os.makedirs(per_process_log_folder)
         logging.config.dictConfig(config)
 
-    global PERF_COUNTER_consumed_msg_count
-    global PERF_COUNTER_filtered_msg_count_by_time_diff_too_big
-    global PERF_COUNTER_work_time_by_ms
     global GLOBAL_SHOULD_QUIT_EVERYTHING
 
     per_process_main_logger = logging.getLogger()
+    per_process_perf_logger = logging.getLogger("perfLogger")
     per_process_main_logger.info(
         'process: {} is running...'.format(process_name))
-
-    # duration is in seconds
-    timely_logging_perf_counter_timer = RepeatTimer(
-        PERF_LOGGING_INTERVAL, logging_perf_counter, [process_name])
-    timely_logging_perf_counter_timer.start()
 
     board_timelines = []
     timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
@@ -359,6 +337,8 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
     consumer_str = ""
     consumer_topics = []
     for index, value in enumerate(boards):
+        if value["serialNo"] == "E1640262214042521601" or value["serialNo"] == "default_empty_id_please_manual_set_rv1126":
+            continue
         if index == 0:
             consumer_str += value["serialNo"]
             consumer_topics.append(value["serialNo"])
@@ -366,16 +346,29 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
             consumer_str += "|" + value["serialNo"]
             consumer_topics.append(value["serialNo"])
     kafka_consumer.subscribe(topics=consumer_topics)
+
+    # at 2024.07.26, each board has 2 messages/s incoming here via kafka.
+    # if future has different frequency, this should be adjusted.
+    PERF_proximity_of_one_board_uploading_msg_count_per_second = 2
+    # let's define the MAX delay time for the whole boards queue is 2 seconds.
+    # then each msg should be processed within this time:
+    PERF_healthy_avg_process_time_for_one_msg = 2 * \
+        1000 / (len(consumer_topics) *
+                PERF_proximity_of_one_board_uploading_msg_count_per_second)
+    # set it to every 10 seconds to look back and caculate avg process time for one msg
+    PERF_watch_process_time_for_one_msg_window_size = (
+        len(consumer_topics)*PERF_proximity_of_one_board_uploading_msg_count_per_second)*10
+    PERF_watch_process_time_for_one_msg_window: List[tuple] = []
     while not GLOBAL_SHOULD_QUIT_EVERYTHING:
         try:
             per_process_main_logger.debug(
                 f"kafka_consumer is polling messages with topics: {consumer_str}")
-            # do a dummy poll to retrieve some message
-            kafka_consumer.poll()
-            # go to end of the stream
-            kafka_consumer.seek_to_end()
             for event in kafka_consumer:
-                if conn.poll():
+                if GLOBAL_SHOULD_QUIT_EVERYTHING:
+                    break
+                perf_counter_worker_start_time = time.time()
+
+                if datetime.datetime.now().second % 10 == 0 and conn.poll():
                     msg = conn.recv()
                     if isinstance(msg, str):
                         if msg.startswith("command:exit"):
@@ -395,8 +388,6 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                         kafka_consumer.subscribe(pattern=consumer_str)
                         break
 
-                if GLOBAL_SHOULD_QUIT_EVERYTHING:
-                    break
                 event_data = event.value
                 if "sensorId" not in event_data or "@timestamp" not in event_data:
                     continue
@@ -404,25 +395,10 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                 # UTC datetime str, like: '2023-06-28T12:58:58.960Z'
                 board_msg_original_timestamp = event_data["@timestamp"]
                 board_id = event_data["sensorId"]
-                if board_id == "default_empty_id_please_manual_set_rv1126":
-                    continue
-
-                # if board_id != "E1634085712737341441":
-                #   continue
-
-                if board_id == "E1640262214042521601":
-                    continue
-
-                # if board_id == "E1675418684153139201":
-                #    continue
-
-                if "_dh" in board_id:
-                    continue
 
                 if is_time_diff_too_big(board_id, board_msg_original_timestamp, event.timestamp, datetime.datetime.now()):
-                    PERF_COUNTER_filtered_msg_count_by_time_diff_too_big += 1
                     continue
-                perf_counter_work_time_start_time = time.time()
+
                 cur_board_timeline = [t for t in board_timelines if
                                       t.board_id == board_id]
                 if not cur_board_timeline:
@@ -505,9 +481,25 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                                                                              event_data)]
                     new_timeline_items.append(new_timeline_items)
                     cur_board_timeline.add_items(new_update_timeline_items)
-                PERF_COUNTER_work_time_by_ms += (time.time() -
-                                                 perf_counter_work_time_start_time) * 1000
-                PERF_COUNTER_consumed_msg_count += 1
+
+                perf_one_message_process_time_by_ms = (
+                    time.time() - perf_counter_worker_start_time) * 1000
+                PERF_watch_process_time_for_one_msg_window.append(
+                    (perf_one_message_process_time_by_ms, event_data))
+                # it's time to look back and check the perf statistics
+                if len(PERF_watch_process_time_for_one_msg_window) > PERF_watch_process_time_for_one_msg_window_size:
+                    sum_of_process_time = sum(
+                        tp[0] for tp in PERF_watch_process_time_for_one_msg_window)
+                    avg_of_process_time = sum_of_process_time / \
+                        len(PERF_watch_process_time_for_one_msg_window)
+                    if avg_of_process_time >= PERF_healthy_avg_process_time_for_one_msg:
+                        tuple_of_max_time = max(
+                            PERF_watch_process_time_for_one_msg_window, key=lambda x: x[0])
+                        per_process_perf_logger.info(
+                            f"perf low, healthy avg process time for one msg is: {PERF_healthy_avg_process_time_for_one_msg}ms, "
+                            f"but in last period which is: {avg_of_process_time}ms, \n"
+                            f"and the max time-consuming is: {tuple_of_max_time[0]}ms, msg is: {tuple_of_max_time[1]}")
+                    PERF_watch_process_time_for_one_msg_window = []
         except Exception as e:
             per_process_main_logger.exception(
                 "Major error caused by exception:")
@@ -517,11 +509,9 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
     try:
         per_process_main_logger.critical(
             "process: {} is exiting...".format(process_name))
-        timely_logging_perf_counter_timer.cancel()
         timely_pipe_in_local_idle_loop_msg_timer.cancel()
         timely_get_config_timer.cancel()
 
-        timely_logging_perf_counter_timer.join()
         timely_pipe_in_local_idle_loop_msg_timer.join()
         timely_get_config_timer.join()
         kafka_consumer.close()
@@ -541,8 +531,9 @@ def check_and_update_incremental_board_info_via_web_service_and_send_msg_to_proc
         parent_and_child_connections: List[Tuple[Connection, Connection]]):
     """
     @param previous_board_infos: the board infos that had been handled in all processes.
-    sample: 
-    [{"id": "99994085712737341441","serialNo":"E1782703991956705305","liftId":"99994085712737341441"}]
+    sample:
+    [{"id": "99994085712737341441","serialNo":"E1782703991956705305",
+        "liftId":"99994085712737341441"}]
     """
     global All_Board_Infos
     try:
@@ -580,12 +571,6 @@ def check_and_update_incremental_board_info_via_web_service_and_send_msg_to_proc
             "check_and_update_incremental_board_info_via_web_service_and_send_msg_to_process_via_conn error caused by exception:")
         return
 
-
-'''each process owned below variables, they're not shared between processes'''
-PERF_LOGGING_INTERVAL = 60
-PERF_COUNTER_consumed_msg_count = 0
-PERF_COUNTER_filtered_msg_count_by_time_diff_too_big = 0
-PERF_COUNTER_work_time_by_ms = 0
 
 GLOBAL_CONCURRENT_PROCESS_COUNT = 16
 
@@ -721,12 +706,17 @@ if __name__ == '__main__':
     # sample:
     # [{"id": "99994085712737341441","serialNo":"E1782703991956705305","liftId":"99994085712737341441"}]
     All_Board_Infos = get_all_board_infos_response.json()["result"]
-
+    if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
+        GLOBAL_CONCURRENT_PROCESS_COUNT = 1
+        All_Board_Infos = All_Board_Infos[:200]
     # duration is in seconds
     timely_check_incremental_board_info_timer = RepeatTimer(
         30, check_and_update_incremental_board_info_via_web_service_and_send_msg_to_process_via_conn,
         [concurrent_processes, parent_and_child_connections])
-    timely_check_incremental_board_info_timer.start()
+    if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
+        pass
+    else:
+        timely_check_incremental_board_info_timer.start()
 
     # below is a sample for local DEBUG use
     # All_Board_Infos = [{"id": "99994085712737341441",
