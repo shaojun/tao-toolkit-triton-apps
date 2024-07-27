@@ -106,7 +106,7 @@ class BoardTimeline:
         if len(self.items) % 5 == 0:
             self.__purge_items()
 
-        self.foward_object_to_board(items)
+        # self.foward_object_to_board(items)
         # if len(items) == 1 and items[0].raw_data == '':
         #    return
 
