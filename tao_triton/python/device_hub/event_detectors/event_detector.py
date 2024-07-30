@@ -867,8 +867,8 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if self.timeline.door_state_session["door_state"] == "closed" and (
                 datetime.datetime.now(datetime.timezone.utc) - self.timeline.door_state_session[
             "session_start_at"]).total_seconds() < kunren_sj:
-            self.logger.debug("board:{}, skip stuck detect door closed at:{}".format(self.timeline.board_id,
-                                                                                     self.timeline.door_state_session["session_start_at"].strftime("%d/%m/%Y %H:%M:%S")))
+            # self.logger.debug("board:{}, skip stuck detect door closed at:{}".format(self.timeline.board_id,
+            #                                                                         self.timeline.door_state_session["session_start_at"].strftime("%d/%m/%Y %H:%M:%S")))
             return None
 
         new_state_obj = None
@@ -881,8 +881,8 @@ class PeopleStuckEventDetector(EventDetectorBase):
         # 人在电梯内的时间小于配置的困人时间
         if (datetime.datetime.now(datetime.timezone.utc) - self.timeline.person_session[
             "session_start_at"]).total_seconds() < kunren_sj:
-            self.logger.debug("board:{}, skip stuck detect person session start at:{}".format(self.timeline.board_id,
-                                                                                     self.timeline.person_session["session_start_at"].strftime("%d/%m/%Y %H:%M:%S")))
+            # self.logger.debug("board:{}, skip stuck detect person session start at:{}".format(self.timeline.board_id,
+            #                                                                         self.timeline.person_session["session_start_at"].strftime("%d/%m/%Y %H:%M:%S")))
             return None
         # speed
         '''
