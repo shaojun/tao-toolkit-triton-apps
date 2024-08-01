@@ -383,6 +383,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             self.logger.debug("board:{} close gas tank entering".format(self.timeline.board_id))
 
             self.need_close_alarm = False
+            self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
             self.sendMessageToKafka("|TwoWheeler|confirmedExit")
             event_alarms.append(
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
@@ -394,10 +395,6 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         gas_tank_items = [i for i in filtered_timeline_items if (not i.consumed and
                                                                  i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
                                                                  "Vehicle|#|gastank" in i.raw_data)]
-        # 上一次告警结束不足60s内不再告警
-        if "last_notify_timestamp" in self.state_obj and self.state_obj["last_notify_timestamp"] != None and \
-                (datetime.datetime.now() - self.state_obj["last_notify_timestamp"]).total_seconds() < 90:
-            return None
 
         # 记录最近一次获取到gas tank的时间暂时用不上
         if len(gas_tank_items) > 0:
@@ -406,6 +403,15 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         if self.need_close_alarm:
             for item in gas_tank_items:
                 item.consumed = True
+            return None
+
+        silent_period_duration = util.read_config_fast_to_property(
+            ["detectors", "GasTankEnteringEventDetector"],
+            'silent_period_duration')
+        # 上一次告警结束不足60s内不再告警
+        if "last_notify_timestamp" in self.state_obj and self.state_obj["last_notify_timestamp"] != None and \
+                (datetime.datetime.now() - self.state_obj[
+                    "last_notify_timestamp"]).total_seconds() < silent_period_duration:
             return None
 
         if len(gas_tank_items) > 0:

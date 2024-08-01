@@ -24,6 +24,7 @@
             }
         },
         "GasTankEnteringEventDetector": {
+            "silent_period_duration":60,
             "FeatureSwitchers": [
                 {
                     "TargetBoardId": "E999993222_specific_board_for_special_control",
