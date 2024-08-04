@@ -98,9 +98,9 @@ class Frame(object):
         new_h = int(round(orig_h*ratio))
 
         if self.keep_aspect_ratio:
-            im = img.resize((new_w, new_h), Image.ANTIALIAS)
+            im = img.resize((new_w, new_h), Image.LANCZOS)
         else:
-            im = img.resize((self.w, self.h), Image.ANTIALIAS)
+            im = img.resize((self.w, self.h), Image.LANCZOS)
 
         if im.mode in ('RGBA', 'LA') or \
                 (im.mode == 'P' and 'transparency' in im.info) and \
@@ -188,7 +188,7 @@ class Frame(object):
         """
 
         img = Image.open(self._image_path)
-        image = img.resize((self.w, self.h), Image.ANTIALIAS).convert('RGB')
+        image = img.resize((self.w, self.h), Image.LANCZOS).convert('RGB')
         inference_input = preprocess_input(np.array(image).astype(np.float32).transpose(2, 0, 1))
 
         return inference_input
