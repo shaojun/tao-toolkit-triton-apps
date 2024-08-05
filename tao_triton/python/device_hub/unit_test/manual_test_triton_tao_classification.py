@@ -1,3 +1,5 @@
+import sys
+import os
 from tao_triton.python.entrypoints import tao_client
 from PIL import Image
 import base64
