@@ -1,5 +1,6 @@
 import datetime
 from enum import Enum
+import json
 import shutil
 from typing import List
 import abc
@@ -9,6 +10,9 @@ import io
 import time
 import os
 import uuid
+import threading
+import queue
+import requests
 from tao_triton.python.device_hub import util
 from tao_triton.python.entrypoints import tao_client
 
@@ -94,6 +98,29 @@ class ElectricBicycleInElevatorSession(SessionBase):
         self.statistics_logger = logging.getLogger("statisticsLogger")
         self.timeline = timeline
 
+        self.infer_from_model_worker_queue = queue.Queue()
+
+        def worker():
+            while True:
+                try:
+                    object_detection_timeline_item = self.infer_from_model_worker_queue.get()
+                    is_qua_board = object_detection_timeline_item.version == "4.1qua"
+                    packed_infer_result = self.inference_image_from_qua_models(
+                        object_detection_timeline_item)
+                    if packed_infer_result == None:
+                        continue
+                    infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
+
+                    self.UpdateEbikeSession(
+                        infered_class, infer_server_current_ebic_confid, is_qua_board)
+                except Exception as e:
+                    self.logger.exception(
+                        "exception in handle async task in infer_from_model_worker_queue: {}".format(e))
+                finally:
+                    self.infer_from_model_worker_queue.task_done()
+        # Turn-on the worker thread.
+        threading.Thread(target=worker, daemon=True).start()
+
     def feed(self, timeline_items: List):
         # 1，从图片判定看图片是否是电车， 每张图片判定结果存放在list中
         # 2，电车进入时间，连续两张高识别率算进入？
@@ -109,19 +136,82 @@ class ElectricBicycleInElevatorSession(SessionBase):
                 self.UpdateEbikeSession("", 0)
                 return
             for item in result:
-                packed_infer_result = self.inference_image_from_models(item)
-                if packed_infer_result == None:
-                    continue
-                infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
                 is_qua_board = item.version == "4.1qua"
-                self.UpdateEbikeSession(
-                    infered_class, infer_server_current_ebic_confid, is_qua_board)
+                if is_qua_board:
+                    self.infer_from_model_worker_queue.put(item)
+                else:
+                    packed_infer_result = self.inference_image_from_models(
+                        item)
+                    if packed_infer_result == None:
+                        continue
+                    infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
+                    self.UpdateEbikeSession(
+                        infered_class, infer_server_current_ebic_confid, is_qua_board)
         except Exception as e:
             self.logger.exception("{} | {} | {}".format(
                 self.timeline.board_id, "feed", "exception: {}".format(e)))
 
     def get_last_eb_image(self):
         pass
+
+    def inference_image_from_qua_models(self, object_detection_timeline_item):
+        sections = object_detection_timeline_item.raw_data.split('|')
+
+        # the last but one is the detected and cropped object image file with base64 encoded text,
+        # and the section is prefixed with-> base64_image_data:
+        cropped_base64_image_file_text = sections[len(
+            sections) - 2][len("base64_image_data:"):]
+
+        # the last but two is the OPTIONAL, full image file with base64 encoded text,
+        # and the section is prefixed with-> full_base64_image_data:
+        # upload the full image to cloud is for debug purpose, it's controlled and cofigurable from edge board local side.
+        full_image_frame_base64_encode_text = sections[len(
+            sections) - 3][len("full_base64_image_data:"):]
+
+        edge_board_confidence_str: str = sections[len(sections) - 1]
+        edge_board_confidence = float(str(edge_board_confidence_str)[:4])
+
+        temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
+                                                         str(uuid.uuid4()) + '.jpg')
+        temp_image = Image.open(io.BytesIO(base64.decodebytes(
+            cropped_base64_image_file_text.encode('ascii'))))
+        temp_image.save(temp_cropped_image_file_full_name)
+        infer_start_time = time.time()
+        infer_server_url = "http://36.139.163.39:18090/detect_images"
+        data = {'input_image': cropped_base64_image_file_text,
+                'confidence_hold': 0.35}
+
+        http_response = requests.post(
+            infer_server_url, json=data)
+        t1 = time.time()
+        infer_used_time = (t1 - infer_start_time) * 1000
+        infer_results = json.loads(http_response.text)
+        # ['bicycle', 'ebicycle']
+        infered_class_raw = infer_results['name']
+        if infered_class_raw == 'ebicycle':
+            infered_class = 'electric_bicycle'
+        else:
+            infered_class = 'bicycle'
+        infered_server_confid = infer_results['confidence']
+        self.logger.debug(
+            "      board: {}, time used for qua infer: {}ms(localConf: {}), raw infer_results/confid: {}/{}".format(
+                self.timeline.board_id, str(infer_used_time)[:5],
+                edge_board_confidence, infered_class, infered_server_confid))
+        self.statistics_logger.debug("{} | {} | {}".format(
+            self.timeline.board_id,
+            "1st_qua_model_post_infer",
+            "infered_class: {}, infered_confid: {}, used_time: {}, thread_active_count: {}".format(
+                infered_class,
+                infered_server_confid,
+                str(infer_used_time)[:5], threading.active_count())))
+        self.save_sample_image(temp_cropped_image_file_full_name,
+                               object_detection_timeline_item.original_timestamp,
+                               infered_class, infered_server_confid,
+                               full_image_frame_base64_encode_text, "qua_")
+        if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
+            os.unlink(temp_cropped_image_file_full_name)
+
+        return infered_class, infered_server_confid, edge_board_confidence, full_image_frame_base64_encode_text
 
     # 推断当前的图片是否是电动车
     def inference_image_from_models(self, object_detection_timeline_item):

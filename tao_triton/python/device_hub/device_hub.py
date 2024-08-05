@@ -540,7 +540,7 @@ def check_and_update_incremental_board_info_via_web_service_and_send_msg_to_proc
         get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
                                                   headers={'Content-type': 'application/json', 'Accept': 'application/json'})
         if get_all_board_ids_response.status_code != 200:
-            main_logger.error("re get all board ids  failed, status code: {}".format(
+            main_logger.error("re-get all board ids failed, status code: {}".format(
                 str(get_all_board_ids_response.status_code)))
             print("re get all board ids  failed, status code: {}".format(
                 str(get_all_board_ids_response.status_code)))
