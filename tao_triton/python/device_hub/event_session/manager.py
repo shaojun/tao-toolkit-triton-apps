@@ -80,7 +80,7 @@ class ElectricBicycleInElevatorSession(SessionBase):
         self.electric_bicycle_detector_name = "ElectricBicycleEnteringEventDetector"
         self.infer_server_ip_and_port = "192.168.66.161:8000"
         if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
-            self.infer_server_ip_and_port = "192.168.66.161:8000"
+            self.infer_server_ip_and_port = "36.153.41.18:18000"
         if util.read_config_fast_to_property(["detectors", self.electric_bicycle_detector_name], "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH") is not None:
             ElectricBicycleInElevatorSession.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = util.read_config_fast_to_property(
                 ["detectors", self.electric_bicycle_detector_name], "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH")
