@@ -572,7 +572,7 @@ def check_and_update_incremental_board_info_via_web_service_and_send_msg_to_proc
         return
 
 
-GLOBAL_CONCURRENT_PROCESS_COUNT = 16
+GLOBAL_CONCURRENT_PROCESS_COUNT = 24
 
 # a global flag to indicate whether all processes should exit
 GLOBAL_SHOULD_QUIT_EVERYTHING = False
