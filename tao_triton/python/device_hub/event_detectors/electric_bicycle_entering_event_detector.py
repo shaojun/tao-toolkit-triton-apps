@@ -2,7 +2,7 @@ import datetime
 import os
 import re
 import time
-from typing import List
+from typing import List, Literal
 import shutil
 # from tao_triton.python.device_hub import base64_tao_client
 # from tao_triton.python.device_hub.board_timeline import TimelineItem, TimelineItemType
@@ -18,10 +18,13 @@ from json import dumps
 import uuid
 import requests
 from tao_triton.python.device_hub.event_detectors.event_detector_base import EventDetectorBase
-
+import paho.mqtt.client as paho_mqtt_client
+import json
 
 #
 # 电动车检测告警（电动车入梯)
+
+
 class ElectricBicycleEnteringEventDetector(EventDetectorBase):
     SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = "ebic_image_samples"
 
@@ -102,6 +105,15 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
         return filter
 
+    def on_mqtt_message_from_board_outbox(self, mqtt_message: paho_mqtt_client.MQTTMessage):
+        """
+        the callback function when a mqtt message is received from board, 
+        mostly used for receive the response from board for confirm the previous request
+        has been received and processed in board.
+        """
+        str_msg = mqtt_message.payload.decode("utf-8")
+        pass
+
     def detect(self, filtered_timeline_items):
         """
 
@@ -113,7 +125,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         is_ebike_session_open = False
         if self.timeline.ebik_session and str(self.timeline.ebik_session.state) == "SessionState.OPEN":
             is_ebike_session_open = True
-
 
         eb_entering_event_alarms = []
         object_filtered_timeline_items = [i for i in filtered_timeline_items if
@@ -133,16 +144,18 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         self.timeline.board_id, str(is_ebike_session_open)))
                 # 取消阻梯
                 self.send_confirm_to_local_for_first_image_time = None
+                self.timeline.send_mqtt_message_to_board_inbox(
+                    str(uuid.uuid4()), 'disable_block_door', description="disable block door as ebike session closed")
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
                 # 关闭告警
                 eb_entering_event_alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                                                       event_alarm.EventAlarmPriority.CLOSE,
-                                                                       "close the EBike alarm", "007"))
+                    event_alarm.EventAlarmPriority.CLOSE,
+                    "close the EBike alarm", "007"))
                 self.state_obj["last_notify_timestamp"] = None
         else:
-            #第一张图片开始阻梯
-            if self.send_confirm_to_local_for_first_image_time==None and \
+            # 第一张图片开始阻梯
+            if self.send_confirm_to_local_for_first_image_time == None and \
                 abs(current_story) == 1 and \
                 len(object_filtered_timeline_items) > 0 and \
                 self.timeline.ebik_session and \
@@ -150,7 +163,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 util.read_config_fast_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
                                                   'EnableSendConfirmedToLocalWhenFirstImageReceived'):
                 self.send_confirm_to_local_for_first_image_time = datetime.datetime.now()
-                self.sendMessageToKafka("Vehicle|#|TwoWheeler|TwoWheeler|confirmed")
+                self.timeline.send_mqtt_message_to_board_inbox(
+                    str(uuid.uuid4()), 'enable_block_door', description="enable block door as suspected ebike entering")
+                self.sendMessageToKafka(
+                    "Vehicle|#|TwoWheeler|TwoWheeler|confirmed")
                 self.logger.debug("board:{}, send confirm to local, first image,len of list:{}".format(
                     self.timeline.board_id, len(self.timeline.ebik_session.ebike_infer_result_list)))
 
@@ -162,24 +178,28 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 if util.read_config_fast_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
                                                      'EnableSendConfirmedEbEnteringMsgToKafka'):
                     confirmedmsg = "Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed"
+                    self.timeline.send_mqtt_message_to_board_inbox(
+                        str(uuid.uuid4()), 'enable_block_door', description="enable block door as confirmed ebike entering")
                     self.sendMessageToKafka(confirmedmsg)
                 eb_entering_event_alarms.append(
                     event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                         datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                           event_alarm.EventAlarmPriority.ERROR,
-                                           "detected electric-bicycle entering elevator", "007", {}, ""))
+                        event_alarm.EventAlarmPriority.ERROR,
+                        "detected electric-bicycle entering elevator", "007", {}, ""))
                 self.logger.debug(
                     "board:{}, raise e-bike alarm and send block door to edge".format(self.timeline.board_id))
             elif is_ebike_session_open:
                 self.logger.debug(
                     "board:{}, sink the open session due to the current_story:{}".format(self.timeline.board_id,
                                                                                          current_story))
-            #第一张图片时发送了阻梯，超过5秒还未触发session需要解除
+            # 第一张图片时发送了阻梯，超过5秒还未触发session需要解除
             if self.send_confirm_to_local_for_first_image_time != None and \
-            (datetime.datetime.now()-self.send_confirm_to_local_for_first_image_time).total_seconds()>5:
+                    (datetime.datetime.now()-self.send_confirm_to_local_for_first_image_time).total_seconds() > 5:
                 self.send_confirm_to_local_for_first_image_time = None
                 self.logger.debug("board:{}, cancle the local confirm,len of list:{}".format(
                     self.timeline.board_id, len(self.timeline.ebik_session.ebike_infer_result_list)))
+                self.timeline.send_mqtt_message_to_board_inbox(
+                    str(uuid.uuid4()), 'disable_block_door', description="disable block door as 5 seconds passed and still no ebike confirmed")
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
         return eb_entering_event_alarms
 
@@ -231,8 +251,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 "board: {}, close the ebike alarm".format(self.timeline.board_id))
             eb_entering_event_alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                                                   event_alarm.EventAlarmPriority.CLOSE,
-                                                                   "close the EBike alarm", "007"))
+                event_alarm.EventAlarmPriority.CLOSE,
+                "close the EBike alarm", "007"))
         return eb_entering_event_alarms
 
     def __process_infer_result__(self, timeline_item_original_timestamp, edge_board_confidence,
@@ -268,7 +288,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             self.statistics_logger.debug("{} | {} | {}".format(
                 self.timeline.board_id,
                 "ElectricBicycleEnteringEventDetector_sink_eb_alarm",
-                "reason: low infer confid: {}, or not in story 1 or -1: {}".format(infer_server_ebic_confid, story)
+                "reason: low infer confid: {}, or not in story 1 or -1: {}".format(
+                    infer_server_ebic_confid, story)
             ))
             self.logger.debug(
                 "      board: {}, sink this eb detect as server gives low confid: {}, "
@@ -300,7 +321,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         os.path.join(
                             image_sample_path,
                             file_name_prefix + str(infer_server_ebic_confid)[
-                                               :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
+                                :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
 
         if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
             temp_full_image = Image.open(io.BytesIO(
@@ -360,10 +381,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.ebike_state["exit_time"] = ""
             elif self.ebike_state["latest_infer_success"] != "" and (
                     temp_time - self.ebike_state[
-                "latest_infer_success"]).total_seconds() > time_to_keep_successful_infer_result:
+                        "latest_infer_success"]).total_seconds() > time_to_keep_successful_infer_result:
                 self.ebike_state["latest_infer_success"] = ""
                 self.ebike_state["exit_time"] = temp_time
                 self.close_alarm = True
+                self.timeline.send_mqtt_message_to_board_inbox(
+                    str(uuid.uuid4()), 'disable_block_door', description="disable block door as previous ebike exit")
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
                 self.logger.info("board: {},ebike exit at:{}".format(
                     self.timeline.board_id, temp_time))
@@ -377,10 +400,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 i for i in self.timeline.configures if i["code"] == "kqzt"]
             config_kqzt = 1 if len(config_item) == 0 else int(
                 config_item[0]["value"])
-            config_close_zt = [i for i in self.timeline.configures if i["code"] == "gbzt"]
-            gbzt = False if len(config_close_zt) == 0 else (self.timeline.board_id in config_close_zt[0]["value"])
+            config_close_zt = [
+                i for i in self.timeline.configures if i["code"] == "gbzt"]
+            gbzt = False if len(config_close_zt) == 0 else (
+                self.timeline.board_id in config_close_zt[0]["value"])
             if (config_kqzt == 0 or gbzt) and "|TwoWheeler|confirmed" in message:
-                self.logger.info("board:{} is in configured to disable block door".format(self.timeline.board_id))
+                self.logger.info("board:{} is in configured to disable block door".format(
+                    self.timeline.board_id))
                 return
             # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
@@ -427,6 +453,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             self.local_ebike_infer_result_list[0]["confirm_send"] = False
             # self.logger.debug("send ebike confirm exit-1")
             self.close_alarm = True
+            self.timeline.send_mqtt_message_to_board_inbox(
+                str(uuid.uuid4()), 'disable_block_door', description="sendEBikeConfirmToLocal??unknown reason1?")
             self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
 
         # if there's no ebike items from local in 5 seconds, will think the ebike is out
@@ -437,6 +465,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             return
         if len(self.local_ebike_infer_result_list) == 0:
             # self.logger.debug("send ebike confirm")
+            self.timeline.send_mqtt_message_to_board_inbox(
+                str(uuid.uuid4()), 'enable_block_door', description="sendEBikeConfirmToLocal??unknown reason2?")
             self.sendMessageToKafka(
                 ("Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed"))
             self.local_ebike_infer_result_list.append(
@@ -448,7 +478,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         self.local_ebike_infer_result_list.append(
             {"infer_result": infer_result, "confirm_send": False, "infer_time": datetime.datetime.now()})
         if len(self.local_ebike_infer_result_list) >= local_ebike_count and self.local_ebike_infer_result_list[0][
-            "confirm_send"]:
+                "confirm_send"]:
             confirmed_result = [
                 i for i in self.local_ebike_infer_result_list if i["infer_result"] >= config_result]
             config_result_85 = [
@@ -461,6 +491,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.local_ebike_infer_result_list[0]["confirm_send"] = False
                 # self.logger.debug("send ebike confirm exit")
                 self.close_alarm = True
+                self.timeline.send_mqtt_message_to_board_inbox(
+                    str(uuid.uuid4()), 'disable_block_door', description="sendEBikeConfirmToLocal??unknown reason3?")
                 self.sendMessageToKafka(("|TwoWheeler|confirmedExit"))
 
     # 本地识别到的电车在进行识别后，如果已经进行了max_infer_count(比如10次)次推理都不是电动车，那么在max_infer_time的
@@ -496,7 +528,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             ["detectors", ElectricBicycleEnteringEventDetector.__name__],
             'infering_stage__when_see_many_non_eb_then_enter_silent_period_duration')
         if (datetime.datetime.now() - self.local_ebike_infer_result_list[0][
-            "infer_time"]).total_seconds() >= infering_stage__when_see_many_non_eb_then_enter_silent_period_duration:
+                "infer_time"]).total_seconds() >= infering_stage__when_see_many_non_eb_then_enter_silent_period_duration:
             return True
 
         return result

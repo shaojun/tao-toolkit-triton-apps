@@ -1,12 +1,13 @@
 from __future__ import annotations
 import datetime
 from json import dumps
+import json
 import time
 from enum import Enum
-from typing import List
+from typing import Any, Callable, List, Literal
 
 from kafka import KafkaProducer
-
+import paho.mqtt.client as paho_mqtt_client
 from tao_triton.python.device_hub.event_session.manager import ElectricBicycleInElevatorSession
 
 
@@ -64,9 +65,9 @@ class BoardTimeline:
     Timeline_Items_Max_Survive_Time = 120
 
     def __init__(self, logging, board_id: str, items: List[TimelineItem], event_detectors,
-                 event_alarm_notifiers, producer, target_borads: str, lift_id: str):
+                 event_alarm_notifiers, producer, mqtt_client: paho_mqtt_client.Client, target_borads: str, lift_id: str):
         self.last_state_update_local_timestamp = None
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("boardTimeline")
         self.board_id = board_id
         self.items = items
         self.event_detectors = event_detectors
@@ -75,7 +76,8 @@ class BoardTimeline:
         self.liftId = lift_id
         self.configures = []
         self.producer = producer
-        self.ebik_session =  ElectricBicycleInElevatorSession(logging, self)
+        self.mqtt_client = mqtt_client
+        self.ebik_session = ElectricBicycleInElevatorSession(logging, self)
 
         self.person_session = {"person_in": False, "session_start_at": None, "latest_person_item_time": None,
                                "person_count": 0}
@@ -90,9 +92,68 @@ class BoardTimeline:
                                            "latest_current_state_item_time": datetime.datetime.now(
                                                datetime.timezone.utc),
                                            "item_data": 0}
+        self.mqtt_board_inbox_topic = f"board/{self.board_id}/elenet/inbox"
 
         for d in event_detectors:
             d.prepare(self, event_detectors)
+
+    def on_mqtt_message_from_board_outbox(self, client, userdata, mqtt_msg) -> Callable[[paho_mqtt_client.Client, Any, paho_mqtt_client.MQTTMessage], None]:
+        self.logger.debug("board: {}, received mqtt message from board outbox: {}".format(
+            self.board_id, mqtt_msg.payload.decode()))
+        for d in self.event_detectors:
+            # mqtt_message_filter_function = getattr(
+            #     d, "mqtt_message_filter", None)
+            detector_on_mqtt_message_from_board_outbox_function = getattr(
+                d, "on_mqtt_message_from_board_outbox", None)
+            try:
+                if callable(detector_on_mqtt_message_from_board_outbox_function):
+                    detector_on_mqtt_message_from_board_outbox_function(
+                        mqtt_msg)
+            except Exception as e:
+                self.logger.exception(
+                    "board: {}, call detector_on_mqtt_message_from_board_outbox_function: {} from timeline raised an exception: {}".format(d.__class__.__name__, self.board_id, e))
+
+    def send_mqtt_message_to_board_inbox(self, msg_id: str,
+                                         action_type: Literal['enable_block_door', 'disable_block_door'],
+                                         action_data: dict = None,
+                                         description: str = None) -> bool:
+        try:
+            config_item = [
+                i for i in self.configures if i["code"] == "kqzt"]
+            config_kqzt = 1 if len(config_item) == 0 else int(
+                config_item[0]["value"])
+            config_close_zt = [
+                i for i in self.configures if i["code"] == "gbzt"]
+            gbzt = False if len(config_close_zt) == 0 else (
+                self.board_id in config_close_zt[0]["value"])
+            if (config_kqzt == 0 or gbzt) and "enable_block_door" in action_type:
+                self.logger.info("board:{}, configured to disable the feature of block door, so won't send request with action_type: 'enable_block_door' to board".format(
+                    self.board_id))
+                return
+            # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
+            # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
+            #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
+            self.logger.debug("board: {}, sending mqtt request with msg_id: '{}', action_type: '{}' to board".format(
+                self.board_id, msg_id, action_type))
+            request = {"id": msg_id,
+                       "sender": "devicehub",
+                       "timestamp": f"{datetime.datetime.now().isoformat()}",
+                       "description": description,
+                       "type": action_type,
+                       "body": action_data}
+            publish_result = self.mqtt_client.publish(
+                self.mqtt_board_inbox_topic, json.dumps(request), qos=1)
+            status = publish_result[0]
+            if status == 0:
+                # print(f"Send `{msg}` to topic `{topic}`")
+                return True
+            else:
+                self.logger.error(
+                    f"board:{self.board_id}, failed to send mqtt request: '{request}' to topic: {self.mqtt_board_inbox_topic}")
+                return False
+        except Exception as e:
+            self.logger.exception(
+                f"board:{self.board_id}, exception in sending request with action_type: '{action_type}' to board via mqtt:")
 
     def update_configs(self, configs: List):
         self.configures.clear()
@@ -152,7 +213,8 @@ class BoardTimeline:
 
     def __purge_items(self):
         survived = [item for item in self.items if
-                    (datetime.datetime.now(datetime.timezone.utc) - item.original_timestamp)
+                    (datetime.datetime.now(datetime.timezone.utc) -
+                     item.original_timestamp)
                     .total_seconds() <= BoardTimeline.Timeline_Items_Max_Survive_Time and not item.consumed]
         self.items = survived
 
@@ -190,17 +252,20 @@ class BoardTimeline:
         if len(person_items) > 0:
             # 人在电梯里的session已经开始了，只需更新最近检测到人的时间
             if self.person_session["person_in"]:
-                self.person_session["latest_person_item_time"] = datetime.datetime.now(datetime.timezone.utc)
+                self.person_session["latest_person_item_time"] = datetime.datetime.now(
+                    datetime.timezone.utc)
                 self.person_session["person_count"] = len(person_items)
             else:
                 self.person_session["person_in"] = True
-                self.person_session["session_start_at"] = datetime.datetime.now(datetime.timezone.utc)
-                self.person_session["latest_person_item_time"] = datetime.datetime.now(datetime.timezone.utc)
+                self.person_session["session_start_at"] = datetime.datetime.now(
+                    datetime.timezone.utc)
+                self.person_session["latest_person_item_time"] = datetime.datetime.now(
+                    datetime.timezone.utc)
                 self.person_session["person_count"] = len(person_items)
         elif len(object_items) > 0:
             # 这一轮上传中没有人，检查下最近一次检测到的人过去多长时间，超过4秒则认为没人
             if self.person_session["person_in"] and (datetime.datetime.now(datetime.timezone.utc) - self.person_session[
-                "latest_person_item_time"]).total_seconds() > 5:
+                    "latest_person_item_time"]).total_seconds() > 5:
                 self.person_session["person_in"] = False
                 self.person_session["session_start_at"] = None
                 self.person_session["latest_person_item_time"] = None

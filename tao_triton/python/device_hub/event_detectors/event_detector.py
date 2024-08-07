@@ -2138,8 +2138,11 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
             sensor_detect_person_items = [i for i in filtered_timeline_items if
                                           i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PEOPLE_DETECT]
             sensor_detect_person = False
+            sensor_detect_person_in_lift = False
             if len(sensor_detect_person_items) > 0:
                 sensor_detect_person = sensor_detect_person_items[-1].raw_data["detectPerson"]
+                sensor_detect_person_in_lift = str(False) if "detectPersonInLift" not in sensor_detect_person_items[-1].raw_data else \
+                sensor_detect_person_items[-1].raw_data["detectPersonInLift"]
             hasPerson = "Y" if len(person_timeline_items) > 0 else "N"
             person_count = 0
             if len(person_timeline_items) > 0:
@@ -2197,6 +2200,7 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
                         "model6": speed, "model7": person_count, "model8": sensor_detect_person,
                         "model9": acceleration,
                         "model10": guang_dian,
+                        "model11": sensor_detect_person_in_lift,
                         "createdDate": str(time),
                         "liftId": self.timeline.liftId}
 

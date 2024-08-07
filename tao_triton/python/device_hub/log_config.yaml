@@ -159,6 +159,16 @@ handlers:
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
+  boardTimeline_file_handler:
+    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    level: DEBUG
+    formatter: simple
+    filename: "log/boardTimeline.log"
+    when: S
+    interval: 86400
+    backupCount: 1200
+    maxBytes: 40240000
+    encoding: utf8
 loggers:
   sampleLogger:
     level: DEBUG
@@ -219,6 +229,10 @@ loggers:
   blockingDoorEventDetector:
     level: DEBUG
     handlers: [ blockingDoorEventDetector_file_handler ]
+    propagate: no
+  boardTimeline:
+    level: DEBUG
+    handlers: [ boardTimeline_file_handler ]
     propagate: no
 root:
   level: DEBUG

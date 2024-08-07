@@ -27,6 +27,7 @@
 import atexit
 import multiprocessing
 from multiprocessing.connection import Connection
+import random
 import signal
 import sys
 import requests
@@ -50,7 +51,7 @@ import os
 import time
 import datetime
 import argparse
-
+import paho.mqtt.client as paho_mqtt_client
 # infer_server_url = None
 # infer_server_protocol = None
 # infer_model_name = None
@@ -73,12 +74,12 @@ class RepeatTimer(Timer):
 # shared_EventAlarmWebServiceNotifier = event_alarm.EventAlarmWebServiceNotifier(logging)
 
 
-def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServiceNotifier, target_borads: str, lift_id: str):
+def create_boardtimeline(board_id: str, kafka_producer, mqtt_client: paho_mqtt_client, shared_EventAlarmWebServiceNotifier, target_borads: str, lift_id: str):
     if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
         event_detectors = [  # ElectricBicycleEnteringEventDetector(logging),
             # event_detector.DoorStateChangedEventDetector(logging),
             event_detector.DoorStateSessionDetector(logging),
-            event_detector.RunningStateSessionDetector(logging),
+            event_detector.ElectricBicycleEnteringEventDetector(logging),
             event_detector.BlockingDoorEventDetector(logging),
             #    event_detector.PeopleStuckEventDetector(logging),
             #    # event_detector.GasTankEnteringEventDetector(logging),
@@ -107,7 +108,7 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                                             event_detectors,
                                             [event_alarm.EventAlarmDummyNotifier(
                                                 logging)],
-                                            kafka_producer, target_borads, lift_id)
+                                            kafka_producer, mqtt_client, target_borads, lift_id)
     # enable_developer_local_debug_mode
     # these detectors instances are shared by all timelines
     event_detectors = [ElectricBicycleEnteringEventDetector(logging),
@@ -146,7 +147,7 @@ def create_boardtimeline(board_id: str, kafka_producer, shared_EventAlarmWebServ
                                         event_detectors,
                                         [  # event_alarm.EventAlarmDummyNotifier(logging),
                                             shared_EventAlarmWebServiceNotifier],
-                                        kafka_producer, target_borads, lift_id)
+                                        kafka_producer, mqtt_client, target_borads, lift_id)
 
 
 def pipe_in_local_idle_loop_item_to_board_timelines(board_timelines: list):
@@ -294,7 +295,63 @@ def get_xiaoquids(xiaoqu_name: str):
     return ""
 
 
-def worker_of_process_board_msg(boards: List, process_name: str, target_borads: str, conn: Connection):
+def setup_mqtt_client(board_definitions: list,
+                      board_timelines: list[board_timeline.BoardTimeline],
+                      process_name: str, logger: logging.Logger) -> paho_mqtt_client.Client:
+    # Begin setup mqtt related
+    mqtt_broker_url = "223.111.251.59"
+    mqtt_broker_port = 1883
+    mqtt_client_id = f"devicehub_sub_process_{process_name}_id_{random.randint(1, 100000)}"
+    mqtt_client = paho_mqtt_client.Client(
+        paho_mqtt_client.CallbackAPIVersion.VERSION2, mqtt_client_id)
+    mqtt_client.username_pw_set("devicehub_process", "devicehub_process")
+
+    def on_mqtt_client_connect(client: paho_mqtt_client.Client, userdata, flags, rc, properties):
+        if rc == 0 and client.is_connected():
+            logger.info(
+                f"process: {process_name} mqtt client connected to broker: {mqtt_broker_url}")
+            for index, value in enumerate(board_definitions):
+                if value["serialNo"] == "E1640262214042521601" or value["serialNo"] == "default_empty_id_please_manual_set_rv1126":
+                    continue
+                board_id = value["serialNo"]
+                mqtt_board_app_elenet_outbox_topic = f"board/{board_id}/elenet/outbox"
+                client.subscribe(mqtt_board_app_elenet_outbox_topic)
+
+    def on_mqtt_client_disconnect(client, userdata, disconnectflags, rc, properties):
+        logger.error(
+            f"process: {process_name} mqtt client disconnected from broker: {mqtt_broker_url}")
+
+    def on_mqtt_message(client, userdata, message):
+        board_id = message.topic.split("/")[1]
+        boardtimeline = [
+            b for b in board_timelines if b.board_id == board_id]
+        if boardtimeline:
+            boardtimeline[0].on_mqtt_message_from_board_outbox(
+                client, userdata, message)
+    mqtt_client.on_message = on_mqtt_message
+    mqtt_client.on_connect = on_mqtt_client_connect
+    mqtt_client.on_disconnect = on_mqtt_client_disconnect
+    mqtt_client.connect_async(mqtt_broker_url, mqtt_broker_port)
+    mqtt_client.loop_start()
+    time.sleep(2)
+    while not GLOBAL_SHOULD_QUIT_EVERYTHING:
+        try:
+            if not mqtt_client.is_connected():
+                logger.error(
+                    f"process: {process_name} mqtt client is not connected to broker: {mqtt_broker_url}, will keep waitting...")
+                time.sleep(15)
+                continue
+            break
+        except:
+            logger.error(
+                f"process: {process_name} mqtt client failed to connect to broker: {mqtt_broker_url}, will keep waitting...")
+            time.sleep(15)
+            continue
+    return mqtt_client
+    # End setup mqtt related
+
+
+def worker_of_process_board_msg(board_definitions: list, process_name: str, target_borads: str, conn: Connection):
     with open('log_config.yaml', 'r') as f:
         config = yaml.safe_load(f.read())
         file_handlers = [config['handlers'][handler_name]
@@ -314,7 +371,7 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
     per_process_main_logger.info(
         'process: {} is running...'.format(process_name))
 
-    board_timelines = []
+    board_timelines: list[board_timeline.BoardTimeline] = []
     timely_pipe_in_local_idle_loop_msg_timer = RepeatTimer(
         2, pipe_in_local_idle_loop_item_to_board_timelines, [board_timelines])
     timely_pipe_in_local_idle_loop_msg_timer.start()
@@ -332,11 +389,12 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
         logging)
     kafka_producer = KafkaProducer(bootstrap_servers=FLAGS.kafka_server_url,
                                    value_serializer=lambda x: json.dumps(x).encode('utf-8'))
-    if boards == None:
-        return
+    mqtt_client = setup_mqtt_client(
+        board_definitions, board_timelines, process_name, per_process_main_logger)
+
     consumer_str = ""
     consumer_topics = []
-    for index, value in enumerate(boards):
+    for index, value in enumerate(board_definitions):
         if value["serialNo"] == "E1640262214042521601" or value["serialNo"] == "default_empty_id_please_manual_set_rv1126":
             continue
         if index == 0:
@@ -381,7 +439,7 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                         # [{"serialNo": i['serialNo'], "liftId": i['liftId']}]
                         per_process_main_logger.info(
                             f"received incremental board serialNo and liftId msg: {msg}")
-                        boards.extend(msg)
+                        board_definitions.extend(msg)
                         consumer_str += "|" + \
                             "|".join([i['serialNo'] for i in msg])
                         kafka_consumer.unsubscribe()
@@ -403,9 +461,9 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
                                       t.board_id == board_id]
                 if not cur_board_timeline:
                     board_lift = [
-                        b for b in boards if b["serialNo"] == board_id]
+                        b for b in board_definitions if b["serialNo"] == board_id]
                     lift_id = "" if not board_lift else board_lift[0]["liftId"]
-                    cur_board_timeline = create_boardtimeline(board_id, kafka_producer,
+                    cur_board_timeline = create_boardtimeline(board_id, kafka_producer, mqtt_client,
                                                               eventAlarmWebServiceNotifier, target_borads, lift_id)
                     board_timelines.append(cur_board_timeline)
                 else:
@@ -514,8 +572,13 @@ def worker_of_process_board_msg(boards: List, process_name: str, target_borads: 
 
         timely_pipe_in_local_idle_loop_msg_timer.join()
         timely_get_config_timer.join()
+
         kafka_consumer.close()
         kafka_producer.close()
+
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+
         per_process_main_logger.critical(
             "process: {} exited...".format(process_name))
         print("process: {} exited...".format(process_name))
@@ -540,7 +603,7 @@ def check_and_update_incremental_board_info_via_web_service_and_send_msg_to_proc
         get_all_board_ids_response = requests.get("https://api.glfiot.com/edge/all",
                                                   headers={'Content-type': 'application/json', 'Accept': 'application/json'})
         if get_all_board_ids_response.status_code != 200:
-            main_logger.error("re get all board ids  failed, status code: {}".format(
+            main_logger.error("re-get all board ids failed, status code: {}".format(
                 str(get_all_board_ids_response.status_code)))
             print("re get all board ids  failed, status code: {}".format(
                 str(get_all_board_ids_response.status_code)))

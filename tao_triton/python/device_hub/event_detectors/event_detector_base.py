@@ -1,8 +1,11 @@
+from tao_triton.python.device_hub.board_timeline import BoardTimeline
+
+
 class EventDetectorBase:
     def __init__(self, logging):
         self.event_listeners = []
         self.state_obj: dict = None
-        self.timeline = None
+        self.timeline: BoardTimeline = None
         self.is_session_detector = False
 
     def prepare(self, timeline, event_detectors):
