@@ -46,7 +46,7 @@ import yaml
 import logging.config
 import logging
 import base64_tao_client
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import os
 import time
 import datetime
@@ -189,7 +189,7 @@ def get_configurations(board_timelines: list, logger):
 
 
 def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAppliedTimeStamp: int,
-                         dh_local_datetime: datetime.datetime):
+                         dh_local_datetime: datetime.datetime, logger: logging.Logger):
     """
     caculate the time difference between boardMsgTimeStamp, kafkaMsgTimeStamp and dh local datetime.
     :param board_id: the board id, used for logging.
@@ -211,7 +211,7 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
     if abs(time_diff_by_sub_kafka_to_board) >= 5:
         # log every 10 seconds for avoid log flooding
         if datetime.datetime.now().second % 10 == 0:
-            logging.warning(
+            logger.warning(
                 f"time_diff (kafka - board) is too big: {time_diff_by_sub_kafka_to_board}s for board: {board_id}, board network upload slow or un-synced datetime?")
         return True
     time_diff_by_sub_dh_to_kafka = (dh_local_utc_datetime
@@ -220,7 +220,7 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
     if abs(time_diff_by_sub_dh_to_kafka) >= 4:
         # log every 10 seconds for avoid log flooding
         if datetime.datetime.now().second % 10 == 0:
-            logging.warning(
+            logger.warning(
                 f"time_diff (dh_local - kafka) is too big: {time_diff_by_sub_dh_to_kafka}s for board: {board_id}, dh process slow?")
         return True
     return False
@@ -295,11 +295,21 @@ def get_xiaoquids(xiaoqu_name: str):
     return ""
 
 
+def resolve_board_ids_from_board_definitions(board_definitions: list[dict]) -> list[str]:
+    topics: list[str] = []
+    for index, value in enumerate(board_definitions):
+        board_id = value["serialNo"]
+        if board_id == "E1640262214042521601" or board_id == "default_empty_id_please_manual_set_rv1126":
+            continue
+        topics.append(board_id)
+    return topics
+
+
 def setup_mqtt_client(board_definitions: list,
                       board_timelines: list[board_timeline.BoardTimeline],
                       process_name: str, logger: logging.Logger) -> paho_mqtt_client.Client:
     # Begin setup mqtt related
-    mqtt_broker_url = "223.111.251.59"
+    mqtt_broker_url = "mqtt0.glfiot.com"
     mqtt_broker_port = 1883
     mqtt_client_id = f"devicehub_sub_process_{process_name}_id_{random.randint(1, 100000)}"
     mqtt_client = paho_mqtt_client.Client(
@@ -310,10 +320,12 @@ def setup_mqtt_client(board_definitions: list,
         if rc == 0 and client.is_connected():
             logger.info(
                 f"process: {process_name} mqtt client connected to broker: {mqtt_broker_url}")
-            for index, value in enumerate(board_definitions):
-                if value["serialNo"] == "E1640262214042521601" or value["serialNo"] == "default_empty_id_please_manual_set_rv1126":
-                    continue
-                board_id = value["serialNo"]
+            board_ids = resolve_board_ids_from_board_definitions(
+                board_definitions)
+            log_str = " ".join(board_ids)
+            logger.debug(
+                f"mqtt client is subscribing with board_ids(count: {len(board_ids)}): {log_str}")
+            for board_id in board_ids:
                 mqtt_board_app_elenet_outbox_topic = f"board/{board_id}/elenet/outbox"
                 client.subscribe(mqtt_board_app_elenet_outbox_topic)
 
@@ -337,21 +349,28 @@ def setup_mqtt_client(board_definitions: list,
     while not GLOBAL_SHOULD_QUIT_EVERYTHING:
         try:
             if not mqtt_client.is_connected():
+                print(
+                    f"process: {process_name} mqtt client is not connected to broker: {mqtt_broker_url}, will block and keep retrying...")
                 logger.error(
-                    f"process: {process_name} mqtt client is not connected to broker: {mqtt_broker_url}, will keep waitting...")
+                    f"process: {process_name} mqtt client is not connected to broker: {mqtt_broker_url}, will block and keep retrying...")
                 time.sleep(15)
                 continue
             break
         except:
+            print(
+                f"process: {process_name} mqtt client exceptioned to connect to broker: {mqtt_broker_url}, will block and keep retrying...")
             logger.error(
-                f"process: {process_name} mqtt client failed to connect to broker: {mqtt_broker_url}, will keep waitting...")
+                f"process: {process_name} mqtt client exceptioned to connect to broker: {mqtt_broker_url}, will block and keep retrying...")
             time.sleep(15)
             continue
     return mqtt_client
     # End setup mqtt related
 
 
-def worker_of_process_board_msg(board_definitions: list, process_name: str, target_borads: str, conn: Connection):
+def worker_of_process_board_msg(board_definitions: list[dict], process_name: str, target_borads: str, conn: Connection):
+    """
+    @param board_definitions: the board definitions that had been loaded from web service: [{"serialNo": i['serialNo'], "liftId": i['liftId']}]
+    """
     with open('log_config.yaml', 'r') as f:
         config = yaml.safe_load(f.read())
         file_handlers = [config['handlers'][handler_name]
@@ -392,42 +411,33 @@ def worker_of_process_board_msg(board_definitions: list, process_name: str, targ
     mqtt_client = setup_mqtt_client(
         board_definitions, board_timelines, process_name, per_process_main_logger)
 
-    consumer_str = ""
-    consumer_topics = []
-    for index, value in enumerate(board_definitions):
-        if value["serialNo"] == "E1640262214042521601" or value["serialNo"] == "default_empty_id_please_manual_set_rv1126":
-            continue
-        if index == 0:
-            consumer_str += value["serialNo"]
-            consumer_topics.append(value["serialNo"])
-        else:
-            consumer_str += "|" + value["serialNo"]
-            consumer_topics.append(value["serialNo"])
-    kafka_consumer.subscribe(topics=consumer_topics)
-
+    board_ids: list[str] = resolve_board_ids_from_board_definitions(
+        board_definitions)
+    kafka_consumer.subscribe(topics=board_ids)
     # at 2024.07.26, each board has 2 messages/s incoming here via kafka.
     # if future has different frequency, this should be adjusted.
     PERF_proximity_of_one_board_uploading_msg_count_per_second = 2
     # let's define the MAX delay time for the whole boards queue is 2 seconds.
     # then each msg should be processed within this time:
     PERF_healthy_avg_process_time_for_one_msg = 2 * \
-        1000 / (len(consumer_topics) *
+        1000 / (len(board_ids) *
                 PERF_proximity_of_one_board_uploading_msg_count_per_second)
     # set it to every 10 seconds to look back and caculate avg process time for one msg
     PERF_watch_process_time_for_one_msg_window_size = (
-        len(consumer_topics)*PERF_proximity_of_one_board_uploading_msg_count_per_second)*10
+        len(board_ids)*PERF_proximity_of_one_board_uploading_msg_count_per_second)*10
     PERF_watch_process_time_for_one_msg_window: List[tuple] = []
     while not GLOBAL_SHOULD_QUIT_EVERYTHING:
         try:
+            log_str = " ".join(board_ids)
             per_process_main_logger.debug(
-                f"kafka_consumer is polling messages with topics: {consumer_str}")
+                f"kafka_consumer is polling with topics(count: {len(board_ids)}): {log_str}")
             for event in kafka_consumer:
                 if GLOBAL_SHOULD_QUIT_EVERYTHING:
                     break
                 perf_counter_worker_start_time = time.time()
 
-                if datetime.datetime.now().second % 10 == 0 and conn.poll():
-                    msg = conn.recv()
+                if datetime.datetime.now().second % 5 == 0 and conn.poll():
+                    msg: Union[list[dict[str, any]], str] = conn.recv()
                     if isinstance(msg, str):
                         if msg.startswith("command:exit"):
                             per_process_main_logger.critical(
@@ -435,15 +445,22 @@ def worker_of_process_board_msg(board_definitions: list, process_name: str, targ
                             GLOBAL_SHOULD_QUIT_EVERYTHING = True
                             break
                     else:
-                        # sample is like:
-                        # [{"serialNo": i['serialNo'], "liftId": i['liftId']}]
                         per_process_main_logger.info(
-                            f"received incremental board serialNo and liftId msg: {msg}")
+                            f"received incremental board_definitions msg: {msg}")
+                        per_process_main_logger.info(
+                            f"will extend board_definitions(previous count: {len(board_definitions)}): +{len(msg)}")
                         board_definitions.extend(msg)
-                        consumer_str += "|" + \
-                            "|".join([i['serialNo'] for i in msg])
+                        board_ids: list[str] = resolve_board_ids_from_board_definitions(
+                            board_definitions)
                         kafka_consumer.unsubscribe()
-                        kafka_consumer.subscribe(pattern=consumer_str)
+                        kafka_consumer.subscribe(topics=board_ids)
+
+                        incremental_board_ids = resolve_board_ids_from_board_definitions(
+                            msg)
+                        for b in incremental_board_ids:
+                            mqtt_client.subscribe(f"board/{b}/elenet/outbox")
+                        per_process_main_logger.info(
+                            f"mqtt client incremental subscribed times: {len(incremental_board_ids)}")
                         break
 
                 event_data = event.value
@@ -454,7 +471,8 @@ def worker_of_process_board_msg(board_definitions: list, process_name: str, targ
                 board_msg_original_timestamp = event_data["@timestamp"]
                 board_id = event_data["sensorId"]
 
-                if is_time_diff_too_big(board_id, board_msg_original_timestamp, event.timestamp, datetime.datetime.now()):
+                if is_time_diff_too_big(board_id, board_msg_original_timestamp, event.timestamp, datetime.datetime.now(),
+                                        per_process_perf_logger):
                     continue
 
                 cur_board_timeline = [t for t in board_timelines if
