@@ -160,7 +160,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 len(object_filtered_timeline_items) > 0 and \
                 self.timeline.ebik_session and \
                 len(self.timeline.ebik_session.ebike_infer_result_list) == 1 and \
-                util.read_config_fast_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
+                    (datetime.datetime.now() - self.timeline.ebik_session.ebike_infer_result_list[0]["time_stamp"]).total_seconds() < 2 and \
+                    util.read_config_fast_to_property(["detectors", ElectricBicycleEnteringEventDetector.__name__],
                                                   'EnableSendConfirmedToLocalWhenFirstImageReceived'):
                 self.send_confirm_to_local_for_first_image_time = datetime.datetime.now()
                 self.timeline.send_mqtt_message_to_board_inbox(
