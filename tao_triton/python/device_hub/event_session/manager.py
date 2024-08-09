@@ -403,6 +403,8 @@ class ElectricBicycleInElevatorSession(SessionBase):
                           infer_server_ebic_confid, full_base64_image_file_text, dst_file_name_prefix=""):
         image_sample_path = os.path.join(
             ElectricBicycleInElevatorSession.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
+        current_year_month_day_str = datetime.datetime.now().strftime("%Y_%m%d")
+        image_sample_path = os.path.join(image_sample_path, current_year_month_day_str)
         if not os.path.exists(image_sample_path):
             os.makedirs(image_sample_path)
         board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
@@ -419,7 +421,7 @@ class ElectricBicycleInElevatorSession(SessionBase):
                         os.path.join(
                             image_sample_path,
                             file_name_prefix + str(infer_server_ebic_confid)[
-                                :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
+                                :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
         if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
             temp_full_image = Image.open(io.BytesIO(
                 base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
