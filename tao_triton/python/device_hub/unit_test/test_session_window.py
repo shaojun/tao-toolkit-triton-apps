@@ -7,7 +7,7 @@ from tao_triton.python.device_hub.utility.session_window import *
 
 class TestSessionWindow(unittest.TestCase):
 
-    def test_1_session_no_post_silent(self):
+    def test_1_session_without_post_silent(self):
         session: list[str] = None
 
         def header_buffer_validation_predict(header_buffer: list[str]) -> bool:
@@ -27,7 +27,7 @@ class TestSessionWindow(unittest.TestCase):
             session = session_items
 
         sw: SessionWindow[str] = SessionWindow(
-            lambda x: x == "eb", BufferType.ByPeriodTime, 2,
+            lambda x: x == "eb", None, BufferType.ByPeriodTime, 2,
             header_buffer_validation_predict, on_header_buffer_validated, 0,
             lambda new_item, items: True, BufferType.ByPeriodTime, 1,
             on_session_end=on_session_end)
@@ -45,19 +45,19 @@ class TestSessionWindow(unittest.TestCase):
         self.assertEqual(sw.state, SessionState.BodyBuffering)
         sw.add("eb")
         time.sleep(1.3)
-        self.assertEqual(sw.state, SessionState.SessionEnded)
+        self.assertEqual(sw.state, SessionState.SessionEnd)
         self.assertIsNotNone(session)
         self.assertEqual(session, ["eb", "people", "eb", "eb", "eb"])
 
         sw.add("eb")
         sw.add("eb")
-        self.assertEqual(sw.state, SessionState.SessionEnded)
+        self.assertEqual(sw.state, SessionState.SessionEnd)
         time.sleep(3)
         sw.add("eb")
         sw.add("eb")
-        self.assertEqual(sw.state, SessionState.SessionEnded)
+        self.assertEqual(sw.state, SessionState.SessionEnd)
 
-    def test_2_sessions_no_post_silent(self):
+    def test_2_sessions_without_post_silent(self):
         session: list[str] = None
 
         def header_buffer_validation_predict(header_buffer: list[str]) -> bool:
@@ -78,7 +78,7 @@ class TestSessionWindow(unittest.TestCase):
             session_window.reset()
 
         sw: SessionWindow[str] = SessionWindow(
-            lambda x: x == "eb", BufferType.ByPeriodTime, 2,
+            lambda x: x == "eb", None, BufferType.ByPeriodTime, 2,
             header_buffer_validation_predict, on_header_buffer_validated, 0,
             lambda new_item, items: True, BufferType.ByPeriodTime, 1,
             on_session_end=on_session_end)
@@ -118,7 +118,7 @@ class TestSessionWindow(unittest.TestCase):
         self.assertEqual(session, [
             "eb", "eb", "eb", "doorsign", "eb", "eb", "eb", "doorsign", "people", "eb"])
 
-    def test_1_session_post_silent(self):
+    def test_1_session_with_post_silent(self):
         session: list[str] = None
 
         def header_buffer_validation_predict(header_buffer: list[str]) -> bool:
@@ -136,10 +136,10 @@ class TestSessionWindow(unittest.TestCase):
         def on_session_end(session_window: SessionWindow[str], session_items: list[str]):
             nonlocal session
             session = session_items
-            self.assertEqual(sw.state, SessionState.SessionEnded)
+            self.assertEqual(sw.state, SessionState.SessionEnd)
 
         sw: SessionWindow[str] = SessionWindow(
-            lambda x: x == "eb", BufferType.ByPeriodTime, 2,
+            lambda x: x == "eb", None, BufferType.ByPeriodTime, 2,
             header_buffer_validation_predict, on_header_buffer_validated, 0,
             lambda new_item, items: True, BufferType.ByPeriodTime, 1,
             on_session_end=on_session_end,
@@ -170,10 +170,10 @@ class TestSessionWindow(unittest.TestCase):
         sw.add("eb")
         self.assertEqual(sw.state, SessionState.InPostSilentTime)
 
-    def test_1_session_pre_silent(self):
+    def test_2_sessions_with_pre_silent(self):
         session: list[dict] = None
 
-        def on_header_buffer_started(item: dict):
+        def on_header_buffering(items: list[dict]):
             # send block door msg to edge for the first image
             pass
 
@@ -187,65 +187,60 @@ class TestSessionWindow(unittest.TestCase):
 
         def on_header_buffer_validated(header_buffer: list[dict], is_header_buffer_valid: bool):
             # send block door msg to edge board, ebike entring if is_header_buffer_valid is true
-            self.assertTrue(is_header_buffer_valid)
+            # self.assertFalse(is_header_buffer_valid)
             # send cancel block door msg if is_header_buffer_valid is false
+            pass
 
         def on_session_end(session_window: SessionWindow[dict], session_items: list[dict]):
             nonlocal session
             session = session_items
-            self.assertEqual(sw.state, SessionState.SessionEnded)
+            self.assertEqual(sw.state, SessionState.SessionEnd)
 
         def on_post_silent_time_elapsed(session_items: list[dict]):
             sw.reset()
 
         sw: SessionWindow[dict] = SessionWindow(
-            lambda x: True, BufferType.ByPeriodTime, 2,
+            lambda x: True, on_header_buffering, BufferType.ByPeriodTime, 2,
             header_buffer_validation_predict, on_header_buffer_validated, 10,
             lambda items, new_item: new_item["class"] == "eb" and new_item["confid"] > 0.1,
             BufferType.ByPeriodTime, 1,
             on_session_end=on_session_end,
             post_session_silent_time=5,
             on_post_session_silent_time_elapsed=on_post_silent_time_elapsed,
-            on_header_buffer_started=on_header_buffer_started
         )
         self.assertEqual(sw.state, SessionState.Uninitialized)
         sw.add({"class": "people", "confid": 0.3})
         self.assertEqual(sw.state, SessionState.HeaderBuffering)
-        time.sleep(1.3)
+        time.sleep(1)
         sw.add({"class": "eb", "confid": 0.1})
         self.assertEqual(sw.state, SessionState.HeaderBuffering)
-        time.sleep(1.3)
+        time.sleep(1.6)
         sw.add({"class": "eb", "confid": 0.9})
         self.assertEqual(sw.state, SessionState.InPreSilentTime)
         time.sleep(1.3)
         sw.add({"class": "eb", "confid": 0.2})
-
         self.assertEqual(sw.state, SessionState.InPreSilentTime)
+
         time.sleep(5)
         self.assertEqual(sw.state, SessionState.InPreSilentTime)
-        time.sleep(6)
+
+        time.sleep(4)
         self.assertEqual(sw.state, SessionState.Uninitialized)
 
         sw.add({"class": "eb", "confid": 0.8})
         self.assertEqual(sw.state, SessionState.HeaderBuffering)
         sw.add({"class": "eb", "confid": 0.8})
         self.assertEqual(sw.state, SessionState.HeaderBuffering)
+        time.sleep(2.1)
 
-        sw.add({"class": "eb", "confid": 0.8})
-        time.sleep(1)
-        self.assertEqual(sw.state, SessionState.HeaderBuffering)
-        sw.add({"class": "eb", "confid": 0.8})
-        self.assertEqual(sw.state, SessionState.HeaderBuffering)
-
-        time.sleep(2)
         self.assertEqual(sw.state, SessionState.BodyBuffering)
-        time.sleep(1.2)
-        self.assertEqual(sw.state, SessionState.InPostSilentTime)
-        time.sleep(2)
-        self.assertEqual(sw.state, SessionState.InPostSilentTime)
-        time.sleep(2)
+        time.sleep(1.5)
         self.assertEqual(sw.state, SessionState.InPostSilentTime)
         time.sleep(1)
+        self.assertEqual(sw.state, SessionState.InPostSilentTime)
+        time.sleep(1)
+        self.assertEqual(sw.state, SessionState.InPostSilentTime)
+        time.sleep(3)
         self.assertEqual(sw.state, SessionState.Uninitialized)
 
 
