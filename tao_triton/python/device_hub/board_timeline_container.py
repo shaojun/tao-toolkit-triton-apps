@@ -53,6 +53,8 @@ from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_even
 
 from multiprocessing import Process
 
+from tao_triton.python.device_hub.event_detectors.gas_tank_entering_event_detector import GasTankEnteringEventDetector
+
 with open('log_config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
     logging.config.dictConfig(config)
@@ -73,7 +75,7 @@ def create_boardtimeline(board_id: str, kafka_producer):
                        event_detector.DoorStateChangedEventDetector(logging),
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
-                       event_detector.GasTankEnteringEventDetector(logging),
+                       GasTankEnteringEventDetector(logging),
                        event_detector.DoorOpenedForLongtimeEventDetector(logging),
                        event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
                        event_detector.ElevatorOverspeedEventDetector(logging),
