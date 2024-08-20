@@ -513,10 +513,12 @@ class BlockingDoorEventDetector(EventDetectorBase):
                                        event_alarm.EventAlarmPriority.ERROR,
                                        "电梯门被遮挡", "002")]
         elif can_raise_door_openned_long_time:
+            # session_start_at_time_str = self.timeline.door_state_session["session_start_at"].astimezone(datetime.timezone(datetime.timedelta(hours=8))).strftime(
+            #                                          "%d/%m/%Y %H:%M:%S")
             alarms = [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                              event_alarm.EventAlarmPriority.ERROR,
-                                             "长时间处于开门状态 - 门开着超过一定时间的故障, 最近一次门状态转变为'开'的时间为: {}, 且持续时间 >= {}秒".format(
+                                             "长时间处于开门状态 - 门开着超过一定时间的故障, 最近一次门状态转变为'开'的UTC时间为: {}, 且持续时间 >= {}秒".format(
                                                  self.timeline.door_state_session["session_start_at"].strftime(
                                                      "%d/%m/%Y %H:%M:%S"),
                                                  door_open_time_diff),
@@ -763,7 +765,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
                 event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                        event_alarm.EventAlarmPriority.ERROR,
-                                       "{}发现有人困在电梯内，乘客进入时间为{}, 梯门关闭时间：{}".format(
+                                       "{}发现有人困在电梯内，乘客进入UTC时间为{}, 梯门关闭UTC时间：{}".format(
                                            new_state_obj["last_report_timestamp"].strftime("%d/%m/%Y %H:%M:%S"),
                                            self.timeline.person_session["session_start_at"].strftime(
                                                "%d/%m/%Y %H:%M:%S"),
