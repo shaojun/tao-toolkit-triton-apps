@@ -63,7 +63,7 @@ class BatteryEnteringEventDetector(EventDetectorBase):
             "last_notify_timestamp"] != None and \
                 (datetime.datetime.now() - self.state_obj["last_notify_timestamp"]).total_seconds() > 30:
             self.logger.debug(
-                "board:{} close battery entering".format(self.timeline.board_id))
+                "board:{}, close battery entering alarm".format(self.timeline.board_id))
 
             self.need_close_alarm = False
             self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
@@ -98,6 +98,8 @@ class BatteryEnteringEventDetector(EventDetectorBase):
             return None
 
         if len(battery_items) > 0:
+            self.logger.debug(
+                f"board: {self.timeline.board_id}, see battery_item from edge board")
             item = battery_items[-1]
             for item in battery_items:
                 item.consumed = True
@@ -126,31 +128,40 @@ class BatteryEnteringEventDetector(EventDetectorBase):
                         "crop_image___" + file_name_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
 
             if is_enabled:
-                infered_class, infered_confid = self.inferencer.inference_image_from_qua_models(
-                    cropped_base64_image_file_text)
-                self.logger.debug(
-                    f"board: {self.timeline.board_id}, infered_class: {infered_class}, infered_confid: {infered_confid}")
-                if infered_class == "battery" and infered_confid >= 0.9:
-                    self.statistics_logger.debug("{} | {} | {}".format(
-                        self.timeline.board_id,
-                        "BatteryEnteringEventDetector_confirm_battery",
-                        "data: {}".format("")
-                    ))
+                def infer_and_post_process(infered_result):
+                    infered_class, infered_confid = infered_result
                     self.logger.debug(
-                        f"board: {self.timeline.board_id} raise battery entering alarm, infered_class: {infered_class},\
-                        infered_server_confid: {infered_confid}, edge_board_confidence{edge_board_confidence}")
-                    self.state_obj["last_notify_timestamp"] = datetime.datetime.now(
-                    )
-                    self.need_close_alarm = True
-                    # self.sendMessageToKafka(
-                    #     "Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
-                    # self.sendMessageToKafka("test info")
-                    event_alarms.append(
-                        event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
-                                               f"detected battery entering elevator with board confid: {edge_board_confidence}, infered_class: {infered_class}, infered_confid: {infered_server_confid}"))
-                    # self.logger.debug(
-                    #     "borad:{} raise battery entering alarm".format(self.timeline.board_id))
-        return event_alarms
+                        f"board: {self.timeline.board_id}, infered_class: {infered_class}, infered_confid: {infered_confid}")
+                    if infered_class == "battery" and infered_confid >= 0.9:
+                        self.statistics_logger.debug("{} | {} | {}".format(
+                            self.timeline.board_id,
+                            "BatteryEnteringEventDetector_confirm_battery",
+                            "data: {}".format("")
+                        ))
+                        self.logger.debug(
+                            f"board: {self.timeline.board_id}, raise battery entering alarm, infered_class: {infered_class},\
+                            infered_server_confid: {infered_confid}, edge_board_confidence{edge_board_confidence}")
+                        self.state_obj["last_notify_timestamp"] = datetime.datetime.now(
+                        )
+                        self.need_close_alarm = True
+                        # self.sendMessageToKafka(
+                        #     "Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
+                        # self.sendMessageToKafka("test info")
+                        event_alarms.append(
+                            event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
+                                                   f"detected battery entering elevator with board confid: {edge_board_confidence}, infered_class: {infered_class}, infered_confid: {infered_server_confid}"))
+                        self.timeline.notify_event_alarm(event_alarms)
+                enable_async_infer_and_post_process = util.read_config_fast_to_property(
+                    ["detectors", 'BatteryEnteringEventDetector', 'FeatureSwitchers'], 'enable_async_infer_and_post_process')
+
+                if enable_async_infer_and_post_process:
+                    self.inferencer.start_inference_image_from_qua_models(
+                        cropped_base64_image_file_text, infer_and_post_process)
+                else:
+                    infered_class, infered_confid = self.inferencer.inference_image_from_qua_models(
+                        cropped_base64_image_file_text)
+                    infer_and_post_process((infered_class, infered_confid))
+        return None
 
     def sendMessageToKafka(self, message):
         try:

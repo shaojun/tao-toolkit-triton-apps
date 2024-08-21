@@ -81,7 +81,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             "last_notify_timestamp"] != None and \
                 (datetime.datetime.now() - self.state_obj["last_notify_timestamp"]).total_seconds() > 30:
             self.logger.debug(
-                "board:{} close gas tank entering".format(self.timeline.board_id))
+                "board: {}, close gastank entering alarm".format(self.timeline.board_id))
 
             self.need_close_alarm = False
             self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
@@ -116,6 +116,8 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             return None
 
         if len(gas_tank_items) > 0:
+            self.logger.debug(
+                f"board: {self.timeline.board_id}, see gas_tank_item from edge board")
             item = gas_tank_items[-1]
             for item in gas_tank_items:
                 item.consumed = True
@@ -144,27 +146,37 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                         "crop_image___" + file_name_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
 
             if is_enabled:
-                infered_class, infered_confid = self.inferencer.inference_image_from_qua_models(
-                    cropped_base64_image_file_text)
-                self.logger.debug(
-                    f"board: {self.timeline.board_id}, infered_class: {infered_class}, infered_confid: {infered_confid}")
-                if infered_class == "gastank" and infered_confid >= 0.9:
-                    self.statistics_logger.debug("{} | {} | {}".format(
-                        self.timeline.board_id,
-                        "GasTankEnteringEventDetector_confirm_gastank",
-                        "data: {}".format("")
-                    ))
+                def infer_and_post_process(infered_result):
+                    infered_class, infered_confid = infered_result
                     self.logger.debug(
-                        f"board: {self.timeline.board_id} raise gastank entering alarm, infered_class: {infered_class},\
-                        infered_server_confid: {infered_confid}, edge_board_confidence{edge_board_confidence}")
-                    self.state_obj["last_notify_timestamp"] = datetime.datetime.now(
-                    )
-                    self.need_close_alarm = True
-                    event_alarms.append(event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
-                                                               f"detected gas tank entering elevator with board confid: {edge_board_confidence}, infered_class: {infered_class}, infered_confid: {infered_confid}"))
-                    self.sendMessageToKafka(
-                        "Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
-        return event_alarms
+                        f"board: {self.timeline.board_id}, infered_class: {infered_class}, infered_confid: {infered_confid}")
+                    if infered_class == "gastank" and infered_confid >= 0.9:
+                        self.statistics_logger.debug("{} | {} | {}".format(
+                            self.timeline.board_id,
+                            "GasTankEnteringEventDetector_confirm_gastank",
+                            "data: {}".format("")
+                        ))
+                        self.logger.debug(
+                            f"board: {self.timeline.board_id}, raise gastank entering alarm, infered_class: {infered_class}, infered_server_confid: {infered_confid}, edge_board_confidence{edge_board_confidence}")
+                        self.state_obj["last_notify_timestamp"] = datetime.datetime.now(
+                        )
+                        self.need_close_alarm = True
+                        event_alarms.append(event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
+                                                                   f"detected gas tank entering elevator with board confid: {edge_board_confidence}, infered_class: {infered_class}, infered_confid: {infered_confid}"))
+                        self.sendMessageToKafka(
+                            "Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
+                        self.timeline.notify_event_alarm(event_alarms)
+
+                enable_async_infer_and_post_process = util.read_config_fast_to_property(
+                    ["detectors", 'GasTankEnteringEventDetector'], 'enable_async_infer_and_post_process')
+                if enable_async_infer_and_post_process:
+                    self.inferencer.start_inference_image_from_qua_models(
+                        cropped_base64_image_file_text, infer_and_post_process)
+                else:
+                    infered_class, infered_confid = self.inferencer.inference_image_from_qua_models(
+                        cropped_base64_image_file_text)
+                    infer_and_post_process((infered_class, infered_confid))
+        return None
 
     def sendMessageToKafka(self, message):
         try:
