@@ -28,11 +28,11 @@
             "FeatureSwitchers": [
                 {
                     "TargetBoardId": "E999993222_specific_board_for_special_control",
-                    "Enable": true
+                    "Enable": false
                 },
                 {
                     "TargetBoardId": "*",
-                    "Enable": false
+                    "Enable": true
                 }
             ]
         },
@@ -41,11 +41,11 @@
             "FeatureSwitchers": [
                 {
                     "TargetBoardId": "E999993222_specific_board_for_special_control",
-                    "Enable": true
+                    "Enable": false
                 },
                 {
                     "TargetBoardId": "*",
-                    "Enable": false
+                    "Enable": true
                 }
             ]
         }

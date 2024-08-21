@@ -13,6 +13,7 @@ import io
 import event_alarm
 import board_timeline
 from tao_triton.python.device_hub import util
+from tao_triton.python.device_hub.utility.infer_image_from_model import Inferencer
 from tao_triton.python.entrypoints import tao_client
 from json import dumps
 import uuid
@@ -31,6 +32,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         # self.logger = logging.getLogger(__name__)
         self.logger = logging.getLogger("gasTankEnteringEventDetectorLogger")
         self.statistics_logger = logging.getLogger("statisticsLogger")
+        self.inferencer = Inferencer(self.logger)
         self.need_close_alarm = False
 
     def prepare(self, timeline, event_detectors):
@@ -142,24 +144,26 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                         "crop_image___" + file_name_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
 
             if is_enabled:
-                self.statistics_logger.debug("{} | {} | {}".format(
-                    self.timeline.board_id,
-                    "GasTankEnteringEventDetector_confirm_gastank",
-                    "data: {}".format("")
-                ))
+                infered_class, infered_confid = self.inferencer.inference_image_from_qua_models(
+                    cropped_base64_image_file_text)
                 self.logger.debug(
-                    "board:{} raise gas tank entering".format(self.timeline.board_id))
-                self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
-                self.need_close_alarm = True
-                self.sendMessageToKafka(
-                    "Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
-                # self.sendMessageToKafka("test info")
-                event_alarms.append(
-                    event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
-                                           "detected gas tank entering elevator with board confid: {}".format(
-                                               edge_board_confidence)))
-                self.logger.debug(
-                    "borad:{} raise gas tank entering alarm".format(self.timeline.board_id))
+                    f"board: {self.timeline.board_id}, infered_class: {infered_class}, infered_confid: {infered_confid}")
+                if infered_class == "gastank" and infered_confid >= 0.9:
+                    self.statistics_logger.debug("{} | {} | {}".format(
+                        self.timeline.board_id,
+                        "GasTankEnteringEventDetector_confirm_gastank",
+                        "data: {}".format("")
+                    ))
+                    self.logger.debug(
+                        f"board: {self.timeline.board_id} raise gastank entering alarm, infered_class: {infered_class},\
+                        infered_server_confid: {infered_confid}, edge_board_confidence{edge_board_confidence}")
+                    self.state_obj["last_notify_timestamp"] = datetime.datetime.now(
+                    )
+                    self.need_close_alarm = True
+                    event_alarms.append(event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
+                                                               f"detected gas tank entering elevator with board confid: {edge_board_confidence}, infered_class: {infered_class}, infered_confid: {infered_confid}"))
+                    self.sendMessageToKafka(
+                        "Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
         return event_alarms
 
     def sendMessageToKafka(self, message):

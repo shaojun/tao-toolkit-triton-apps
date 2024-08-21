@@ -139,6 +139,16 @@ handlers:
     backupCount: 1200
     maxBytes: 40240000
     encoding: utf8
+  batteryEnteringEventDetector_file_handler:
+    class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
+    level: DEBUG
+    formatter: simple
+    filename: "log/batteryEnteringEventDetector.log"
+    when: S
+    interval: 86400
+    backupCount: 1200
+    maxBytes: 40240000
+    encoding: utf8
   peopleStuckEventDetector_file_handler:
     class: enhanced_rotating_file_handler.enhanced_rotating_file_handler
     level: DEBUG
@@ -221,6 +231,10 @@ loggers:
   gasTankEnteringEventDetectorLogger:
     level: DEBUG
     handlers: [ gasTankEnteringEventDetector_file_handler ]
+    propagate: no
+  batteryEnteringEventDetectorLogger:
+    level: DEBUG
+    handlers: [ batteryEnteringEventDetector_file_handler ]
     propagate: no
   peopleStuckEventDetector:
     level: DEBUG
