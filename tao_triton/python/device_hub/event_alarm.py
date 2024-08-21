@@ -193,10 +193,18 @@ class EventAlarmWebServiceNotifier:
                     #    continue
 
                     # level: Debug=0, Info=1, Warning=2, Error=3, Fatal=4
+                    t0 = time.time()
                     post_response = requests.post(EventAlarmWebServiceNotifier.URL,
                                                   headers=EventAlarmWebServiceNotifier.HEADERS,
                                                   data=None,
                                                   json=post_data)
+                    t1 = time.time()
+                    perf_time_used_by_ms = (t1 - t0) * 1000
+                    if perf_time_used_by_ms >= 1000:
+                        self.logger.info("board: {}, Notify alarm from {} to web take too much time: {}ms".format(
+                                target_alarm.event_detector.timeline.board_id,
+                                target_alarm.event_detector.__class__.__name__,
+                                perf_time_used_by_ms))
                     if post_response.status_code != 200:
                         self.logger.error(
                             "board: {}, Notify alarm from {} got error: {}".format(
