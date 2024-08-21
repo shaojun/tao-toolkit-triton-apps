@@ -64,8 +64,8 @@ class BoardTimeline:
     # by seconds
     Timeline_Items_Max_Survive_Time = 120
 
-    def __init__(self, logging, board_id: str, items: List[TimelineItem], event_detectors,
-                 event_alarm_notifiers, producer, mqtt_client: paho_mqtt_client.Client, target_borads: str, lift_id: str):
+    def __init__(self, logging, board_id: str, items: list[TimelineItem], event_detectors,
+                 event_alarm_notifiers: list, producer, mqtt_client: paho_mqtt_client.Client, target_borads: str, lift_id: str):
         self.last_state_update_local_timestamp = None
         self.logger = logging.getLogger("boardTimeline")
         self.board_id = board_id
@@ -158,6 +158,10 @@ class BoardTimeline:
     def update_configs(self, configs: List):
         self.configures.clear()
         self.configures.extend(configs)
+
+    def notify_event_alarm(self, event_alarms: list):
+        for n in self.event_alarm_notifiers:
+            n.notify(event_alarms)
 
     def add_items(self, items: List[TimelineItem]):
         # self.logger.debug("board: {} is adding TimelineItem(s)...  type: {}".format(self.board_id, items[0].type.name))

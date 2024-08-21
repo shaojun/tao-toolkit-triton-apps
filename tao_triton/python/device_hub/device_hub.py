@@ -34,6 +34,8 @@ import requests
 from multiprocessing import Process
 import tao_triton.python.device_hub.event_detectors.event_detector as event_detector
 from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import ElectricBicycleEnteringEventDetector
+from tao_triton.python.device_hub.event_detectors.gas_tank_entering_event_detector import GasTankEnteringEventDetector
+from tao_triton.python.device_hub.event_detectors.battery_entering_event_detector import BatteryEnteringEventDetector
 import event_alarm
 import board_timeline
 from tao_triton.python.device_hub import board_timeline, util
@@ -80,7 +82,8 @@ def create_boardtimeline(board_id: str, kafka_producer, mqtt_client: paho_mqtt_c
             # event_detector.DoorStateChangedEventDetector(logging),
             event_detector.DoorStateSessionDetector(logging),
             event_detector.ElectricBicycleEnteringEventDetector(logging),
-            event_detector.BlockingDoorEventDetector(logging),
+            GasTankEnteringEventDetector(logging),
+            BatteryEnteringEventDetector(logging),
             #    event_detector.PeopleStuckEventDetector(logging),
             #    # event_detector.GasTankEnteringEventDetector(logging),
             #    # event_detector.DoorOpenedForLongtimeEventDetector(logging),
@@ -117,7 +120,8 @@ def create_boardtimeline(board_id: str, kafka_producer, mqtt_client: paho_mqtt_c
                        event_detector.DoorStateChangedEventDetector(logging),
                        event_detector.BlockingDoorEventDetector(logging),
                        event_detector.PeopleStuckEventDetector(logging),
-                       event_detector.GasTankEnteringEventDetector(logging),
+                       GasTankEnteringEventDetector(logging),
+                       BatteryEnteringEventDetector(logging),
                        # event_detector.DoorOpenedForLongtimeEventDetector(logging),
                        # event_detector.DoorRepeatlyOpenAndCloseEventDetector(logging),
                        event_detector.ElevatorOverspeedEventDetector(logging),

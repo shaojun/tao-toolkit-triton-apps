@@ -4,11 +4,14 @@ import threading
 import time
 from enum import Enum
 from typing import List
+from tao_triton.python.device_hub.event_detectors.battery_entering_event_detector import BatteryEnteringEventDetector
 import tao_triton.python.device_hub.event_detectors.event_detector as event_detector
 from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import \
     ElectricBicycleEnteringEventDetector
 
 import requests
+
+from tao_triton.python.device_hub.event_detectors.gas_tank_entering_event_detector import GasTankEnteringEventDetector
 
 
 class EventAlarmPriority(Enum):
@@ -153,8 +156,15 @@ class EventAlarmWebServiceNotifier:
                                  "original_timestamp": str(target_alarm.original_utc_timestamp),
                                  "base64string": target_alarm.imageText,
                                  "data": target_alarm.data}
-                elif target_alarm.event_detector.__class__.__name__ == event_detector.GasTankEnteringEventDetector.__name__:
+                elif target_alarm.event_detector.__class__.__name__ == GasTankEnteringEventDetector.__name__:
                     post_data = {"device_id": target_alarm.event_detector.timeline.board_id, "warning_type": "0021",
+                                 "level": target_alarm.priority.value,
+                                 "description": target_alarm.description,
+                                 "original_timestamp": str(target_alarm.original_utc_timestamp),
+                                 "base64string": target_alarm.imageText,
+                                 "data": target_alarm.data}
+                elif target_alarm.event_detector.__class__.__name__ == BatteryEnteringEventDetector.__name__:
+                    post_data = {"device_id": target_alarm.event_detector.timeline.board_id, "warning_type": "0024",
                                  "level": target_alarm.priority.value,
                                  "description": target_alarm.description,
                                  "original_timestamp": str(target_alarm.original_utc_timestamp),
