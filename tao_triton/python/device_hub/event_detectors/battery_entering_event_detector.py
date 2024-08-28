@@ -149,7 +149,7 @@ class BatteryEnteringEventDetector(EventDetectorBase):
                         # self.sendMessageToKafka("test info")
                         event_alarms.append(
                             event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
-                                                   f"detected battery entering elevator with board confid: {edge_board_confidence}, infered_class: {infered_class}, infered_confid: {infered_server_confid}"))
+                                                   f"detected battery entering elevator with board confid: {edge_board_confidence}, infered_class: {infered_class}, infered_confid: {infered_confid}"))
                         self.timeline.notify_event_alarm(event_alarms)
                 enable_async_infer_and_post_process = util.read_config_fast_to_property(
                     ["detectors", 'BatteryEnteringEventDetector', 'FeatureSwitchers'], 'enable_async_infer_and_post_process')
