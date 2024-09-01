@@ -14,11 +14,14 @@ import event_alarm
 import board_timeline
 from tao_triton.python.device_hub import util
 from tao_triton.python.device_hub.utility.infer_image_from_model import Inferencer
+from tao_triton.python.device_hub.utility.session_window import *
 from tao_triton.python.entrypoints import tao_client
 from json import dumps
 import uuid
 import requests
 from tao_triton.python.device_hub.event_detectors.event_detector_base import EventDetectorBase
+
+
 #
 # 煤气罐检测告警（煤气罐入梯)
 
@@ -34,6 +37,69 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         self.statistics_logger = logging.getLogger("statisticsLogger")
         self.inferencer = Inferencer(self.logger)
         self.need_close_alarm = False
+        self.silent_period_duration = util.read_config_fast_to_property(
+            ["detectors", "GasTankEnteringEventDetector"], 'silent_period_duration')
+        self.body_buffer_end_period_duration = util.read_config_fast_to_property(
+            ["detectors", "GasTankEnteringEventDetector"], 'how_long_to_treat_tank_exist_when_no_predict_item_received')
+
+        def header_buffer_starter_validation(item: dict) -> bool:
+            gas_tank_confid = util.read_config_fast_to_property(
+                ["detectors", "GasTankEnteringEventDetector"], 'gas_tank_confid')
+            return item["class"] == "gastank" and item["confid"] > gas_tank_confid
+
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+            gas_tank_count = 0
+            configured_gas_tank_rate = util.read_config_fast_to_property(
+                ["detectors", "GasTankEnteringEventDetector"],
+                "gas_tank_rate_treat_tank_entering")
+            gas_tank_confid = util.read_config_fast_to_property(
+                ["detectors", "GasTankEnteringEventDetector"], 'gas_tank_confid')
+            for item in header_buffer:
+                if item["class"] == "gastank" and item["confid"] > gas_tank_confid:
+                    gas_tank_count += 1
+                return gas_tank_count / len(header_buffer) > configured_gas_tank_rate
+
+        def on_header_buffer_validated(buffer: list[dict], is_header_buffer_valid: bool) -> None:
+            self.logger.debug("board:{},header buffer validated, raise gas tank alarm".format(self.timeline.board_id))
+            # 进入body_buffering状态
+            if is_header_buffer_valid:
+                infered_class = buffer[-1]["class"]
+                infered_confid = buffer[-1]["confid"]
+                event_alarms = []
+                event_alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                                           event_alarm.EventAlarmPriority.ERROR,
+                                                           f"detected gas tank entering elevator with infered_class: {infered_class}, infered_confid: {infered_confid}"))
+                self.timeline.notify_event_alarm(event_alarms)
+
+        def body_buffer_validation(items: list[dict], item: dict) -> bool:
+            gas_tank_confid = util.read_config_fast_to_property(
+                ["detectors", "GasTankEnteringEventDetector"], 'gas_tank_confid')
+            return item["class"] == "gastank" and item["confid"] > gas_tank_confid
+
+        def on_session_end(session_window: SessionWindow[str], session_items: list[str]) -> None:
+            # self.assertEqual(sw.state, SessionState.SessionEnd)
+            # # session 结束，结束告警
+            self.logger.debug("board:{},session end, close the alarm".format(self.timeline.board_id))
+            event_alarms = []
+            event_alarms.append(
+                event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                       event_alarm.EventAlarmPriority.CLOSE,
+                                       "Close gas tank alarm", "0021"))
+            self.timeline.notify_event_alarm(event_alarms)
+
+        def on_post_session_silent_time_elapsed(items: list[dict]):
+            self.logger.debug("board:{},post silent session end".format(self.timeline.board_id))
+            self.sw.reset()
+
+        self.sw: SessionWindow[dict] = SessionWindow(
+            header_buffer_starter_validation, None, BufferType.ByPeriodTime, 4,
+            header_buffer_validation_predict, on_header_buffer_validated, self.silent_period_duration,
+            body_buffer_validation, BufferType.ByPeriodTime, self.body_buffer_end_period_duration,
+            on_session_end=on_session_end,
+            post_session_silent_time=self.silent_period_duration,
+            on_post_session_silent_time_elapsed=on_post_session_silent_time_elapsed)
 
     def prepare(self, timeline, event_detectors):
         """
@@ -74,46 +140,9 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         is_enabled = util.read_config_fast_to_board_control_level(
             ["detectors", 'GasTankEnteringEventDetector', 'FeatureSwitchers'], self.timeline.board_id)
 
-        event_alarms = []
-
-        # 告警时间超5秒关闭告警
-        if self.need_close_alarm and self.state_obj and "last_notify_timestamp" in self.state_obj and self.state_obj[
-            "last_notify_timestamp"] != None and \
-                (datetime.datetime.now() - self.state_obj["last_notify_timestamp"]).total_seconds() > 30:
-            self.logger.debug(
-                "board: {}, close gastank entering alarm".format(self.timeline.board_id))
-
-            self.need_close_alarm = False
-            self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
-            self.sendMessageToKafka("|TwoWheeler|confirmedExit")
-            event_alarms.append(
-                event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
-                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                    event_alarm.EventAlarmPriority.CLOSE,
-                    "Close gas tank alarm", "0021"))
-            return event_alarms
-
         gas_tank_items = [i for i in filtered_timeline_items if (not i.consumed and
                                                                  i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
                                                                  "Vehicle|#|gastank" in i.raw_data)]
-
-        # 记录最近一次获取到gas tank的时间暂时用不上
-        if len(gas_tank_items) > 0:
-            self.state_obj["last_infer_timestamp"] = datetime.datetime.now()
-
-        if self.need_close_alarm:
-            for item in gas_tank_items:
-                item.consumed = True
-            return None
-
-        silent_period_duration = util.read_config_fast_to_property(
-            ["detectors", "GasTankEnteringEventDetector"],
-            'silent_period_duration')
-        # 上一次告警结束不足60s内不再告警
-        if "last_notify_timestamp" in self.state_obj and self.state_obj["last_notify_timestamp"] != None and \
-                (datetime.datetime.now() - self.state_obj[
-                    "last_notify_timestamp"]).total_seconds() < silent_period_duration:
-            return None
 
         if len(gas_tank_items) > 0:
             self.logger.debug(
@@ -150,22 +179,8 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                     infered_class, infered_confid = infered_result
                     self.logger.debug(
                         f"board: {self.timeline.board_id}, infered_class: {infered_class}, infered_confid: {infered_confid}")
-                    if infered_class == "gastank" and infered_confid >= 0.9:
-                        self.statistics_logger.debug("{} | {} | {}".format(
-                            self.timeline.board_id,
-                            "GasTankEnteringEventDetector_confirm_gastank",
-                            "data: {}".format("")
-                        ))
-                        self.logger.debug(
-                            f"board: {self.timeline.board_id}, raise gastank entering alarm, infered_class: {infered_class}, infered_server_confid: {infered_confid}, edge_board_confidence{edge_board_confidence}")
-                        self.state_obj["last_notify_timestamp"] = datetime.datetime.now(
-                        )
-                        self.need_close_alarm = True
-                        event_alarms.append(event_alarm.EventAlarm(self, item.original_timestamp, event_alarm.EventAlarmPriority.ERROR,
-                                                                   f"detected gas tank entering elevator with board confid: {edge_board_confidence}, infered_class: {infered_class}, infered_confid: {infered_confid}"))
-                        self.sendMessageToKafka(
-                            "Vehicle|#|TwoWheeler" + "|TwoWheeler|confirmed")
-                        self.timeline.notify_event_alarm(event_alarms)
+
+                    self.sw.add({"class": infered_class, "confid": infered_confid})
 
                 enable_async_infer_and_post_process = util.read_config_fast_to_property(
                     ["detectors", 'GasTankEnteringEventDetector'], 'enable_async_infer_and_post_process')
@@ -183,7 +198,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             config_item = [
                 i for i in self.timeline.configures if i["code"] == "mqgbzt"]
             config_kqzt = False if len(config_item) == 0 else (
-                self.timeline.board_id not in config_item[0]["value"])
+                    self.timeline.board_id not in config_item[0]["value"])
             if self.timeline.board_id in self.timeline.target_borads or config_kqzt == False:
                 return
             obj_info_list = []

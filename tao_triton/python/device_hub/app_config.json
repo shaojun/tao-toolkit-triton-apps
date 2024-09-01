@@ -26,6 +26,9 @@
         "GasTankEnteringEventDetector": {
             "silent_period_duration":60,
             "enable_async_infer_and_post_process": true,
+            "gas_tank_confid":0.9,
+            "gas_tank_rate_treat_tank_entering": 0.7,
+            "how_long_to_treat_tank_exist_when_no_predict_item_received":30,
             "FeatureSwitchers": [
                 {
                     "TargetBoardId": "E999993222_specific_board_for_special_control",

@@ -27,7 +27,7 @@ class TestSessionWindow(unittest.TestCase):
             session = session_items
 
         sw: SessionWindow[str] = SessionWindow(
-            lambda x: x == "eb", BufferType.ByPeriodTime, 2,
+            lambda x: x == "eb", None, BufferType.ByPeriodTime, 2,
             header_buffer_validation_predict, on_header_buffer_validated, 0,
             lambda new_item, items: True, BufferType.ByPeriodTime, 1,
             on_session_end=on_session_end)
@@ -45,17 +45,17 @@ class TestSessionWindow(unittest.TestCase):
         self.assertEqual(sw.state, SessionState.BodyBuffering)
         sw.add("eb")
         time.sleep(1.3)
-        self.assertEqual(sw.state, SessionState.SessionEnded)
+        self.assertEqual(sw.state, SessionState.SessionEnd)
         self.assertIsNotNone(session)
         self.assertEqual(session, ["eb", "people", "eb", "eb", "eb"])
 
         sw.add("eb")
         sw.add("eb")
-        self.assertEqual(sw.state, SessionState.SessionEnded)
+        self.assertEqual(sw.state, SessionState.SessionEnd)
         time.sleep(3)
         sw.add("eb")
         sw.add("eb")
-        self.assertEqual(sw.state, SessionState.SessionEnded)
+        self.assertEqual(sw.state, SessionState.SessionEnd)
 
     def test_2_sessions_no_post_silent(self):
         session: list[str] = None
@@ -76,8 +76,9 @@ class TestSessionWindow(unittest.TestCase):
             nonlocal session
             session = session_items
             session_window.reset()
+
         sw: SessionWindow[str] = SessionWindow(
-            lambda x: x == "eb", BufferType.ByPeriodTime, 2,
+            lambda x: x == "eb", None, BufferType.ByPeriodTime, 2,
             header_buffer_validation_predict, on_header_buffer_validated, 0,
             lambda new_item, items: True, BufferType.ByPeriodTime, 1,
             on_session_end=on_session_end)
@@ -115,7 +116,7 @@ class TestSessionWindow(unittest.TestCase):
         time.sleep(1.3)
         self.assertIsNotNone(session)
         self.assertEqual(session, [
-                         "eb", "eb", "eb", "doorsign", "eb", "eb", "eb",  "doorsign", "people", "eb"])
+            "eb", "eb", "eb", "doorsign", "eb", "eb", "eb", "doorsign", "people", "eb"])
 
     def test_1_session_post_silent(self):
         session: list[str] = None
@@ -135,9 +136,10 @@ class TestSessionWindow(unittest.TestCase):
         def on_session_end(session_window: SessionWindow[str], session_items: list[str]):
             nonlocal session
             session = session_items
-            self.assertEqual(sw.state, SessionState.SessionEnded)
+            self.assertEqual(sw.state, SessionState.SessionEnd)
+
         sw: SessionWindow[str] = SessionWindow(
-            lambda x: x == "eb", BufferType.ByPeriodTime, 2,
+            lambda x: x == "eb", None, BufferType.ByPeriodTime, 2,
             header_buffer_validation_predict, on_header_buffer_validated, 0,
             lambda new_item, items: True, BufferType.ByPeriodTime, 1,
             on_session_end=on_session_end,
@@ -167,6 +169,164 @@ class TestSessionWindow(unittest.TestCase):
         sw.add("eb")
         sw.add("eb")
         self.assertEqual(sw.state, SessionState.InPostSilentTime)
+
+    def test_gas_tank_entring(self):
+        # 煤气罐入梯条件1，图片推理为煤气罐，可信度大于0.9 2，张数暂定1张
+        # 3，煤气罐入梯后30s认为session结束 4，结束后进入silent时间
+        def header_buffer_starter_validation(item: dict) -> bool:
+            return item["class"] == "gastank" and item["confid"] > 0.9
+
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+            gas_tank_count = 0
+            for item in header_buffer:
+                if item["class"] == "gastank" and item["confid"] > 0.9:
+                    gas_tank_count += 1
+            return gas_tank_count / len(header_buffer) > 0.5
+
+        def on_header_buffer_validated(buffer: list[dict], is_header_buffer_valid: bool) -> None:
+            # 进入body_buffering状态
+            self.assertTrue(is_header_buffer_valid)
+
+        def body_buffer_validation(items: list[dict], item: dict) -> bool:
+            return item["class"] == "gastank" and item["confid"] > 0.9
+
+        def on_session_end(session_window: SessionWindow[str], session_items: list[str]) -> None:
+            # self.assertEqual(sw.state, SessionState.SessionEnd)
+            # session 结束，结束告警
+            pass
+
+        def on_post_session_silent_time_elapsed(items: list[dict]):
+            sw.reset()
+
+        sw: SessionWindow[dict] = SessionWindow(
+            header_buffer_starter_validation, None, BufferType.ByPeriodTime, 2,
+            header_buffer_validation_predict, on_header_buffer_validated, 0,
+            body_buffer_validation, BufferType.ByPeriodTime, 5,
+            on_session_end=on_session_end,
+            post_session_silent_time=5,
+            on_post_session_silent_time_elapsed=on_post_session_silent_time_elapsed)
+
+        sw.add({"class": "gastank", "confid": 0.8})
+        self.assertEqual(sw.state, SessionState.Uninitialized)
+
+        sw.add({"class": "gastank", "confid": 0.91})
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
+
+        sw.add({"class": "gastank", "confid": 0.91})
+        time.sleep(2.5)
+        self.assertEqual(sw.state, SessionState.BodyBuffering)
+        time.sleep(5)
+        self.assertEqual(sw.state, SessionState.InPostSilentTime)
+        time.sleep(3)
+        self.assertEqual(sw.state, SessionState.InPostSilentTime)
+        sw.add({"class": "gastank", "confid": 0.91})
+        sw.add({"class": "gastank", "confid": 0.91})
+        # 第一条不满足header条件，所以不会开启session
+        self.assertEqual(len(sw.items), 2)
+        time.sleep(3)
+        self.assertEqual(sw.state, SessionState.Uninitialized)
+
+    def test_new_session_started_after_post_silient(self):
+        def header_buffer_starter_validation(item: dict) -> bool:
+            return item["class"] == "gastank" and item["confid"] > 0.9
+
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+            gas_tank_count = 0
+            for item in header_buffer:
+                if item["class"] == "gastank" and item["confid"] > 0.9:
+                    gas_tank_count += 1
+            return gas_tank_count / len(header_buffer) > 0.5
+
+        def on_header_buffer_validated(buffer: list[dict], is_header_buffer_valid: bool) -> None:
+            # 进入body_buffering状态
+            self.assertTrue(is_header_buffer_valid)
+
+        def body_buffer_validation(items: list[dict], item: dict) -> bool:
+            return item["class"] == "gastank" and item["confid"] > 0.9
+
+        def on_session_end(session_window: SessionWindow[str], session_items: list[str]) -> None:
+            # self.assertEqual(sw.state, SessionState.SessionEnd)
+            # # session 结束，结束告警
+            pass
+
+        def on_post_session_silent_time_elapsed(items: list[dict]):
+            sw.reset()
+
+        sw: SessionWindow[dict] = SessionWindow(
+            header_buffer_starter_validation, None, BufferType.ByPeriodTime, 2,
+            header_buffer_validation_predict, on_header_buffer_validated, 0,
+            body_buffer_validation, BufferType.ByPeriodTime, 5,
+            on_session_end=on_session_end,
+            post_session_silent_time=5,
+            on_post_session_silent_time_elapsed=on_post_session_silent_time_elapsed)
+
+        sw.add({"class": "gastank", "confid": 0.92})
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
+        sw.add({"class": "gastank", "confid": 0.91})
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
+        sw.add({"class": "gastank", "confid": 0.91})
+        sw.add({"class": "others", "confid": 0.91})
+        sw.add({"class": "others", "confid": 0.91})
+        time.sleep(2.5)
+        self.assertEqual(sw.state, SessionState.BodyBuffering)
+        sw.add({"class": "others", "confid": 0.91})
+        self.assertEqual(sw.state, SessionState.BodyBuffering)
+        time.sleep(1)
+        sw.add({"class": "gastank", "confid": 0.91})
+        self.assertEqual(sw.state, SessionState.BodyBuffering)
+        time.sleep(4)
+        self.assertEqual(sw.state, SessionState.BodyBuffering)
+        time.sleep(2)
+        self.assertEqual(sw.state, SessionState.InPostSilentTime)
+        time.sleep(3)
+        self.assertEqual(sw.state, SessionState.InPostSilentTime)
+        sw.add({"class": "gastank", "confid": 0.91})
+        sw.add({"class": "gastank", "confid": 0.91})
+        # 进入post slient time之前所有图片应该都在list内,去掉一个不满足body buffering条件的item
+        self.assertEqual(len(sw.items), 6)
+        time.sleep(3)
+        self.assertEqual(sw.state, SessionState.Uninitialized)
+
+        # post silent结束，进入新的session
+        self.assertEqual(len(sw.items), 0)
+        sw.add({"class": "gastank", "confid": 0.91})
+        self.assertEqual(len(sw.items), 1)
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
+
+    def test_pre_silent_period(self):
+        # 测试header buffer不满足条件情况下，进入pre silent time
+        def header_buffer_starter_validation(item: dict) -> bool:
+            return item["class"] == "gastank" and item["confid"] > 0.9
+
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+            gas_tank_count = 0
+            for item in header_buffer:
+                if item["class"] == "gastank" and item["confid"] > 0.9:
+                    gas_tank_count += 1
+            return gas_tank_count / len(header_buffer) > 0.5
+
+        sw: SessionWindow[dict] = SessionWindow(
+            header_buffer_starter_validation, None, BufferType.ByPeriodTime, 2,
+            header_buffer_validation_predict, None, 10,
+            None, BufferType.ByPeriodTime, 5)
+
+        sw.add({"class": "gastank", "confid": 0.91})
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
+        sw.add({"class": "gastank", "confid": 0.6})
+        sw.add({"class": "gastank", "confid": 0.7})
+        sw.add({"class": "gastank", "confid": 0.8})
+        sw.add({"class": "gastank", "confid": 0.9})
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
+        time.sleep(2)
+        self.assertEqual(sw.state, SessionState.InPreSilentTime)
+        self.assertEqual(len(sw.items), 5)
+        sw.add({"class": "gastank", "confid": 0.92})
+        self.assertEqual(len(sw.items), 5)
+        time.sleep(10)
+        self.assertEqual(sw.state, SessionState.Uninitialized)
+        sw.add({"class": "gastank", "confid": 0.92})
+        self.assertEqual(len(sw.items), 1)
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
 
 
 if __name__ == '__main__':
