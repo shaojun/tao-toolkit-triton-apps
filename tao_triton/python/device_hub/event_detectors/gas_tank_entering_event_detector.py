@@ -60,7 +60,8 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                 return gas_tank_count / len(header_buffer) > configured_gas_tank_rate
 
         def on_header_buffer_validated(buffer: list[dict], is_header_buffer_valid: bool) -> None:
-            self.logger.debug("board:{},header buffer validated, raise gas tank alarm".format(self.timeline.board_id))
+            self.logger.debug("board:{},header buffer validated result:{}".format(self.timeline.board_id,
+                                                                                  str(is_header_buffer_valid)))
             # 进入body_buffering状态
             if is_header_buffer_valid:
                 infered_class = buffer[-1]["class"]
@@ -71,6 +72,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                                                            event_alarm.EventAlarmPriority.ERROR,
                                                            f"detected gas tank entering elevator with infered_class: {infered_class}, infered_confid: {infered_confid}"))
                 self.timeline.notify_event_alarm(event_alarms)
+                self.logger.debug("board:{}, raise gas tank alarm".format(self.timeline.board_id))
 
         def body_buffer_validation(items: list[dict], item: dict) -> bool:
             gas_tank_confid = util.read_config_fast_to_property(

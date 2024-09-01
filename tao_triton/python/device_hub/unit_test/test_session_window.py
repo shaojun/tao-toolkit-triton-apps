@@ -328,6 +328,37 @@ class TestSessionWindow(unittest.TestCase):
         self.assertEqual(len(sw.items), 1)
         self.assertEqual(sw.state, SessionState.HeaderBuffering)
 
+    def test_no_item_after_header_buffer_valid(self):
+        # session 开启后再也没有item放入，session能否自动结束
+        # 测试header buffer不满足条件情况下，进入pre silent time
+        def header_buffer_starter_validation(item: dict) -> bool:
+            return item["class"] == "gastank" and item["confid"] > 0.9
+
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+            gas_tank_count = 0
+            for item in header_buffer:
+                if item["class"] == "gastank" and item["confid"] > 0.9:
+                    gas_tank_count += 1
+            return gas_tank_count / len(header_buffer) > 0.5
+
+        def body_buffer_validation(items: list[dict], item: dict) -> bool:
+            return item["class"] == "gastank" and item["confid"] > 0.9
+
+        def on_session_end(session_window: SessionWindow[str], session_items: list[str]) -> None:
+            pass
+
+        sw: SessionWindow[dict] = SessionWindow(
+            header_buffer_starter_validation, None, BufferType.ByPeriodTime, 2,
+            header_buffer_validation_predict, None, 10,
+            body_buffer_validation, BufferType.ByPeriodTime, 5, on_session_end=on_session_end)
+
+        sw.add({"class": "gastank", "confid": 0.92})
+        sw.add({"class": "gastank", "confid": 0.92})
+        time.sleep(2)
+        self.assertEqual(sw.state, SessionState.BodyBuffering)
+        time.sleep(5.5)
+        self.assertEqual(sw.state, SessionState.SessionEnd)
+
 
 if __name__ == '__main__':
     unittest.main()

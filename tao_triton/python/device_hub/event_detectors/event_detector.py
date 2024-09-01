@@ -670,7 +670,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
-        self.logger.debug("board:{}, entering stuck detector".format(self.timeline.board_id))
+        # self.logger.debug("board:{}, entering stuck detector".format(self.timeline.board_id))
 
         # "Person|#"
         # return EventAlarm(EventAlarmPriority.Error, "detected PeopleStuckEvent")
@@ -702,7 +702,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
         '''
 
         if self.timeline.door_state_session["door_state"] != "closed":
-            self.logger.debug("board:{}, skip stuck detect door is open".format(self.timeline.board_id))
+            # self.logger.debug("board:{}, skip stuck detect door is open".format(self.timeline.board_id))
             return None
 
         kunren_sj_item = [i for i in self.timeline.configures if i["code"] == "krsj"]
@@ -720,7 +720,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
 
         # 电梯内没人
         if not self.timeline.person_session["person_in"] or self.timeline.person_session["session_start_at"] == None:
-            self.logger.debug("board:{}, skip stuck detect person session closed".format(self.timeline.board_id))
+            # self.logger.debug("board:{}, skip stuck detect person session closed".format(self.timeline.board_id))
             return None
 
         # 人在电梯内的时间小于配置的困人时间
@@ -755,7 +755,7 @@ class PeopleStuckEventDetector(EventDetectorBase):
 
         if new_state_obj:
             self.last_report_close_time = None
-            self.logger.debug("board:{},person session start at:{}".format(self.timeline.board_id,
+            self.logger.debug("board:{},raise alarm person session start at:{}".format(self.timeline.board_id,
                                                                            self.timeline.person_session[
                                                                                "session_start_at"].strftime(
                                                                                "%d/%m/%Y %H:%M:%S")))
