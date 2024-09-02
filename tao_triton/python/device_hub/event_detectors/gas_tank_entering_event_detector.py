@@ -57,7 +57,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             for item in header_buffer:
                 if item["class"] == "gastank" and item["confid"] > gas_tank_confid:
                     gas_tank_count += 1
-                return gas_tank_count / len(header_buffer) > configured_gas_tank_rate
+            return gas_tank_count / len(header_buffer) > configured_gas_tank_rate
 
         def on_header_buffer_validated(buffer: list[dict], is_header_buffer_valid: bool) -> None:
             self.logger.debug("board:{},header buffer validated result:{}".format(self.timeline.board_id,
