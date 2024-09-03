@@ -135,12 +135,13 @@ class BoardTimeline:
             #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
             self.logger.debug("board: {}, sending mqtt request with msg_id: '{}', action_type: '{}' to board".format(
                 self.board_id, msg_id, action_type))
-            request = {"id": msg_id,
-                       "sender": "devicehub",
-                       "timestamp": f"{datetime.datetime.now().isoformat()}",
-                       "description": description,
-                       "type": action_type,
-                       "body": action_data}
+            inner_request = {"id": msg_id,
+                             "sender": "devicehub",
+                             "timestamp": f"{datetime.datetime.now().isoformat()}",
+                             "description": description,
+                             "type": action_type,
+                             "body": action_data}
+            request = {"request": inner_request}
             publish_result = self.mqtt_client.publish(
                 self.mqtt_board_inbox_topic, json.dumps(request), qos=1)
             status = publish_result[0]
