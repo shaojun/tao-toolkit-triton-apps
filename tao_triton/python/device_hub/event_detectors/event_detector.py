@@ -323,7 +323,6 @@ class DoorStateChangedEventDetector(EventDetectorBase):
         return None
 
 
-
 #
 # 遮挡门告警	判断电梯发生遮挡门事件 1.电梯内有人 2.门处于打开状态 3.电梯静止
 # 将长时间开门告警结合在此处，如果没人，门打开超过一定时间则报长时间开门
@@ -756,9 +755,9 @@ class PeopleStuckEventDetector(EventDetectorBase):
         if new_state_obj:
             self.last_report_close_time = None
             self.logger.debug("board:{},raise alarm person session start at:{}".format(self.timeline.board_id,
-                                                                           self.timeline.person_session[
-                                                                               "session_start_at"].strftime(
-                                                                               "%d/%m/%Y %H:%M:%S")))
+                                                                                       self.timeline.person_session[
+                                                                                           "session_start_at"].strftime(
+                                                                                           "%d/%m/%Y %H:%M:%S")))
             # store it back, and it will be passed in at next call
             self.state_obj["last_notify_timestamp"] = new_state_obj["last_report_timestamp"];
             return [
@@ -1501,8 +1500,8 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
         """
         self.timeline = timeline
         # 最近一次电梯静止时间
-        self.state_obj = {"latest_jingzhi_time_stamp": datetime.datetime.now()}
-        self.state_obj = {"latest_yunxing_time_stamp": datetime.datetime.now()}
+        self.state_obj = {"last_notify_timestamp": None, "latest_person_in": datetime.datetime.now()}
+
         for det in event_detectors:
             if det.__class__.__name__ == DoorStateChangedEventDetector.__name__:
                 det.subscribe_on_property_changed(self)
@@ -1544,21 +1543,11 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
         @param filtered_timeline_items: List[TimelineItem]
         @return: List[EventAlarm]
         """
-        speed_timeline_item = [i for i in filtered_timeline_items if
-                               i.item_type == board_timeline.TimelineItemType.SENSOR_READ_SPEED]
-        if len(speed_timeline_item) > 3 and abs(speed_timeline_item[-1].raw_data["speed"]) > 0.3 and abs(
-                speed_timeline_item[-2].raw_data["speed"]) > 0.3 and \
-                abs(speed_timeline_item[-3].raw_data["speed"]) > 0.3:
-            self.state_obj["latest_yunxing_time_stamp"] = datetime.datetime.now()
+        # 更新最近一次有人的时间
+        if self.timeline.person_session["person_in"]:
+            self.state_obj["latest_person_in"] = datetime.datetime.now()
 
-        # 如果连续三次的速度都近似静止，则认为电梯静止
-        if len(speed_timeline_item) > 3 and abs(speed_timeline_item[-1].raw_data["speed"]) < 0.3 and abs(
-                speed_timeline_item[-2].raw_data["speed"]) < 0.3 and \
-                abs(speed_timeline_item[-3].raw_data["speed"]) < 0.3:
-            self.state_obj["latest_jingzhi_time_stamp"] = datetime.datetime.now()
-
-        last_state_object = None if not (self.state_obj and "last_notify_timestamp" in self.state_obj) \
-            else self.state_obj["last_notify_timestamp"]
+        last_state_object = self.state_obj["last_notify_timestamp"]
 
         if last_state_object and self.canCloseAlarm():
             self.state_obj["last_notify_timestamp"] = None
@@ -1570,15 +1559,27 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
         if last_state_object:
             return None
 
-        door_state_object = None if not (self.state_obj and "door_state" in self.state_obj) \
-            else self.state_obj["door_state"]
-        if (not door_state_object) or door_state_object["new_state"] == "OPEN":
+        # 电梯静止
+        if self.timeline.lift_running_state_session["is_running"] == False:
             return None
-        door_close_time_diff = (datetime.datetime.now(
-        ) - door_state_object["notify_time"]).total_seconds()
-        # 如果门处于关闭状态小于5分钟那么对于电梯要完成无人反复上下可能性不大
-        if door_close_time_diff < 300:
+
+        # 电梯运行不足15分钟
+        if self.timeline.lift_running_state_session["is_running"] == True and (
+                datetime.datetime.now(datetime.timezone.utc) - self.timeline.lift_running_state_session[
+            "session_start_at"]).total_seconds() < 15 * 60:
             return None
+
+        if self.timeline.door_state_session["door_state"] != "closed":
+            return None
+
+        # 如果门关上还未超出15分钟
+        if self.timeline.door_state_session["door_state"] == "closed" and (
+                datetime.datetime.now(datetime.timezone.utc) - self.timeline.door_state_session[
+            "session_start_at"]).total_seconds() < 15 * 60:
+            return None
+
+        running_time = (datetime.datetime.now(datetime.timezone.utc) - self.timeline.lift_running_state_session[
+            "session_start_at"]).total_seconds()
         '''
         if last_state_object:
             last_report_time_diff = (
@@ -1586,30 +1587,25 @@ class ElevatorMovingWithoutPeopleInEventDetector(EventDetectorBase):
             if last_report_time_diff < 120:
                 return None
         '''
-        person_timeline_item = [i for i in filtered_timeline_items if i.item_type ==
-                                board_timeline.TimelineItemType.OBJECT_DETECT and "Person|#" in i.raw_data]
-        if len(person_timeline_item) > 0:
-            latest_person_object = person_timeline_item[-1]
-            latest_detect_person_time_diff = (datetime.datetime.now(datetime.timezone.utc) -
-                                              latest_person_object.original_timestamp).total_seconds()
-            if latest_detect_person_time_diff < 600:
-                return None
 
-        if (datetime.datetime.now() - self.state_obj["latest_jingzhi_time_stamp"]).total_seconds() > 900:
-            if not self.state_obj:
-                self.state_obj = {}
-            self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
-            return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
-                datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                           event_alarm.EventAlarmPriority.WARNING,
-                                           "电梯无人，高频运行{}秒".format((datetime.datetime.now() - self.state_obj[
-                                               "latest_jingzhi_time_stamp"]).total_seconds()), "0019")]
+        # 电梯内有人
+        if self.timeline.person_session["person_in"]:
+            return None
+        # 电梯里的人离开不足15分钟
+        if (datetime.datetime.now() - self.state_obj["latest_person_in"]).total_seconds() < 15 * 60:
+            return None
 
-        return None
+        self.state_obj["last_notify_timestamp"] = datetime.datetime.now()
+        return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+            datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                       event_alarm.EventAlarmPriority.WARNING,
+                                       "电梯无人，高频运行{}秒".format(running_time, "0019"))]
 
     # 30s内电梯不运行
     def canCloseAlarm(self):
-        if (datetime.datetime.now() - self.state_obj["latest_yunxing_time_stamp"]).total_seconds() > 30:
+        if self.timeline.lift_running_state_session["is_running"] == False and (
+                datetime.datetime.now(datetime.timezone.utc) - self.timeline.lift_running_state_session[
+            "session_start_at"]).total_seconds() > 30:
             return True
         return False
 
@@ -1987,8 +1983,9 @@ class ElevatorRunningStateEventDetector(EventDetectorBase):
             sensor_detect_person_in_lift = False
             if len(sensor_detect_person_items) > 0:
                 sensor_detect_person = sensor_detect_person_items[-1].raw_data["detectPerson"]
-                sensor_detect_person_in_lift = str(False) if "detectPersonInLift" not in sensor_detect_person_items[-1].raw_data else \
-                sensor_detect_person_items[-1].raw_data["detectPersonInLift"]
+                sensor_detect_person_in_lift = str(False) if "detectPersonInLift" not in sensor_detect_person_items[
+                    -1].raw_data else \
+                    sensor_detect_person_items[-1].raw_data["detectPersonInLift"]
             hasPerson = "Y" if len(person_timeline_items) > 0 else "N"
             person_count = 0
             if len(person_timeline_items) > 0:
