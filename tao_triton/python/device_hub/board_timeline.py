@@ -8,7 +8,7 @@ from typing import Any, Callable, List, Literal
 
 from kafka import KafkaProducer
 import paho.mqtt.client as paho_mqtt_client
-from tao_triton.python.device_hub.event_session.manager import ElectricBicycleInElevatorSession
+# from tao_triton.python.device_hub.event_session.manager import ElectricBicycleInElevatorSession
 
 
 class TimelineItemType(int, Enum):
@@ -77,7 +77,7 @@ class BoardTimeline:
         self.configures = []
         self.producer = producer
         self.mqtt_client = mqtt_client
-        self.ebik_session = ElectricBicycleInElevatorSession(logging, self)
+        # self.ebik_session = ElectricBicycleInElevatorSession(logging, self)
 
         self.person_session = {"person_in": False, "session_start_at": None, "latest_person_item_time": None,
                                "person_count": 0}
@@ -117,6 +117,7 @@ class BoardTimeline:
                                          action_type: Literal['enable_block_door', 'disable_block_door'],
                                          action_data: dict = None,
                                          description: str = None) -> bool:
+        return
         try:
             config_item = [
                 i for i in self.configures if i["code"] == "kqzt"]
@@ -136,12 +137,12 @@ class BoardTimeline:
             self.logger.debug("board: {}, sending mqtt request with msg_id: '{}', action_type: '{}' to board".format(
                 self.board_id, msg_id, action_type))
             inner_request = {"id": msg_id,
-                             "sender": "devicehub",
-                             "timestamp": f"{datetime.datetime.now().isoformat()}",
-                             "description": description,
-                             "type": action_type,
-                             "body": action_data}
-            request = {"request": inner_request}
+                       "sender": "devicehub",
+                       "timestamp": f"{datetime.datetime.now().isoformat()}",
+                       "description": description,
+                       "type": action_type,
+                       "body": action_data}
+            request = {"request":inner_request}
             publish_result = self.mqtt_client.publish(
                 self.mqtt_board_inbox_topic, json.dumps(request), qos=1)
             status = publish_result[0]
@@ -177,7 +178,7 @@ class BoardTimeline:
         #    return
 
         # ebik session
-        self.ebik_session.feed(items)
+        # self.ebik_session.feed(items)
         event_alarms = []
         for d in self.event_detectors:
             t0 = time.time()

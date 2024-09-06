@@ -28,7 +28,7 @@ class BufferType(Enum):
 class SessionWindow(Generic[T]):
     def __init__(self,
                  header_buffer_starter_predict:  Callable[[T], bool],
-                 on_header_buffering: callable[[list[T]], None],
+                 on_header_buffering: callable[[T], None],
                  header_buffer_type: BufferType,
                  header_buffer_end_condition: int,
                  header_buffer_validation_predict: Callable[[list[T]], bool],
@@ -47,7 +47,7 @@ class SessionWindow(Generic[T]):
                  ):
         """
         @param header_buffer_starter_predict: a function to predict if the item is the starter of a header buffer
-        @param on_header_buffering: a function will be called each header item added to buffer
+        @param on_header_buffering: a function will be called when session changed to head_buffering
         @param header_buffer_type: the type of header buffer, by item count or by fixed time
         @param header_buffer_condition: the condition to trigger header buffer validation
         @param header_buffer_validation_predict: a function to validate the header buffer
@@ -122,7 +122,8 @@ class SessionWindow(Generic[T]):
         if self.state == SessionState.Uninitialized:
             if self.header_buffer_starter_predict(item):
                 self.state = SessionState.HeaderBuffering
-
+                if self.on_header_buffering:
+                    self.on_header_buffering(item)
                 def header_buffer_condition_fullfilled():
                     self.header_buffer_condition_timer.cancel()
                     if self.header_buffer_validation_predict(self.items):
@@ -157,8 +158,6 @@ class SessionWindow(Generic[T]):
 
         if self.state == SessionState.HeaderBuffering:
             self.items.append(item)
-            if self.on_header_buffering:
-                self.on_header_buffering(self.items)
             if self.header_buffer_type == BufferType.ByItemCount:
                 if len(self.items) == self.header_buffer_condition:
                     if self.header_buffer_validation_predict(self.items):
