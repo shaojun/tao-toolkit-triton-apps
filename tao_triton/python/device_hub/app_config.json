@@ -4,7 +4,7 @@
     },
     "detectors": {
         "ElectricBicycleEnteringEventDetector": {
-            "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH": "ebic_image_samples",
+            "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH": "/media/glf/external_disk/device_hub_assets/ebic_image_samples",
             "EnableSendConfirmedToLocalWhenFirstImageReceived": true,
             "ebic_confid": 0.82,
             "eb_rate_treat_eb_entering": 0.5,

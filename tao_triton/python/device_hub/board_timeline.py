@@ -117,7 +117,6 @@ class BoardTimeline:
                                          action_type: Literal['enable_block_door', 'disable_block_door'],
                                          action_data: dict = None,
                                          description: str = None) -> bool:
-        return
         try:
             config_item = [
                 i for i in self.configures if i["code"] == "kqzt"]
@@ -142,7 +141,7 @@ class BoardTimeline:
                        "description": description,
                        "type": action_type,
                        "body": action_data}
-            request = {"request":inner_request}
+            request = {"request": inner_request}
             publish_result = self.mqtt_client.publish(
                 self.mqtt_board_inbox_topic, json.dumps(request), qos=1)
             status = publish_result[0]

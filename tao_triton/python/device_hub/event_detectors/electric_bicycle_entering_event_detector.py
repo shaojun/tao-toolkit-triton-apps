@@ -39,7 +39,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
     # the lib triton_client used for infer to remote triton server is based on a local image file, after the infer done, the file will be cleared.
     # this is the temp folder to store that temp image file
-    temp_image_files_folder_name = "temp_infer_image_files"
+    temp_image_files_folder_name = util.read_config_fast_to_property(
+        ["detectors", "ElectricBicycleEnteringEventDetector"],'SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH')
     infer_server_ip_and_port = "192.168.66.161:8000"
 
     session: list[str] = None
@@ -110,7 +111,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 ["detectors", "ElectricBicycleEnteringEventDetector"],
                 "eb_rate_treat_eb_entering"
             )
-            if len(header_buffer) < 2:
+            if len(header_buffer) < 3:
                 eb_rate = 0
             self.logger.debug("board:{}, header_buffer_validation_predict rate{},configured rate:{},length:{}".format(
                 self.timeline.board_id, eb_rate, configured_eb_rate,
@@ -120,13 +121,14 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         def on_header_buffer_validated(header_buffer: list[dict], is_header_buffer_valid: bool):
             # send block door msg to edge board, ebike entring if is_header_buffer_valid is true
             # send cancel block door msg if is_header_buffer_valid is false
+            self.logger.debug("board:{} on_header_buffer_validated".format(self.timeline.board_id))
             if is_header_buffer_valid:
                 alarms = []
                 alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                                      event_alarm.EventAlarmPriority.ERROR,
                                                      "detected electric-bicycle entering elevator", "007", {}, ""))
-                self.timeline.send_alarms_to_web(alarms)
+                self.timeline.notify_event_alarm(alarms)
 
                 self.logger.debug("board:{} raise alarm: head buffer valid".format(self.timeline.board_id))
             else:
