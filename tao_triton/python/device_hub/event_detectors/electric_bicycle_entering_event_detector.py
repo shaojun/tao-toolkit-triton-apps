@@ -30,7 +30,8 @@ import threading
 
 
 class ElectricBicycleEnteringEventDetector(EventDetectorBase):
-    SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = "ebic_image_samples"
+    SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = util.read_config_fast_to_property(
+        ["detectors", "ElectricBicycleEnteringEventDetector"],'SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH')
     # remove
     # avoid a single spike eb event mis-trigger alarm, set to 1 for disable the feature
     THROTTLE_Window_Depth = 2
@@ -39,8 +40,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
     # the lib triton_client used for infer to remote triton server is based on a local image file, after the infer done, the file will be cleared.
     # this is the temp folder to store that temp image file
-    temp_image_files_folder_name = util.read_config_fast_to_property(
-        ["detectors", "ElectricBicycleEnteringEventDetector"],'SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH')
+    temp_image_files_folder_name = "temp_infer_image_files"
     infer_server_ip_and_port = "192.168.66.161:8000"
 
     session: list[str] = None
@@ -92,10 +92,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         def on_header_buffering(item: dict):
             # send block door msg to edge for the first image
             self.alarms = []
-            if (abs(item["storey"] == 1)):
-                self.timeline.send_mqtt_message_to_board_inbox(
-                    str(uuid.uuid4()), 'enable_block_door', description="enable block door as suspected ebike entering")
-                self.logger.debug("board:{} head buffer started, current storey is:{}".format(self.timeline.board_id,
+            # if (abs(item["storey"] == 1)):
+            self.timeline.send_mqtt_message_to_board_inbox(
+                str(uuid.uuid4()), 'enable_block_door', description="enable block door as suspected ebike entering")
+            self.logger.debug("board:{} head buffer started, current storey is:{}".format(self.timeline.board_id,
                                                                                               abs(item["storey"])))
 
         def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
