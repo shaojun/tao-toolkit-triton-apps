@@ -295,15 +295,18 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 infer_start_time = time.time()
                 if is_qua_board:
                     infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
-                            cropped_base64_image_file_text)
+                        cropped_base64_image_file_text)
                     try:
                         temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
                                                                          str(uuid.uuid4()) + '.jpg')
                         temp_image = Image.open(io.BytesIO(base64.decodebytes(
                             cropped_base64_image_file_text.encode('ascii'))))
                         temp_image.save(temp_cropped_image_file_full_name)
-                        self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
-                                               infered_class, infer_server_current_ebic_confid, "qua_")
+                        self.save_sample_image(temp_cropped_image_file_full_name, 
+                                               item.original_timestamp,
+                                               infered_class, infer_server_current_ebic_confid,
+                                               None,
+                                               "qua_")
                     finally:
                         if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
                             os.unlink(temp_cropped_image_file_full_name)
@@ -323,7 +326,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.sw.add({"class": infered_class, "confid": infer_server_current_ebic_confid,
                              "storey": self.current_storey})
         except Exception as e:
-            self.logger.exception(f"exception in detect(...): {e}")
+            self.logger.exception(
+                f"board: {self.timeline.board_id}, exception in detect(...): {e}")
 
     # 保存图片
     def save_sample_image(self, image_file_full_name,
