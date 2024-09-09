@@ -259,8 +259,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         '''
 
         eb_entering_event_alarms = []
-        object_filtered_timeline_items = [i for i in filtered_timeline_items if
-                                          i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT]
+        object_filtered_timeline_items: list[board_timeline.TimelineItem] = \
+            [i for i in filtered_timeline_items if i.item_type ==
+                board_timeline.TimelineItemType.OBJECT_DETECT]
         story_filtered_timeline_items = [i for i in filtered_timeline_items if
                                          i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE]
 
@@ -302,7 +303,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         temp_image = Image.open(io.BytesIO(base64.decodebytes(
                             cropped_base64_image_file_text.encode('ascii'))))
                         temp_image.save(temp_cropped_image_file_full_name)
-                        self.save_sample_image(temp_cropped_image_file_full_name, 
+                        self.save_sample_image(temp_cropped_image_file_full_name,
                                                item.original_timestamp,
                                                infered_class, infer_server_current_ebic_confid,
                                                None,
@@ -322,7 +323,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     self.logger.info(
                         f"board: {self.timeline.board_id}, infer used long time: {infer_used_time_by_ms}ms")
                 self.logger.debug(
-                    f"board: {self.timeline.board_id}, adding sw item-> infered_class: {infered_class}, infered_confid: {infer_server_current_ebic_confid}, edge_board_confidence: {edge_board_confidence}, current_storey: {self.current_storey}")
+                    (f"board: {self.timeline.board_id}, adding sw item-> "
+                     f"infered_class: {infered_class}, infered_confid: {infer_server_current_ebic_confid}, "
+                     f"edge_board_confidence: {edge_board_confidence}, current_storey: {self.current_storey}, "
+                     f"board_original_timestamp_str: {item.original_timestamp_str}"))
                 self.sw.add({"class": infered_class, "confid": infer_server_current_ebic_confid,
                              "storey": self.current_storey})
         except Exception as e:
