@@ -11,6 +11,8 @@ from typing import List
 
 import requests
 
+from tao_triton.python.device_hub.event_detectors.event_detector_base import EventDetectorBase
+
 # from tao_triton.python.device_hub.event_detectors.gas_tank_entering_event_detector import GasTankEnteringEventDetector
 
 
@@ -32,7 +34,7 @@ class EventAlarm:
 
         @type event_detector: EventDetectorBase
         """
-        self.event_detector = event_detector
+        self.event_detector: EventDetectorBase = event_detector
         self.priority = priority
         self.description = description
         # the alarm may be triggered at remote(board) side, this timestamp is from remote(board)
@@ -75,7 +77,8 @@ class EventAlarmWebServiceNotifier:
     # URL = "http://49.235.35.248:8028/warning"
     # URL_UPDATE = "http://49.235.35.248:8028/yunwei/warning/updatewarningmessagestatus"
     # URL_Gather = "http://49.235.35.248:8028/api/apiduijie/postliftsGathering"
-    HEADERS = {'Content-type': 'application/json', 'Accept': 'application/json'}
+    HEADERS = {'Content-type': 'application/json',
+               'Accept': 'application/json'}
 
     def __init__(self, logging):
         self.logger = logging.getLogger("eventAlarmWebServiceNotifierLogger")
@@ -96,13 +99,13 @@ class EventAlarmWebServiceNotifier:
 
     def processAlarms(self):
         while True:
-            targert_alarms = None
+            targert_alarms: EventAlarm = None
             if self.alarms and len(self.alarms) > 0:
                 targert_alarms = self.alarms.pop(0)
             if not targert_alarms:
                 time.sleep(1)
             elif targert_alarms.code == "general_data":
-                temp_data = targert_alarms
+                temp_data: EventAlarm = targert_alarms
                 try:
                     self.logger.info("board: {}, upload gerneral data from {}".format(
                         temp_data.event_detector.timeline.board_id,
@@ -212,9 +215,9 @@ class EventAlarmWebServiceNotifier:
                     perf_time_used_by_ms = (t1 - t0) * 1000
                     if perf_time_used_by_ms >= 1000:
                         self.logger.info("board: {}, Notify alarm from {} to web take too much time: {}ms".format(
-                                target_alarm.event_detector.timeline.board_id,
-                                target_alarm.event_detector.__class__.__name__,
-                                perf_time_used_by_ms))
+                            target_alarm.event_detector.timeline.board_id,
+                            target_alarm.event_detector.__class__.__name__,
+                            perf_time_used_by_ms))
                     if post_response.status_code != 200:
                         self.logger.error(
                             "board: {}, Notify alarm from {} got error: {}".format(
