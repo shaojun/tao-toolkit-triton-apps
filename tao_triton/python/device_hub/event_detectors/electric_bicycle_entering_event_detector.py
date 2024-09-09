@@ -12,7 +12,8 @@ from kafka import KafkaProducer
 from PIL import Image
 import base64
 import io
-from tao_triton.python.device_hub import board_timeline, event_alarm
+import event_alarm
+import board_timeline
 from tao_triton.python.device_hub import util
 from tao_triton.python.device_hub.utility.infer_image_from_model import Inferencer
 from tao_triton.python.device_hub.utility.session_window import *
