@@ -35,7 +35,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         # self.logger = logging.getLogger(__name__)
         self.logger = logging.getLogger("gasTankEnteringEventDetectorLogger")
         self.statistics_logger = logging.getLogger("statisticsLogger")
-        self.inferencer = Inferencer(self.logger)
+        self.inferencer = Inferencer(self.statistics_logger)
         self.need_close_alarm = False
         self.silent_period_duration = util.read_config_fast_to_property(
             ["detectors", "GasTankEnteringEventDetector"], 'silent_period_duration')

@@ -1,4 +1,5 @@
 import datetime
+from logging import Logger
 import os
 import queue
 import re
@@ -11,9 +12,9 @@ from kafka import KafkaProducer
 from PIL import Image
 import base64
 import io
-import event_alarm
-import board_timeline
+from tao_triton.python.device_hub import board_timeline, event_alarm
 from tao_triton.python.device_hub import util
+from tao_triton.python.device_hub.utility.infer_image_from_model import Inferencer
 from tao_triton.python.device_hub.utility.session_window import *
 from tao_triton.python.entrypoints import tao_client
 from json import dumps
@@ -30,31 +31,27 @@ import threading
 
 
 class ElectricBicycleEnteringEventDetector(EventDetectorBase):
-    SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = util.read_config_fast_to_property(
-        ["detectors", "ElectricBicycleEnteringEventDetector"],'SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH')
-    # remove
-    # avoid a single spike eb event mis-trigger alarm, set to 1 for disable the feature
-    THROTTLE_Window_Depth = 2
-    THROTTLE_Window_Time_By_Sec = 5
-    # remove
+    SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = "ebic_image_samples"
 
     # the lib triton_client used for infer to remote triton server is based on a local image file, after the infer done, the file will be cleared.
     # this is the temp folder to store that temp image file
     temp_image_files_folder_name = "temp_infer_image_files"
-    infer_server_ip_and_port = "192.168.66.161:8000"
-
-    session: list[str] = None
-
-    block_door_message = "Vehicle|#|TwoWheeler|TwoWheeler|confirmed"
-    cancel_block_door_message = "|TwoWheeler|confirmedExit"
 
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
-        # self.logger = logging.getLogger(__name__)
-        self.logger = logging.getLogger(
+        self.logger: Logger = logging.getLogger(
             "electricBicycleEnteringEventDetectorLogger")
         self.statistics_logger = logging.getLogger("statisticsLogger")
 
+        self.electric_bicycle_detector_name = "ElectricBicycleEnteringEventDetector"
+        self.infer_server_ip_and_port = "192.168.66.149:8000"
+        if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
+            self.infer_server_ip_and_port = "36.153.41.18:18000"
+        if util.read_config_fast_to_property(["detectors", self.electric_bicycle_detector_name], "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH") is not None:
+            ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = util.read_config_fast_to_property(
+                ["detectors", self.electric_bicycle_detector_name], "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH")
+
+        self.inferencer = Inferencer(self.statistics_logger)
         self.infer_from_model_worker_queue = queue.Queue()
 
         def worker():
@@ -62,7 +59,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 try:
                     object_detection_timeline_item = self.infer_from_model_worker_queue.get()
                     # is_qua_board = object_detection_timeline_item.version == "4.1qua"
-                    packed_infer_result = self.inference_image_from_qua_models(
+                    packed_infer_result = self.inferencer.inference_image_from_qua_models(
                         object_detection_timeline_item)
                     if packed_infer_result == None:
                         continue
@@ -89,79 +86,92 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             ["detectors", "ElectricBicycleEnteringEventDetector"],
             'post_session_silent_time')
 
-        def on_header_buffering(item: dict):
-            # send block door msg to edge for the first image
+        def on_session_state_changed_to_header_buffering(item: dict):
+            self.logger.info((f"board: {self.timeline.board_id}, treat as suspicious ebike entering "
+                             f"""and head buffer started, will enable pre block door, current storey is: {item["storey"]}"""))
             self.alarms = []
-            # if (abs(item["storey"] == 1)):
+            # send block door msg to edge for the first image
             self.timeline.send_mqtt_message_to_board_inbox(
-                str(uuid.uuid4()), 'enable_block_door', description="enable block door as suspected ebike entering")
-            self.logger.debug("board:{} head buffer started, current storey is:{}".format(self.timeline.board_id,
-                                                                                              abs(item["storey"])))
+                str(uuid.uuid4()), 'enable_block_door', description="suspicious ebike entering")
 
         def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
             # call back function validate the eb entering
             eb_count = 0
             eb_confid = util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
                                                           'ebic_confid')
+            # self.logger.debug(
+            #     f"board: {self.timeline.board_id}, header_buffer_validation_predict, header length: {len(header_buffer)}")
+            items_log_str = "\r\n".join(
+                [f"""class: {item["class"]}, confid: {item["confid"]}""" for item in header_buffer])
+            self.logger.debug(
+                f"board: {self.timeline.board_id}, header_buffer_validation_predict on facts:\r\n{items_log_str}")
             for item in header_buffer:
+                # self.logger.debug(
+                #     f"""board: {self.timeline.board_id}, header_buffer items-> class: {item["class"]}, confid: {item["confid"]}""")
                 if item["class"] == "electric_bicycle" and item["confid"] > eb_confid:
                     eb_count += 1
+            if len(header_buffer) < 3:
+                self.logger.debug(
+                    f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
+                return False
             eb_rate = eb_count / len(header_buffer)
             configured_eb_rate = util.read_config_fast_to_property(
                 ["detectors", "ElectricBicycleEnteringEventDetector"],
                 "eb_rate_treat_eb_entering"
             )
-            if len(header_buffer) < 3:
-                eb_rate = 0
-            self.logger.debug("board:{}, header_buffer_validation_predict rate{},configured rate:{},length:{}".format(
-                self.timeline.board_id, eb_rate, configured_eb_rate,
-                len(header_buffer)))
-            return eb_rate > configured_eb_rate
+
+            predict_result = eb_rate >= configured_eb_rate
+            if predict_result:
+                self.logger.info(
+                    f"board: {self.timeline.board_id}, header_buffer_validation_predict with True as eb_rate: {eb_rate} >= configured_eb_rate: {configured_eb_rate}")
+            else:
+                self.logger.debug(
+                    f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as eb_rate: {eb_rate} < configured_eb_rate: {configured_eb_rate}")
+            return predict_result
 
         def on_header_buffer_validated(header_buffer: list[dict], is_header_buffer_valid: bool):
             # send block door msg to edge board, ebike entring if is_header_buffer_valid is true
             # send cancel block door msg if is_header_buffer_valid is false
-            self.logger.debug("board:{} on_header_buffer_validated".format(self.timeline.board_id))
             if is_header_buffer_valid:
+                self.logger.info(
+                    f"board: {self.timeline.board_id}, ebike entering confirmed as header buffer validated with True, will raise alarm")
                 alarms = []
                 alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                                     event_alarm.EventAlarmPriority.ERROR,
-                                                     "detected electric-bicycle entering elevator", "007", {}, ""))
+                    event_alarm.EventAlarmPriority.ERROR,
+                    "detected electric-bicycle entering elevator", "007", {}, ""))
                 self.timeline.notify_event_alarm(alarms)
-
-                self.logger.debug("board:{} raise alarm: head buffer valid".format(self.timeline.board_id))
             else:
+                self.logger.debug(
+                    f"board: {self.timeline.board_id}, ebike entering condition is not met as header buffer validated with False, will cancel pre block door")
                 self.timeline.send_mqtt_message_to_board_inbox(
                     str(uuid.uuid4()), 'disable_block_door',
-                    description="enable block door as suspected ebike entering")
-                # self.sendMessageToKafka(self.cancel_block_door_message)
-                self.logger.debug(
-                    "board:{} cancel the pre block door: head buffer invalid".format(self.timeline.board_id))
+                    description="ebike entering condition is not met")
 
         def on_session_end(session_window: SessionWindow[dict], session_items: list[dict]):
-            # self.session = session_items
             # session end means the ebike is out, close the alarm and send cancel block door to local
+            self.logger.info(
+                "board: {}, will close alarm as session window end".format(self.timeline.board_id))
             alarms = []
             alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                                 event_alarm.EventAlarmPriority.CLOSE,
-                                                 "close the EBike alarm", "007"))
+                event_alarm.EventAlarmPriority.CLOSE,
+                "close the EBike alarm", "007"))
             self.timeline.notify_event_alarm(alarms)
             self.timeline.send_mqtt_message_to_board_inbox(
-                str(uuid.uuid4()), 'disable_block_door', description="enable block door as suspected ebike entering")
+                str(uuid.uuid4()), 'disable_block_door', description="ebike session end")
             # self.sendMessageToKafka(self.cancel_block_door_message)
-            self.logger.debug("board:{} close alarm: session window end".format(self.timeline.board_id))
 
         def on_post_silent_time_elapsed(session_items: list[dict]):
             # reset the session window to uninitialized state and clear the list
+            self.logger.debug(
+                f"board: {self.timeline.board_id}, will reset the session window as post silent time elapsed")
             # 告警结束后的静默结束
             self.sw.reset()
-            self.logger.debug("board:{} reset session window: post silent time elapsed".format(self.timeline.board_id))
 
         self.sw: SessionWindow[dict] = SessionWindow(
             lambda x: True,
-            on_header_buffering,
+            on_session_state_changed_to_header_buffering,
             BufferType.ByPeriodTime,
             util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
                                               "header_buffer_end_condition"),
@@ -179,9 +189,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             post_session_silent_time=post_session_silent_time,
             on_post_session_silent_time_elapsed=on_post_silent_time_elapsed
         )
-
-        if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
-            self.infer_server_ip_and_port = "36.153.41.18:18000"
 
         # purge previous temp files
         if os.path.exists(self.temp_image_files_folder_name):
@@ -262,7 +269,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
         if abs(self.current_storey) != 1 or len(object_filtered_timeline_items) == 0:
             if abs(self.current_storey) != 1 and len(object_filtered_timeline_items) > 0:
-                self.logger.debug("board:{} sink the image due to current storey is :{}".format(
+                self.logger.debug("board: {}, edge board is uploading ebic images, but sink it due to current storey is: {}".format(
                     self.timeline.board_id, self.current_storey
                 ))
                 for item in object_filtered_timeline_items:
@@ -273,32 +280,65 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             for item in object_filtered_timeline_items:
                 item.consumed = True
                 if self.sw.state == SessionState.InPreSilentTime or self.sw.state == SessionState.InPostSilentTime:
-                    self.logger.debug("board:{} sink the image due to the session window state is:{}".format(
+                    self.logger.debug("board: {}, edge board is uploading ebic images, but sink it due to the session window state is: {}".format(
                         self.timeline.board_id,
                         str(self.sw.state)
                     ))
                     continue
                 is_qua_board = item.version == "4.1qua"
+
+                sections = item.raw_data.split('|')
+                edge_board_confidence = sections[len(sections) - 1]
+                cropped_base64_image_file_text = sections[len(
+                    sections) - 2][len("base64_image_data:"):]
+
+                infer_start_time = time.time()
                 if is_qua_board:
-                    self.infer_from_model_worker_queue.put(item)
+                    infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
+                            cropped_base64_image_file_text)
+                    try:
+                        temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
+                                                                         str(uuid.uuid4()) + '.jpg')
+                        temp_image = Image.open(io.BytesIO(base64.decodebytes(
+                            cropped_base64_image_file_text.encode('ascii'))))
+                        temp_image.save(temp_cropped_image_file_full_name)
+                        self.save_sample_image(temp_cropped_image_file_full_name, item.original_timestamp,
+                                               infered_class, infer_server_current_ebic_confid, "qua_")
+                    finally:
+                        if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
+                            os.unlink(temp_cropped_image_file_full_name)
                 else:
-                    packed_infer_result = self.inference_image_from_models(item, self.current_storey)
+                    packed_infer_result = self.inference_image_from_models(
+                        item, self.current_storey)
                     if packed_infer_result == None:
                         continue
                     infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
-                    self.sw.add({"class": infered_class, "confid": infer_server_current_ebic_confid,
-                                 "storey": self.current_storey})
+                infer_used_time_by_ms = (time.time() - infer_start_time) * 1000
+                if (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True and infer_used_time_by_ms >= 600) \
+                        or (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == False and infer_used_time_by_ms >= 120):
+                    self.logger.info(
+                        f"board: {self.timeline.board_id}, infer used long time: {infer_used_time_by_ms}ms")
+                self.logger.debug(
+                    f"board: {self.timeline.board_id}, adding sw item-> infered_class: {infered_class}, infered_confid: {infer_server_current_ebic_confid}, edge_board_confidence: {edge_board_confidence}, current_storey: {self.current_storey}")
+                self.sw.add({"class": infered_class, "confid": infer_server_current_ebic_confid,
+                             "storey": self.current_storey})
         except Exception as e:
-            self.logger.exception("{} | {} | {}".format(
-                self.timeline.board_id, "feed", "exception: {}".format(e)))
+            self.logger.exception(f"exception in detect(...): {e}")
 
-    def save_sample_image(self, image_file_full_name, original_utc_timestamp: datetime, infered_class,
-                          infer_server_ebic_confid, full_base64_image_file_text, dst_file_name_prefix=""):
+    # 保存图片
+    def save_sample_image(self, image_file_full_name,
+                          board_original_utc_timestamp: datetime,
+                          infered_class, infer_server_ebic_confid,
+                          full_base64_image_file_text,
+                          dst_file_name_prefix=""):
         image_sample_path = os.path.join(
             ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH, self.timeline.board_id)
+        current_year_month_day_str = datetime.datetime.now().strftime("%Y_%m%d")
+        image_sample_path = os.path.join(
+            image_sample_path, current_year_month_day_str)
         if not os.path.exists(image_sample_path):
             os.makedirs(image_sample_path)
-        board_original_zone8_timestamp_str = str(original_utc_timestamp.astimezone(
+        board_original_zone8_timestamp_str = str(board_original_utc_timestamp.astimezone(
             datetime.datetime.now().tzinfo).strftime("%Y_%m%d_%H%M_%S_%f")[:-3])
         dh_local_timestamp_str = str(
             datetime.datetime.now().strftime("%H%M_%S_%f")[:-3])
@@ -312,48 +352,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         os.path.join(
                             image_sample_path,
                             file_name_prefix + str(infer_server_ebic_confid)[
-                                               :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + "___" + self.timeline.board_id + ".jpg"))
-
+                                :4] + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
         if full_base64_image_file_text and len(full_base64_image_file_text) > 1:
             temp_full_image = Image.open(io.BytesIO(
                 base64.decodebytes(full_base64_image_file_text.encode('ascii'))))
-            temp_full_image.save(os.path.join(
-                image_sample_path,
-                str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
-
-    def sendMessageToKafka(self, message):
-        if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
-            return
-        try:
-            config_item = [
-                i for i in self.timeline.configures if i["code"] == "kqzt"]
-            config_kqzt = 1 if len(config_item) == 0 else int(
-                config_item[0]["value"])
-            config_close_zt = [
-                i for i in self.timeline.configures if i["code"] == "gbzt"]
-            gbzt = False if len(config_close_zt) == 0 else (
-                    self.timeline.board_id in config_close_zt[0]["value"])
-            if (config_kqzt == 0 or gbzt) and "|TwoWheeler|confirmed" in message:
-                self.logger.info("board:{} is in configured to disable block door".format(
-                    self.timeline.board_id))
-                return
-            # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
-            # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
-            #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
-            self.logger.info("board:{} send message:{} to kafka".format(
-                self.timeline.board_id, message))
-            obj_info_list = []
-            obj_info_list.append(message)
-            self.timeline.producer.send(self.timeline.board_id + "_dh", {
-                'version': '4.1',
-                'id': 1913,
-                '@timestamp': '{}'.format(datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                'sensorId': '{}'.format(self.timeline.board_id + "_dh"), 'objects': obj_info_list})
-            # self.timeline.producer.flush(5)
-            # producer.close()
-        except:
-            self.logger.exception(
-                "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
+            temp_full_image.save(os.path.join(image_sample_path,
+                                              str(infer_server_ebic_confid) + "___full_image__" + self.timeline.board_id + "___" + board_original_zone8_timestamp_str + "___" + dh_local_timestamp_str + ".jpg"))
 
     def inference_image_from_models(self, object_detection_timeline_item, current_story):
         """
@@ -522,11 +526,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
         t1 = time.time()
 
-        infer_used_time = (t1 - infer_start_time) * 1000
-        self.logger.debug(
-            "      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results/confid: {}/{}".format(
-                self.timeline.board_id, str(infer_used_time)[:5],
-                edge_board_confidence, infered_class, infer_server_current_ebic_confid))
+        # infer_used_time = (t1 - infer_start_time) * 1000
+        # self.logger.debug(
+        #     "      board: {}, time used for infer:{}ms(localConf:{}), raw infer_results/confid: {}/{}".format(
+        #         self.timeline.board_id, str(infer_used_time)[:5],
+        #         edge_board_confidence, infered_class, infer_server_current_ebic_confid))
 
         # if infered_class == 'electric_bicycle':
         try:
@@ -543,57 +547,3 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             os.unlink(temp_cropped_image_file_full_name)
 
         return infered_class, infer_server_current_ebic_confid, edge_board_confidence, full_image_frame_base64_encode_text
-
-    def inference_image_from_qua_models(self, object_detection_timeline_item):
-        sections = object_detection_timeline_item.raw_data.split('|')
-        # the last but one is the detected and cropped object image file with base64 encoded text,
-        # and the section is prefixed with-> base64_image_data:
-        cropped_base64_image_file_text = sections[len(
-            sections) - 2][len("base64_image_data:"):]
-        # the last but two is the OPTIONAL, full image file with base64 encoded text,
-        # and the section is prefixed with-> full_base64_image_data:
-        # upload the full image to cloud is for debug purpose, it's controlled and cofigurable from edge board local side.
-        full_image_frame_base64_encode_text = sections[len(sections) - 3][len("full_base64_image_data:"):]
-        edge_board_confidence_str: str = sections[len(sections) - 1]
-        edge_board_confidence = float(str(edge_board_confidence_str)[:4])
-        temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
-                                                         str(uuid.uuid4()) + '.jpg')
-        temp_image = Image.open(io.BytesIO(base64.decodebytes(
-            cropped_base64_image_file_text.encode('ascii'))))
-        temp_image.save(temp_cropped_image_file_full_name)
-        infer_start_time = time.time()
-        infer_server_url = "http://36.139.163.39:18090/detect_images"
-        data = {'input_image': cropped_base64_image_file_text,
-                'confidence_hold': 0.35}
-        http_response = requests.post(infer_server_url, json=data)
-
-        t1 = time.time()
-        infer_used_time = (t1 - infer_start_time) * 1000
-
-        infer_results = json.loads(http_response.text)
-
-        # ['bicycle', 'ebicycle']
-        infered_class_raw = infer_results['name']
-        if infered_class_raw == 'ebicycle':
-            infered_class = 'electric_bicycle'
-        else:
-            infered_class = 'bicycle'
-        infered_server_confid = infer_results['confidence']
-        self.logger.debug(
-            "      board: {}, time used for qua infer: {}ms(localConf: {}), raw infer_results/confid: {}/{}".format(
-                self.timeline.board_id, str(infer_used_time)[:5],
-                edge_board_confidence, infered_class, infered_server_confid))
-        self.statistics_logger.debug("{} | {} | {}".format(
-            self.timeline.board_id,
-            "1st_qua_model_post_infer",
-            "infered_class: {}, infered_confid: {}, used_time: {}, thread_active_count: {}".format(
-                infered_class,
-                infered_server_confid,
-                str(infer_used_time)[:5], threading.active_count())))
-        self.save_sample_image(temp_cropped_image_file_full_name,
-                               object_detection_timeline_item.original_timestamp,
-                               infered_class, infered_server_confid,
-                               full_image_frame_base64_encode_text, "qua_")
-        if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
-            os.unlink(temp_cropped_image_file_full_name)
-        return infered_class, infered_server_confid, edge_board_confidence, full_image_frame_base64_encode_text

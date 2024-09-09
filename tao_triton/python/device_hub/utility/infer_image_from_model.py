@@ -40,6 +40,9 @@ class Inferencer:
 
             http_response = requests.post(
                 infer_server_url, json=data)
+            if http_response.status_code != 200:
+                raise Exception(
+                    f"HTTP response status code is not 200: {http_response.status_code}")
             t1 = time.time()
             infer_used_time = (t1 - infer_start_time) * 1000
             infer_results = json.loads(http_response.text)
