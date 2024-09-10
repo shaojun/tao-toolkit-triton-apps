@@ -281,7 +281,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             for item in object_filtered_timeline_items:
                 item.consumed = True
                 if self.sw.state == SessionState.InPreSilentTime or self.sw.state == SessionState.InPostSilentTime:
-                    self.logger.debug("board: {}, edge board is uploading ebic images, but sink it due to the session window state is: {}".format(
+                    self.logger.debug("board: {}, edge board is uploading ebic images, but sink it due to the sw state is: {}".format(
                         self.timeline.board_id,
                         str(self.sw.state)
                     ))
@@ -312,6 +312,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
                             os.unlink(temp_cropped_image_file_full_name)
                 else:
+                    if self.sw.state == SessionState.BodyBuffering and datetime.datetime.now().second % 2 == 0:
+                        # avoid the infer from model too frequently
+                        continue
                     packed_infer_result = self.inference_image_from_models(
                         item, self.current_storey)
                     if packed_infer_result == None:
@@ -425,10 +428,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             self.statistics_logger.debug("{} | {} | {}".format(
                 self.timeline.board_id,
                 "1st_model_post_infer",
-                "infered_class: {}, infered_confid: {}, used_time: {}, current_story: {}".format(
+                "infered_class: {}, infered_confid: {}, used_time_by_ms: {}, current_story: {}".format(
                     infered_class,
                     infer_server_current_ebic_confid,
-                    str(time.time() - infer_start_time)[:5],
+                    str((time.time() - infer_start_time)*1000)[:6],
                     current_story)))
         except Exception as e:
             self.statistics_logger.exception("{} | {} | {}".format(
@@ -442,6 +445,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             return
 
         try:
+            infer_start_time = time.time()
             if util.read_config_fast_to_property(
                     ["detectors",
                      ElectricBicycleEnteringEventDetector.__name__,
@@ -472,8 +476,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.statistics_logger.debug("{} | {} | {}".format(
                     self.timeline.board_id,
                     "2nd_model_post_infer",
-                    "infered_confid: {}, infered_confid: {}".format(
-                        second_infer_infered_class, second_infer_infered_confid)
+                    "infered_confid: {}, infered_confid: {}, used_time_by_ms: {}".format(
+                        second_infer_infered_class,
+                        second_infer_infered_confid,
+                        str((time.time() - infer_start_time)*1000)[:6])
                 ))
                 if second_infer_infered_class == 'eb':
                     self.statistics_logger.debug("{} | {} | {}".format(
