@@ -55,18 +55,57 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         self.inferencer = Inferencer(self.statistics_logger)
         self.infer_from_model_worker_queue = queue.Queue()
 
-        def worker():
+        def infer_from_model_worker():
             while True:
                 try:
-                    object_detection_timeline_item = self.infer_from_model_worker_queue.get()
-                    # is_qua_board = object_detection_timeline_item.version == "4.1qua"
-                    packed_infer_result = self.inferencer.inference_image_from_qua_models(
-                        object_detection_timeline_item)
-                    if packed_infer_result == None:
-                        continue
-                    infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
+                    item: board_timeline.TimelineItem = self.infer_from_model_worker_queue.get()
+
+                    is_qua_board = item.version == "4.1qua"
+                    sections = item.raw_data.split('|')
+                    edge_board_confidence = sections[len(sections) - 1]
+                    cropped_base64_image_file_text = sections[len(
+                        sections) - 2][len("base64_image_data:"):]
+
+                    infer_start_time = time.time()
+                    if is_qua_board:
+                        infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
+                            cropped_base64_image_file_text)
+                        try:
+                            temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
+                                                                             str(uuid.uuid4()) + '.jpg')
+                            temp_image = Image.open(io.BytesIO(base64.decodebytes(
+                                cropped_base64_image_file_text.encode('ascii'))))
+                            temp_image.save(temp_cropped_image_file_full_name)
+                            self.save_sample_image(temp_cropped_image_file_full_name,
+                                                   item.original_timestamp,
+                                                   infered_class, infer_server_current_ebic_confid,
+                                                   None,
+                                                   "qua_")
+                        finally:
+                            if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
+                                os.unlink(temp_cropped_image_file_full_name)
+                    else:
+                        # if self.sw.state == SessionState.BodyBuffering and datetime.datetime.now().second % 2 == 0:
+                        #     # avoid the infer from model too frequently
+                        #     continue
+                        packed_infer_result = self.inference_image_from_models(
+                            item, self.current_storey)
+                        if packed_infer_result == None:
+                            continue
+                        infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
+                    infer_used_time_by_ms = (
+                        time.time() - infer_start_time) * 1000
+                    if (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True and infer_used_time_by_ms >= 600) \
+                            or (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == False and infer_used_time_by_ms >= 250):
+                        self.logger.info(
+                            f"board: {self.timeline.board_id}, infer used long time: {infer_used_time_by_ms}ms")
+                    self.logger.debug(
+                        (f"board: {self.timeline.board_id}, adding sw item-> "
+                         f"infered_class: {infered_class}, infered_confid: {infer_server_current_ebic_confid}, "
+                         f"edge_board_confidence: {edge_board_confidence}, current_storey: {self.current_storey}, "
+                         f"board_original_timestamp_str: {item.original_timestamp_str}"))
                     self.sw.add({"class": infered_class, "confid": infer_server_current_ebic_confid,
-                                 "storey": self.current_storey})
+                                "storey": self.current_storey})
                 except Exception as e:
                     self.logger.exception(
                         "exception in handle async task in infer_from_model_worker_queue: {}".format(e))
@@ -74,7 +113,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     self.infer_from_model_worker_queue.task_done()
 
         # Turn-on the worker thread.
-        threading.Thread(target=worker, daemon=True).start()
+        threading.Thread(target=infer_from_model_worker, daemon=True).start()
 
         # self.state_obj = {"last_notify_timestamp": None}
         self.alarms = []
@@ -287,52 +326,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         str(self.sw.state)
                     ))
                     continue
-                is_qua_board = item.version == "4.1qua"
-
-                sections = item.raw_data.split('|')
-                edge_board_confidence = sections[len(sections) - 1]
-                cropped_base64_image_file_text = sections[len(
-                    sections) - 2][len("base64_image_data:"):]
-
-                infer_start_time = time.time()
-                if is_qua_board:
-                    infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
-                        cropped_base64_image_file_text)
-                    try:
-                        temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
-                                                                         str(uuid.uuid4()) + '.jpg')
-                        temp_image = Image.open(io.BytesIO(base64.decodebytes(
-                            cropped_base64_image_file_text.encode('ascii'))))
-                        temp_image.save(temp_cropped_image_file_full_name)
-                        self.save_sample_image(temp_cropped_image_file_full_name,
-                                               item.original_timestamp,
-                                               infered_class, infer_server_current_ebic_confid,
-                                               None,
-                                               "qua_")
-                    finally:
-                        if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
-                            os.unlink(temp_cropped_image_file_full_name)
-                else:
-                    if self.sw.state == SessionState.BodyBuffering and datetime.datetime.now().second % 2 == 0:
-                        # avoid the infer from model too frequently
-                        continue
-                    packed_infer_result = self.inference_image_from_models(
-                        item, self.current_storey)
-                    if packed_infer_result == None:
-                        continue
-                    infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
-                infer_used_time_by_ms = (time.time() - infer_start_time) * 1000
-                if (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True and infer_used_time_by_ms >= 600) \
-                        or (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == False and infer_used_time_by_ms >= 120):
-                    self.logger.info(
-                        f"board: {self.timeline.board_id}, infer used long time: {infer_used_time_by_ms}ms")
                 self.logger.debug(
-                    (f"board: {self.timeline.board_id}, adding sw item-> "
-                     f"infered_class: {infered_class}, infered_confid: {infer_server_current_ebic_confid}, "
-                     f"edge_board_confidence: {edge_board_confidence}, current_storey: {self.current_storey}, "
-                     f"board_original_timestamp_str: {item.original_timestamp_str}"))
-                self.sw.add({"class": infered_class, "confid": infer_server_current_ebic_confid,
-                             "storey": self.current_storey})
+                    f"board: {self.timeline.board_id}, adding board ebic image timeline item to infer_worker_queue...")
+                self.infer_from_model_worker_queue.put(item)
         except Exception as e:
             self.logger.exception(
                 f"board: {self.timeline.board_id}, exception in detect(...): {e}")
