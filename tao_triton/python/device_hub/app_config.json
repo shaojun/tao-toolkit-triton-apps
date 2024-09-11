@@ -9,6 +9,7 @@
             "ebic_confid": 0.82,
             "eb_rate_treat_eb_entering": 0.5,
             "header_buffer_end_condition": 4,
+            "header_buffer_end_condition_qua": 2.5,
             "next_pre_session_silent_time":48,
             "body_buffer_validation_confid":0.1,
             "body_buffer_end_condition": 7,

@@ -46,10 +46,10 @@ def read_config_fast_to_board_control_level(path_to_board_control_level_array: L
     return None
 
 
-def read_config_fast_to_property(path_to_property: List[str], property_name: str):
+def read_config_fast_to_property(path_to_property: List[str], property_name: str, default_value: any = None):
     property_level_config = read_config_fast(
         path_to_property)
     if property_level_config:
         if property_name in property_level_config:
             return property_level_config[property_name]
-    return None
+    return default_value

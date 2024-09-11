@@ -68,7 +68,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
                     infer_start_time = time.time()
                     if is_qua_board:
-                        self.sw.body_buffer_end_condition = 2.8
+                        header_buffer_end_condition = util.read_config_fast_to_property(
+                            ["detectors", "ElectricBicycleEnteringEventDetector"],
+                            'header_buffer_end_condition_qua')
+                        self.sw.header_buffer_end_condition = header_buffer_end_condition
                         infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
                             cropped_base64_image_file_text)
                         try:
@@ -86,9 +89,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                             if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
                                 os.unlink(temp_cropped_image_file_full_name)
                     else:
-                        # if self.sw.state == SessionState.BodyBuffering and datetime.datetime.now().second % 2 == 0:
-                        #     # avoid the infer from model too frequently
-                        #     continue
+                        header_buffer_end_condition = util.read_config_fast_to_property(
+                            ["detectors", "ElectricBicycleEnteringEventDetector"],
+                            'header_buffer_end_condition')
+                        self.sw.header_buffer_end_condition = header_buffer_end_condition
                         packed_infer_result = self.inference_image_from_models(
                             item, self.current_storey)
                         if packed_infer_result == None:
