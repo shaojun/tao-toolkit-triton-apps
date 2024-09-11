@@ -68,6 +68,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
                     infer_start_time = time.time()
                     if is_qua_board:
+                        self.sw.body_buffer_end_condition = 2.8
                         infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
                             cropped_base64_image_file_text)
                         try:

@@ -30,18 +30,18 @@ class SessionWindow(Generic[T]):
                  header_buffer_starter_predict:  Callable[[T], bool],
                  on_session_state_changed_to_header_buffering: callable[[T], None],
                  header_buffer_type: BufferType,
-                 header_buffer_end_condition: int,
+                 header_buffer_end_condition: float,
                  header_buffer_validation_predict: Callable[[list[T]], bool],
                  on_header_buffer_validated: Optional[Callable[[list[T], bool], None]],
-                 next_pre_session_silent_time: int,
+                 next_pre_session_silent_time: float,
 
                  body_buffer_validation_predict: Callable[[list[T], T], bool],
                  body_buffer_type: BufferType,
-                 body_buffer_end_condition: int,
+                 body_buffer_end_condition: float,
 
                  on_session_end: Callable[[any, list[T]], None] = None,
 
-                 post_session_silent_time: int = 0,
+                 post_session_silent_time: float = 0,
                  on_post_session_silent_time_elapsed: Optional[Callable[[
                      list[T]], None]] = None,
                  ):
@@ -63,7 +63,7 @@ class SessionWindow(Generic[T]):
         self.header_buffer_starter_predict = header_buffer_starter_predict
         self.on_session_state_changed_to_header_buffering = on_session_state_changed_to_header_buffering
         self.header_buffer_type = header_buffer_type
-        self.header_buffer_condition = header_buffer_end_condition
+        self.header_buffer_end_condition = header_buffer_end_condition
         self.header_buffer_validation_predict = header_buffer_validation_predict
         self.on_header_buffer_validated = on_header_buffer_validated
         self.next_pre_session_silent_time = next_pre_session_silent_time
@@ -108,7 +108,7 @@ class SessionWindow(Generic[T]):
                         self.items)
                 # self.reset()
             self.post_silent_timer = threading.Timer(self.post_session_silent_time,
-                                                        on_post_silent_time_timedout)
+                                                     on_post_silent_time_timedout)
             self.post_silent_timer.start()
 
     def __refresh_body_buffer_timer__(self):
@@ -124,6 +124,7 @@ class SessionWindow(Generic[T]):
                 self.state = SessionState.HeaderBuffering
                 if self.on_session_state_changed_to_header_buffering:
                     self.on_session_state_changed_to_header_buffering(item)
+
                 def header_buffer_condition_fullfilled():
                     self.header_buffer_condition_timer.cancel()
                     if self.header_buffer_validation_predict(self.items):
@@ -147,10 +148,11 @@ class SessionWindow(Generic[T]):
                             next_pre_silent_time_timer.start()
                         else:
                             if self.on_header_buffer_validated:
-                                self.on_header_buffer_validated(self.items, False)
+                                self.on_header_buffer_validated(
+                                    self.items, False)
                             self.reset()
                 if self.header_buffer_type == BufferType.ByPeriodTime:
-                    self.header_buffer_condition_timer = threading.Timer(self.header_buffer_condition,
+                    self.header_buffer_condition_timer = threading.Timer(self.header_buffer_end_condition,
                                                                          header_buffer_condition_fullfilled)
                     self.header_buffer_condition_timer.start()
             else:
@@ -159,7 +161,7 @@ class SessionWindow(Generic[T]):
         if self.state == SessionState.HeaderBuffering:
             self.items.append(item)
             if self.header_buffer_type == BufferType.ByItemCount:
-                if len(self.items) == self.header_buffer_condition:
+                if len(self.items) == int(self.header_buffer_end_condition):
                     if self.header_buffer_validation_predict(self.items):
                         self.state = SessionState.BodyBuffering
                         self.on_header_buffer_validated(self.items, True)
