@@ -44,7 +44,7 @@ class Inferencer:
                 raise Exception(
                     f"HTTP response status code is not 200: {http_response.status_code}")
             t1 = time.time()
-            infer_used_time = (t1 - infer_start_time) * 1000
+            infer_used_time_by_ms = (t1 - infer_start_time) * 1000
             infer_results = json.loads(http_response.text)
             # ['bicycle', 'ebicycle']
             infered_class_raw = infer_results['name']
@@ -71,10 +71,10 @@ class Inferencer:
             # if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
             #     os.unlink(temp_cropped_image_file_full_name)
             self.logger.debug(
-                f"inferencer: infered_class: {infered_class}, infered_confid: {infered_confid}")
+                f"inferencer, qua, infered_class: {infered_class}, infered_confid: {infered_confid}, infer_used_time_by_ms: {infer_used_time_by_ms}")
         except Exception as e:
             self.logger.exception(
-                f"inferencer: exception raised: {e}")
+                f"inferencer: qua, exception raised: {e}")
             infered_class = 'background'
             infered_confid = 0.0
         return infered_class, infered_confid

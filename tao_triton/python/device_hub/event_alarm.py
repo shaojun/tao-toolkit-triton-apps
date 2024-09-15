@@ -210,7 +210,8 @@ class EventAlarmWebServiceNotifier:
                     post_response = requests.post(EventAlarmWebServiceNotifier.URL,
                                                   headers=EventAlarmWebServiceNotifier.HEADERS,
                                                   data=None,
-                                                  json=post_data)
+                                                  json=post_data,
+                                                  timeout=5)
                     t1 = time.time()
                     perf_time_used_by_ms = (t1 - t0) * 1000
                     if perf_time_used_by_ms >= 1000:
