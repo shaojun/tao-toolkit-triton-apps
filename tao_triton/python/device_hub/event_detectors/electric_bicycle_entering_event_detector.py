@@ -67,11 +67,37 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         sections) - 2][len("base64_image_data:"):]
 
                     infer_start_time = time.time()
+                    if self.sw.state == SessionState.Uninitialized:
+                        if is_qua_board:
+                            next_pre_session_slient_time = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'next_pre_session_silent_time_qua')
+                            post_session_silent_time = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'post_session_silent_time_qua')
+                            header_buffer_end_condition = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'header_buffer_end_condition_qua')
+                        else:
+                            next_pre_session_slient_time = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'next_pre_session_silent_time')
+                            post_session_silent_time = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'post_session_silent_time')
+                            header_buffer_end_condition = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'header_buffer_end_condition')
+                        if self.sw.next_pre_session_silent_time != next_pre_session_slient_time \
+                                or self.sw.post_session_silent_time != post_session_silent_time \
+                                or self.sw.header_buffer_end_condition != header_buffer_end_condition:
+                            self.sw.next_pre_session_silent_time = next_pre_session_slient_time
+                            self.sw.post_session_silent_time = post_session_silent_time
+                            self.sw.header_buffer_end_condition = header_buffer_end_condition
+                            self.logger.debug(
+                                f"board: {self.timeline.board_id}, sw updated parameters with next_pre_session_slient_time: {next_pre_session_slient_time}, post_session_silent_time: {post_session_silent_time}, header_buffer_end_condition: {header_buffer_end_condition}")
+
                     if is_qua_board:
-                        header_buffer_end_condition = util.read_config_fast_to_property(
-                            ["detectors", "ElectricBicycleEnteringEventDetector"],
-                            'header_buffer_end_condition_qua')
-                        self.sw.header_buffer_end_condition = header_buffer_end_condition
                         infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
                             cropped_base64_image_file_text)
                         try:
@@ -89,10 +115,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                             if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
                                 os.unlink(temp_cropped_image_file_full_name)
                     else:
-                        header_buffer_end_condition = util.read_config_fast_to_property(
-                            ["detectors", "ElectricBicycleEnteringEventDetector"],
-                            'header_buffer_end_condition')
-                        self.sw.header_buffer_end_condition = header_buffer_end_condition
                         packed_infer_result = self.inference_image_from_models(
                             item, self.current_storey)
                         if packed_infer_result == None:
@@ -110,7 +132,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                          f"edge_board_confidence: {edge_board_confidence}, current_storey: {self.current_storey}, "
                          f"board_original_timestamp_str: {item.original_timestamp_str}"))
                     self.sw.add({"class": infered_class, "confid": infer_server_current_ebic_confid,
-                                "storey": self.current_storey})
+                                "storey": self.current_storey, "is_qua_board": is_qua_board})
                 except Exception as e:
                     self.logger.exception(
                         "exception in handle async task in infer_from_model_worker_queue: {}".format(e))
@@ -124,13 +146,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         self.alarms = []
         self.current_storey = 0
 
-        pre_session_slient_time = util.read_config_fast_to_property(
-            ["detectors", "ElectricBicycleEnteringEventDetector"],
-            'next_pre_session_silent_time')
-        post_session_silent_time = util.read_config_fast_to_property(
-            ["detectors", "ElectricBicycleEnteringEventDetector"],
-            'post_session_silent_time')
-
         def on_session_state_changed_to_header_buffering(item: dict):
             self.logger.info((f"board: {self.timeline.board_id}, treat as suspicious ebike entering "
                              f"""and head buffer started, will enable pre block door, current storey is: {item["storey"]}"""))
@@ -142,8 +157,19 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
             # call back function validate the eb entering
             eb_count = 0
-            eb_confid = util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
-                                                          'ebic_confid')
+            is_qua_board: bool = header_buffer[0]["is_qua_board"]
+            if is_qua_board:
+                eb_confid = util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
+                                                              'ebic_confid_qua')
+                configured_eb_rate = util.read_config_fast_to_property(
+                    ["detectors", "ElectricBicycleEnteringEventDetector"],
+                    "eb_rate_treat_eb_entering_qua")
+            else:
+                eb_confid = util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
+                                                              'ebic_confid')
+                configured_eb_rate = util.read_config_fast_to_property(
+                    ["detectors", "ElectricBicycleEnteringEventDetector"],
+                    "eb_rate_treat_eb_entering")
             # self.logger.debug(
             #     f"board: {self.timeline.board_id}, header_buffer_validation_predict, header length: {len(header_buffer)}")
             items_log_str = "\r\n".join(
@@ -155,15 +181,14 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 #     f"""board: {self.timeline.board_id}, header_buffer items-> class: {item["class"]}, confid: {item["confid"]}""")
                 if item["class"] == "electric_bicycle" and item["confid"] > eb_confid:
                     eb_count += 1
-            if len(header_buffer) < 3:
-                self.logger.debug(
-                    f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
-                return False
+            if is_qua_board:
+                pass
+            else:
+                if len(header_buffer) < 3:
+                    self.logger.debug(
+                        f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
+                    return False
             eb_rate = eb_count / len(header_buffer)
-            configured_eb_rate = util.read_config_fast_to_property(
-                ["detectors", "ElectricBicycleEnteringEventDetector"],
-                "eb_rate_treat_eb_entering"
-            )
 
             predict_result = eb_rate >= configured_eb_rate
             if predict_result:
@@ -214,6 +239,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # 告警结束后的静默结束
             self.sw.reset()
 
+        pre_session_slient_time = util.read_config_fast_to_property(
+            ["detectors", "ElectricBicycleEnteringEventDetector"],
+            'next_pre_session_silent_time')
+        post_session_silent_time = util.read_config_fast_to_property(
+            ["detectors", "ElectricBicycleEnteringEventDetector"],
+            'post_session_silent_time')
         self.sw: SessionWindow[dict] = SessionWindow(
             lambda x: True,
             on_session_state_changed_to_header_buffering,

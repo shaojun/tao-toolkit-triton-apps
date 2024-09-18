@@ -4,16 +4,22 @@
     },
     "detectors": {
         "ElectricBicycleEnteringEventDetector": {
-            "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH": "/media/glf/external_disk/device_hub_assets/ebic_image_samples",
+            "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH": "ebic_image_samples",
             "EnableSendConfirmedToLocalWhenFirstImageReceived": true,
             "ebic_confid": 0.55,
+            "ebic_confid_qua": 0.55,
             "eb_rate_treat_eb_entering": 0.5,
+            "eb_rate_treat_eb_entering_qua": 0.1,
             "header_buffer_end_condition": 4,
-            "header_buffer_end_condition_qua": 2.5,
-            "next_pre_session_silent_time":48,
-            "body_buffer_validation_confid":0.1,
+            "header_buffer_end_condition_qua": 1,
+            "next_pre_session_silent_time": 48,
+            "next_pre_session_silent_time_qua": 0.1,
+            "body_buffer_validation_confid": 0.1,
+            "body_buffer_validation_confid_qua": 0.1,
             "body_buffer_end_condition": 7,
-            "post_session_silent_time":48,
+            "body_buffer_end_condition_qua": 7,
+            "post_session_silent_time": 48,
+            "post_session_silent_time_qua": 48,
             "enable_infer_for_kua_board": false,
             "second_infer": {
                 "enable": true,
@@ -22,11 +28,11 @@
             }
         },
         "GasTankEnteringEventDetector": {
-            "silent_period_duration":60,
+            "silent_period_duration": 60,
             "enable_async_infer_and_post_process": true,
-            "gas_tank_confid":0.9,
+            "gas_tank_confid": 0.9,
             "gas_tank_rate_treat_tank_entering": 0.7,
-            "how_long_to_treat_tank_exist_when_no_predict_item_received":30,
+            "how_long_to_treat_tank_exist_when_no_predict_item_received": 30,
             "FeatureSwitchers": [
                 {
                     "TargetBoardId": "E999993222_specific_board_for_special_control",
@@ -39,7 +45,7 @@
             ]
         },
         "BatteryEnteringEventDetector": {
-            "silent_period_duration":60,
+            "silent_period_duration": 60,
             "enable_async_infer_and_post_process": true,
             "FeatureSwitchers": [
                 {
