@@ -32,7 +32,6 @@ class BatteryEnteringEventDetector(EventDetectorBase):
         # self.logger = logging.getLogger(__name__)
         self.logger = logging.getLogger("batteryEnteringEventDetectorLogger")
         self.statistics_logger = logging.getLogger("statisticsLogger")
-        self.inferencer = Inferencer(self.logger)
         self.need_close_alarm = False
 
     def prepare(self, timeline, event_detectors):
@@ -45,7 +44,8 @@ class BatteryEnteringEventDetector(EventDetectorBase):
         self.state_obj = {"last_infer_timestamp": None,
                           "last_notify_timestamp": None}
         self.timeline = timeline
-        pass
+        self.inferencer = Inferencer(self.logger, self.timeline.board_id)
+        
 
     def detect(self, filtered_timeline_items):
         """
@@ -156,10 +156,10 @@ class BatteryEnteringEventDetector(EventDetectorBase):
 
                 if enable_async_infer_and_post_process:
                     self.inferencer.start_inference_image_from_qua_models(
-                        cropped_base64_image_file_text, infer_and_post_process)
+                        cropped_base64_image_file_text, "battery", infer_and_post_process)
                 else:
                     infered_class, infered_confid = self.inferencer.inference_image_from_qua_models(
-                        cropped_base64_image_file_text)
+                        cropped_base64_image_file_text, "battery")
                     infer_and_post_process((infered_class, infered_confid))
         return None
 

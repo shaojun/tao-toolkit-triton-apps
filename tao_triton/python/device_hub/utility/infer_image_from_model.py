@@ -14,29 +14,40 @@ import requests
 class Inferencer:
     executor = ThreadPoolExecutor(max_workers=15)
 
-    def __init__(self, logger: logging.Logger):
+    def __init__(self, logger: logging.Logger, logger_str_prefix: str = ""):
         self.logger = logger
+        self.logger_str_prefix = logger_str_prefix
 
-    def inference_image_file_from_qua_models(self, file_full_path: str) -> tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]:
+    def inference_image_file_from_qua_models(
+            self,
+            file_full_path: str,
+            model_name: Literal['ebicycle', 'gastank', 'battery']) -> tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]:
         # get base64 image data
         with open(file_full_path, "rb") as image_file:
             base64_image_data_text = base64.b64encode(
                 image_file.read()).decode('ascii')
-            return self.inference_image_from_qua_models(base64_image_data_text)
+            return self.inference_image_from_qua_models(base64_image_data_text, model_name)
 
-    def start_inference_image_file_from_qua_models(self, file_full_path: str,
-                                                   callback: Callable[[tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]], None]):
+    def start_inference_image_file_from_qua_models(
+            self,
+            file_full_path: str,
+            model_name: Literal['ebicycle', 'gastank', 'battery'],
+            callback: Callable[[tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]], None]):
         # put the work into thread pool
         fut = Inferencer.executor.submit(
-            self.inference_image_file_from_qua_models, file_full_path)
+            self.inference_image_file_from_qua_models, file_full_path, model_name)
         fut.add_done_callback(lambda future: callback(future.result()))
 
-    def inference_image_from_qua_models(self, base64_image_data_text: str) -> tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]:
+    def inference_image_from_qua_models(
+            self,
+            base64_image_data_text: str,
+            model_name: Literal['ebicycle', 'gastank', 'battery']) -> tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]:
         try:
             infer_start_time = time.time()
             infer_server_url = "http://36.139.163.39:18090/detect_images"
             data = {'input_image': base64_image_data_text,
-                    'confidence_hold': 0.35}
+                    'confidence_hold': 0.35,
+                    'name': model_name}
 
             http_response = requests.post(
                 infer_server_url, json=data)
@@ -53,37 +64,23 @@ class Inferencer:
             else:
                 infered_class = infered_class_raw
             infered_confid: float = infer_results['confidence']
-            # self.logger.debug(
-            #     "      board: {}, time used for qua infer: {}ms(localConf: {}), raw infer_results/confid: {}/{}".format(
-            #         self.timeline.board_id, str(infer_used_time)[:5],
-            #         edge_board_confidence, infered_class, infered_server_confid))
-            # self.statistics_logger.debug("{} | {} | {}".format(
-            #     self.timeline.board_id,
-            #     "1st_qua_model_post_infer",
-            #     "infered_class: {}, infered_confid: {}, used_time: {}, thread_active_count: {}".format(
-            #         infered_class,
-            #         infered_server_confid,
-            #         str(infer_used_time)[:5], threading.active_count())))
-            # self.save_sample_image(temp_cropped_image_file_full_name,
-            #                        object_detection_timeline_item.original_timestamp,
-            #                        infered_class, infered_server_confid,
-            #                        full_image_frame_base64_encode_text, "qua_")
-            # if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
-            #     os.unlink(temp_cropped_image_file_full_name)
             self.logger.debug(
-                f"inferencer, qua, infered_class: {infered_class}, infered_confid: {infered_confid}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+                f"{self.logger_str_prefix}, inferencer, qua with model name: {model_name}, infered_class: {infered_class}, infered_confid: {infered_confid}, infer_used_time_by_ms: {infer_used_time_by_ms}")
         except Exception as e:
             self.logger.exception(
-                f"inferencer: qua, exception raised: {e}")
+                f"{self.logger_str_prefix}, inferencer: qua, exception raised: {e}")
             infered_class = 'background'
             infered_confid = 0.0
         return infered_class, infered_confid
 
-    def start_inference_image_from_qua_models(self, base64_image_data_text: str,
-                                              callback: Callable[[tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]], None]):
+    def start_inference_image_from_qua_models(
+            self,
+            base64_image_data_text: str,
+            model_name: Literal['ebicycle', 'gastank', 'battery'],
+            callback: Callable[[tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]], None]):
         # put the work into thread pool
         fut = Inferencer.executor.submit(
-            self.inference_image_from_qua_models, base64_image_data_text)
+            self.inference_image_from_qua_models, base64_image_data_text, model_name)
         fut.add_done_callback(lambda future: callback(future.result()))
 
     def inference_image_from_ali_qwen_models(self, base64_image_data_text: str) -> tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]:
@@ -167,7 +164,7 @@ class Inferencer:
             """
             raw_response = get_response(base64_image_data_text)
             self.logger.debug(
-                f"inferencer, qwen, raw_response: {raw_response}")
+                f"{self.logger_str_prefix}, inferencer, qwen, raw_response: {raw_response}")
             t1 = time.time()
             infer_used_time_by_ms = (t1 - infer_start_time) * 1000
             response_msg_content = raw_response['choices'][0]['message']['content']
@@ -180,10 +177,10 @@ class Inferencer:
                 infered_confid = 1.0
             reason = response_msg_content["actual"]
             self.logger.debug(
-                f"inferencer, qwen, infered_class: {infered_class}, infered_confid: {infered_confid}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+                f"{self.logger_str_prefix}, inferencer, qwen, infered_class: {infered_class}, infered_confid: {infered_confid}, infer_used_time_by_ms: {infer_used_time_by_ms}")
         except Exception as e:
             self.logger.exception(
-                f"inferencer: qua, exception raised: {e}")
+                f"{self.logger_str_prefix}, inferencer: qua, exception raised: {e}")
             infered_class = 'error'
             infered_confid = 1.0
         return infered_class, infered_confid, reason

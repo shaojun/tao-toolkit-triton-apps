@@ -52,7 +52,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             ElectricBicycleEnteringEventDetector.SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH = util.read_config_fast_to_property(
                 ["detectors", self.electric_bicycle_detector_name], "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH")
 
-        self.inferencer = Inferencer(self.statistics_logger)
         self.infer_from_model_worker_queue = queue.Queue()
 
         def infer_from_model_worker():
@@ -99,7 +98,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
                     if is_qua_board:
                         infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
-                            cropped_base64_image_file_text)
+                            cropped_base64_image_file_text, "ebicycle")
                         try:
                             temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
                                                                              str(uuid.uuid4()) + '.jpg')
@@ -164,12 +163,18 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 configured_eb_rate = util.read_config_fast_to_property(
                     ["detectors", "ElectricBicycleEnteringEventDetector"],
                     "eb_rate_treat_eb_entering_qua")
+                header_buffer_validating_min_item_count = util.read_config_fast_to_property(
+                    ["detectors", "ElectricBicycleEnteringEventDetector"],
+                    "header_buffer_validating_min_item_count_qua", 3)
             else:
                 eb_confid = util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
                                                               'ebic_confid')
                 configured_eb_rate = util.read_config_fast_to_property(
                     ["detectors", "ElectricBicycleEnteringEventDetector"],
                     "eb_rate_treat_eb_entering")
+                header_buffer_validating_min_item_count = util.read_config_fast_to_property(
+                    ["detectors", "ElectricBicycleEnteringEventDetector"],
+                    "header_buffer_validating_min_item_count", 3)
             # self.logger.debug(
             #     f"board: {self.timeline.board_id}, header_buffer_validation_predict, header length: {len(header_buffer)}")
             items_log_str = "\r\n".join(
@@ -182,9 +187,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 if item["class"] == "electric_bicycle" and item["confid"] > eb_confid:
                     eb_count += 1
             if is_qua_board:
-                pass
+                if len(header_buffer) < header_buffer_validating_min_item_count:
+                    self.logger.debug(
+                        f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
+                    return False
             else:
-                if len(header_buffer) < 3:
+                if len(header_buffer) < header_buffer_validating_min_item_count:
                     self.logger.debug(
                         f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
                     return False
@@ -292,7 +300,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         self.timeline = timeline
         self.ebike_state = {"enter_time": "",
                             "exit_time": "", "latest_infer_success": ""}
-        pass
+        self.inferencer = Inferencer(
+            self.statistics_logger, self.timeline.board_id)
 
     def get_timeline_item_filter(self):
         def filter(timeline_items):

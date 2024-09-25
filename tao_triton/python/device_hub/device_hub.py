@@ -657,7 +657,7 @@ def check_and_update_incremental_board_info_via_web_service_and_send_msg_to_proc
         return
 
 
-GLOBAL_CONCURRENT_PROCESS_COUNT = 24
+GLOBAL_CONCURRENT_PROCESS_COUNT = 32
 
 # a global flag to indicate whether all processes should exit
 GLOBAL_SHOULD_QUIT_EVERYTHING = False
@@ -793,7 +793,7 @@ if __name__ == '__main__':
     All_Board_Infos = get_all_board_infos_response.json()["result"]
     if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
         GLOBAL_CONCURRENT_PROCESS_COUNT = 1
-        All_Board_Infos = All_Board_Infos[200:400]
+        All_Board_Infos = All_Board_Infos[600:1000]
     # duration is in seconds
     timely_check_incremental_board_info_timer = RepeatTimer(
         30, check_and_update_incremental_board_info_via_web_service_and_send_msg_to_process_via_conn,
