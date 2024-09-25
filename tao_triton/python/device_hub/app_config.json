@@ -8,9 +8,9 @@
             "EnableSendConfirmedToLocalWhenFirstImageReceived": true,
             "ebic_confid": 0.55,
             "ebic_confid_qua": 0.55,
-            "eb_rate_treat_eb_entering": 0.5,
+            "eb_rate_treat_eb_entering": 0.4,
             "eb_rate_treat_eb_entering_qua": 0.1,
-            "header_buffer_end_condition": 4,
+            "header_buffer_end_condition": 3.4,
             "header_buffer_end_condition_qua": 1,
             "next_pre_session_silent_time": 48,
             "next_pre_session_silent_time_qua": 0.1,
@@ -24,7 +24,7 @@
             "second_infer": {
                 "enable": true,
                 "bypass_if_previous_model_eb_confid_greater_or_equal_than": 0.999,
-                "still_treat_as_eb_if_non_eb_confid_less_or_equal_than": 0.7
+                "still_treat_as_eb_if_non_eb_confid_less_or_equal_than": 0.88
             }
         },
         "GasTankEnteringEventDetector": {
