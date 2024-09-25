@@ -85,3 +85,105 @@ class Inferencer:
         fut = Inferencer.executor.submit(
             self.inference_image_from_qua_models, base64_image_data_text)
         fut.add_done_callback(lambda future: callback(future.result()))
+
+    def inference_image_from_ali_qwen_models(self, base64_image_data_text: str) -> tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]:
+        def get_response(base64_image):
+            os.environ["DASHSCOPE_API_KEY"] = "sk-acc1da6bad004b7bbc127a29961cbc38"
+            api_key = os.getenv("DASHSCOPE_API_KEY")
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+            payload = {
+                "model": "qwen-vl-max",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": "图片中是否包含以下几类物体中的一种: 1.成人电动车 2.成人电动踏板车 3.摩托车. \n如果确信找到了(注意,自行车,滑板车需要除外),则回答: {\"found\":true,\"actual\":\"\"}, 否则回答: {\"found\":false,\"actual\":\"\"}. 其中actual字段用于简单描述图片中的实际内容. 切记,不要回复其它任何内容"
+                            }
+                        ]
+                    }
+                ]
+            }
+            payload = {
+                "model": "qwen-vl-max",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": "determine if contains: 1.electric bicycle 2.motocycle. \nif found(NOTE, the bicycle should be excluded),then answer: {\"found\":true,\"actual\":\"\"}, otherwise answer: {\"found\":false,\"actual\":\"\"}. pls put the actual content you've seen into field: `actual`"
+                            }
+                        ]
+                    }
+                ]
+            }
+            response = requests.post(
+                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", headers=headers, json=payload)
+            return response.json()
+        try:
+            infer_start_time = time.time()
+            # raw response sample:
+            """
+            {
+  "choices": [
+    {
+      "message": {
+        "content": "这是一只在天空中飞翔的鹰。它有着广阔的翅膀，正在翱翔于云层之间。这种鸟类通常被认为是力量、自由和雄心壮志的象征，在各种文化中有重要的地位。",
+        "role": "assistant"
+      },
+      "finish_reason": "stop",
+      "index": 0,
+      "logprobs": None
+    }
+  ],
+  "object": "chat.completion",
+  "usage": {
+    "prompt_tokens": 1254,
+    "completion_tokens": 45,
+    "total_tokens": 1299
+  },
+  "created": 1721732005,
+  "system_fingerprint": None,
+  "model": "qwen-vl-plus",
+  "id": "chatcmpl-13b925d1-ef79-9c15-b890-0079a096d7d3"
+}
+            """
+            raw_response = get_response(base64_image_data_text)
+            self.logger.debug(
+                f"inferencer, qwen, raw_response: {raw_response}")
+            t1 = time.time()
+            infer_used_time_by_ms = (t1 - infer_start_time) * 1000
+            response_msg_content = raw_response['choices'][0]['message']['content']
+            response_msg_content = json.loads(response_msg_content)
+            if response_msg_content["found"]:
+                infered_class = "electric_bicycle"
+                infered_confid = 1.0
+            else:
+                infered_class = "non_eb"
+                infered_confid = 1.0
+            reason = response_msg_content["actual"]
+            self.logger.debug(
+                f"inferencer, qwen, infered_class: {infered_class}, infered_confid: {infered_confid}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+        except Exception as e:
+            self.logger.exception(
+                f"inferencer: qua, exception raised: {e}")
+            infered_class = 'error'
+            infered_confid = 1.0
+        return infered_class, infered_confid, reason
