@@ -96,7 +96,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                             self.logger.debug(
                                 f"board: {self.timeline.board_id}, sw updated parameters with next_pre_session_slient_time: {next_pre_session_slient_time}, post_session_silent_time: {post_session_silent_time}, header_buffer_end_condition: {header_buffer_end_condition}")
 
-                    if is_qua_board:
+                    is_forced_to_use_qua_model = util.read_config_fast_to_board_control_level(
+                        ["detectors", 'ElectricBicycleEnteringEventDetector',
+                            'ForceToUseQuaModelSwitchers'],
+                        self.timeline.board_id, False)
+
+                    if is_qua_board or is_forced_to_use_qua_model:
                         infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
                             cropped_base64_image_file_text, "ebicycle")
                         try:

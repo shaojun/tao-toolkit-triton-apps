@@ -27,7 +27,17 @@
                 "enable": true,
                 "bypass_if_previous_model_eb_confid_greater_or_equal_than": 0.999,
                 "still_treat_as_eb_if_non_eb_confid_less_or_equal_than": 0.7
-            }
+            },
+            "ForceToUseQuaModelSwitchers": [
+                {
+                    "TargetBoardId": "E999993222_specific_board_for_special_control",
+                    "Enable": true
+                },
+                {
+                    "TargetBoardId": "*",
+                    "Enable": false
+                }
+            ]
         },
         "GasTankEnteringEventDetector": {
             "silent_period_duration": 60,

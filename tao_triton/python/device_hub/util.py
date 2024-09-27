@@ -28,7 +28,7 @@ def read_config_fast(path: List[str]):
         return json_result
 
 
-def read_config_fast_to_board_control_level(path_to_board_control_level_array: List[str], board_id: str):
+def read_config_fast_to_board_control_level(path_to_board_control_level_array: List[str], board_id: str, default_value: any = None):
     board_control_level_configs = read_config_fast(
         path_to_board_control_level_array)
     if board_control_level_configs:
@@ -43,7 +43,7 @@ def read_config_fast_to_board_control_level(path_to_board_control_level_array: L
             if len(all_boards_switcher_configs) > 0:
                 enable_for_all_board_config = all_boards_switcher_configs[0]["Enable"]
                 return enable_for_all_board_config
-    return None
+    return default_value
 
 
 def read_config_fast_to_property(path_to_property: List[str], property_name: str, default_value: any = None):
