@@ -92,7 +92,7 @@ if __name__ == '__main__':
                     t0 = datetime.datetime.now()
                     try:
                         data = {
-                            'input_image': full_image_base64_encoded_text, 'confidence_hold': 0.5}
+                            'input_image': full_image_base64_encoded_text, 'confidence_hold': 0.5, 'name': 'ebicycle'}
 
                         http_response = requests.post(
                             infer_server_url, json=data)

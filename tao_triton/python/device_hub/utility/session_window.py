@@ -31,8 +31,8 @@ class SessionWindow(Generic[T]):
                  on_session_state_changed_to_header_buffering: callable[[T], None],
                  header_buffer_type: BufferType,
                  header_buffer_end_condition: float,
-                 header_buffer_validation_predict: Callable[[list[T]], bool],
-                 on_header_buffer_validated: Optional[Callable[[list[T], bool], None]],
+                 header_buffer_validation_predict: Callable[[list[T]], tuple[bool, any]],
+                 on_header_buffer_validated: Optional[Callable[[list[T], any, bool], None]],
                  next_pre_session_silent_time: float,
 
                  body_buffer_validation_predict: Callable[[list[T], T], bool],
@@ -50,8 +50,8 @@ class SessionWindow(Generic[T]):
         @param on_header_state_changed_to_buffering: a function will be called when session state changed to head_buffering
         @param header_buffer_type: the type of header buffer, by item count or by fixed time
         @param header_buffer_condition: the condition to trigger header buffer validation
-        @param header_buffer_validation_predict: a function to validate the header buffer
-        @param on_header_buffer_validated: a callback function when header buffer validated, if validated with true, a session will be started
+        @param header_buffer_validation_predict: a function to validate the header buffer, the return value is a tuple of validated result and data, the data will be passed in on_header_buffer_validated)
+        @param on_header_buffer_validated: a callback function when header buffer validated, if validated with true, a session will be started, the data is the return value of header_buffer_validation_predict
         @param next_pre_session_silent_time: the time of silent when on_header_buffer_validated with false, during this time, following add(...) will be ignored
         @param body_buffer_type: the type of body buffer, by item count or by fixed time, now only support by fixed time
         @param body_buffer_validation_predict: a function to validate the body buffer
@@ -127,14 +127,18 @@ class SessionWindow(Generic[T]):
 
                 def header_buffer_condition_fullfilled():
                     self.header_buffer_condition_timer.cancel()
-                    if self.header_buffer_validation_predict(self.items):
+                    predict_result, predict_data = self.header_buffer_validation_predict(
+                        self.items)
+                    if predict_result:
                         self.state = SessionState.BodyBuffering
                         if self.on_header_buffer_validated:
-                            self.on_header_buffer_validated(self.items, True)
+                            self.on_header_buffer_validated(
+                                self.items, predict_data, True)
                         self.__refresh_body_buffer_timer__()
                     else:
                         if self.on_header_buffer_validated:
-                            self.on_header_buffer_validated(self.items, False)
+                            self.on_header_buffer_validated(
+                                self.items, predict_data, False)
                         if self.next_pre_session_silent_time > 0:
                             self.state = SessionState.InPreSilentTime
                             next_pre_silent_time_timer: threading.Timer = None
@@ -149,7 +153,7 @@ class SessionWindow(Generic[T]):
                         else:
                             if self.on_header_buffer_validated:
                                 self.on_header_buffer_validated(
-                                    self.items, False)
+                                    self.items, predict_data, False)
                             self.reset()
                 if self.header_buffer_type == BufferType.ByPeriodTime:
                     self.header_buffer_condition_timer = threading.Timer(self.header_buffer_end_condition,

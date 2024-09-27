@@ -10,17 +10,18 @@ class TestSessionWindow(unittest.TestCase):
     def test_1_session_no_post_silent(self):
         session: list[str] = None
 
-        def header_buffer_validation_predict(header_buffer: list[str]) -> bool:
+        def header_buffer_validation_predict(header_buffer: list[str]) -> tuple[bool, any]:
             eb_count = 0
             for item in header_buffer:
                 if item == "eb":
                     eb_count += 1
             eb_rate = eb_count / len(header_buffer)
-            return eb_rate > 0.5
+            return eb_rate > 0.5, "i am the reason str"
 
-        def on_header_buffer_validated(header_buffer: list[str], is_header_buffer_valid: bool):
+        def on_header_buffer_validated(header_buffer: list[str], predict_data: any, is_header_buffer_valid: bool):
             # send block door msg to edge board
             self.assertTrue(is_header_buffer_valid)
+            self.assertEqual(predict_data, "i am the reason str")
 
         def on_session_end(session_window: SessionWindow[str], session_items: list[str]):
             nonlocal session
@@ -60,17 +61,18 @@ class TestSessionWindow(unittest.TestCase):
     def test_2_sessions_no_post_silent(self):
         session: list[str] = None
 
-        def header_buffer_validation_predict(header_buffer: list[str]) -> bool:
+        def header_buffer_validation_predict(header_buffer: list[str]) -> tuple[bool, any]:
             eb_count = 0
             for item in header_buffer:
                 if item == "eb":
                     eb_count += 1
             eb_rate = eb_count / len(header_buffer)
-            return eb_rate > 0.5
+            return eb_rate > 0.5, "i am the reason str"
 
-        def on_header_buffer_validated(header_buffer: list[str], is_header_buffer_valid: bool):
+        def on_header_buffer_validated(header_buffer: list[str], predict_data: any, is_header_buffer_valid: bool):
             # send block door msg to edge board
             self.assertTrue(is_header_buffer_valid)
+            self.assertEqual(predict_data, "i am the reason str")
 
         def on_session_end(session_window: SessionWindow[str], session_items: list[str]):
             nonlocal session
@@ -121,17 +123,18 @@ class TestSessionWindow(unittest.TestCase):
     def test_1_session_post_silent(self):
         session: list[str] = None
 
-        def header_buffer_validation_predict(header_buffer: list[str]) -> bool:
+        def header_buffer_validation_predict(header_buffer: list[str]) -> tuple[bool, any]:
             eb_count = 0
             for item in header_buffer:
                 if item == "eb":
                     eb_count += 1
             eb_rate = eb_count / len(header_buffer)
-            return eb_rate > 0.5
+            return eb_rate > 0.5, "i am the reason str"
 
-        def on_header_buffer_validated(header_buffer: list[str], is_header_buffer_valid: bool):
+        def on_header_buffer_validated(header_buffer: list[str], predict_data: any, is_header_buffer_valid: bool):
             # send block door msg to edge board
             self.assertTrue(is_header_buffer_valid)
+            self.assertEqual(predict_data, "i am the reason str")
 
         def on_session_end(session_window: SessionWindow[str], session_items: list[str]):
             nonlocal session
@@ -176,16 +179,17 @@ class TestSessionWindow(unittest.TestCase):
         def header_buffer_starter_validation(item: dict) -> bool:
             return item["class"] == "gastank" and item["confid"] > 0.9
 
-        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> tuple[bool, any]:
             gas_tank_count = 0
             for item in header_buffer:
                 if item["class"] == "gastank" and item["confid"] > 0.9:
                     gas_tank_count += 1
-            return gas_tank_count / len(header_buffer) > 0.5
+            return gas_tank_count / len(header_buffer) > 0.5, "i am the reason str"
 
-        def on_header_buffer_validated(buffer: list[dict], is_header_buffer_valid: bool) -> None:
+        def on_header_buffer_validated(buffer: list[dict], predict_data: any, is_header_buffer_valid: bool) -> None:
             # 进入body_buffering状态
             self.assertTrue(is_header_buffer_valid)
+            self.assertEqual(predict_data, "i am the reason str")
 
         def body_buffer_validation(items: list[dict], item: dict) -> bool:
             return item["class"] == "gastank" and item["confid"] > 0.9
@@ -230,16 +234,17 @@ class TestSessionWindow(unittest.TestCase):
         def header_buffer_starter_validation(item: dict) -> bool:
             return item["class"] == "gastank" and item["confid"] > 0.9
 
-        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> tuple[bool, any]:
             gas_tank_count = 0
             for item in header_buffer:
                 if item["class"] == "gastank" and item["confid"] > 0.9:
                     gas_tank_count += 1
-            return gas_tank_count / len(header_buffer) > 0.5
+            return gas_tank_count / len(header_buffer) > 0.5, "i am the reason str"
 
-        def on_header_buffer_validated(buffer: list[dict], is_header_buffer_valid: bool) -> None:
+        def on_header_buffer_validated(buffer: list[dict], predict_data: any, is_header_buffer_valid: bool) -> None:
             # 进入body_buffering状态
             self.assertTrue(is_header_buffer_valid)
+            self.assertEqual(predict_data, "i am the reason str")
 
         def body_buffer_validation(items: list[dict], item: dict) -> bool:
             return item["class"] == "gastank" and item["confid"] > 0.9
@@ -298,16 +303,16 @@ class TestSessionWindow(unittest.TestCase):
         def header_buffer_starter_validation(item: dict) -> bool:
             return item["class"] == "gastank" and item["confid"] > 0.9
 
-        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> tuple[bool, any]:
             gas_tank_count = 0
             for item in header_buffer:
                 if item["class"] == "gastank" and item["confid"] > 0.9:
                     gas_tank_count += 1
-            return gas_tank_count / len(header_buffer) > 0.5
+            return gas_tank_count / len(header_buffer) > 0.5, "i am the reason str"
 
         sw: SessionWindow[dict] = SessionWindow(
             header_buffer_starter_validation, None, BufferType.ByPeriodTime, 2,
-            header_buffer_validation_predict, None, 10,
+            header_buffer_validation_predict, None, 6,
             None, BufferType.ByPeriodTime, 5)
 
         sw.add({"class": "gastank", "confid": 0.91})
@@ -317,12 +322,51 @@ class TestSessionWindow(unittest.TestCase):
         sw.add({"class": "gastank", "confid": 0.8})
         sw.add({"class": "gastank", "confid": 0.9})
         self.assertEqual(sw.state, SessionState.HeaderBuffering)
-        time.sleep(2)
+        time.sleep(2.2)
         self.assertEqual(sw.state, SessionState.InPreSilentTime)
         self.assertEqual(len(sw.items), 5)
         sw.add({"class": "gastank", "confid": 0.92})
         self.assertEqual(len(sw.items), 5)
-        time.sleep(10)
+        time.sleep(6.2)
+        self.assertEqual(sw.state, SessionState.Uninitialized)
+        sw.add({"class": "gastank", "confid": 0.92})
+        self.assertEqual(len(sw.items), 1)
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
+
+    def test_pass_predict_data_to_on_header_buffer_validated(self):
+        # 测试header buffer不满足条件情况下，进入pre silent time
+        def header_buffer_starter_validation(item: dict) -> bool:
+            return item["class"] == "gastank" and item["confid"] > 0.9
+
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> tuple[bool, any]:
+            gas_tank_count = 0
+            for item in header_buffer:
+                if item["class"] == "gastank" and item["confid"] > 0.9:
+                    gas_tank_count += 1
+            return gas_tank_count / len(header_buffer) > 0.5, "i am the reason str"
+
+        def on_header_buffer_validated(buffer: list[dict], predict_data: any, is_header_buffer_valid: bool) -> None:
+            # 进入body_buffering状态
+            self.assertTrue(predict_data == "i am the reason str")
+
+        sw: SessionWindow[dict] = SessionWindow(
+            header_buffer_starter_validation, None, BufferType.ByPeriodTime, 2,
+            header_buffer_validation_predict, on_header_buffer_validated, 6,
+            None, BufferType.ByPeriodTime, 5)
+
+        sw.add({"class": "gastank", "confid": 0.91})
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
+        sw.add({"class": "gastank", "confid": 0.6})
+        sw.add({"class": "gastank", "confid": 0.7})
+        sw.add({"class": "gastank", "confid": 0.8})
+        sw.add({"class": "gastank", "confid": 0.9})
+        self.assertEqual(sw.state, SessionState.HeaderBuffering)
+        time.sleep(2.2)
+        self.assertEqual(sw.state, SessionState.InPreSilentTime)
+        self.assertEqual(len(sw.items), 5)
+        sw.add({"class": "gastank", "confid": 0.92})
+        self.assertEqual(len(sw.items), 5)
+        time.sleep(6.5)
         self.assertEqual(sw.state, SessionState.Uninitialized)
         sw.add({"class": "gastank", "confid": 0.92})
         self.assertEqual(len(sw.items), 1)
@@ -334,12 +378,12 @@ class TestSessionWindow(unittest.TestCase):
         def header_buffer_starter_validation(item: dict) -> bool:
             return item["class"] == "gastank" and item["confid"] > 0.9
 
-        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> tuple[bool, any]:
             gas_tank_count = 0
             for item in header_buffer:
                 if item["class"] == "gastank" and item["confid"] > 0.9:
                     gas_tank_count += 1
-            return gas_tank_count / len(header_buffer) > 0.5
+            return gas_tank_count / len(header_buffer) > 0.5, "i am the reason str"
 
         def body_buffer_validation(items: list[dict], item: dict) -> bool:
             return item["class"] == "gastank" and item["confid"] > 0.9

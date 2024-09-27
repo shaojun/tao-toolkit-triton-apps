@@ -135,8 +135,11 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                          f"infered_class: {infered_class}, infered_confid: {infer_server_current_ebic_confid}, "
                          f"edge_board_confidence: {edge_board_confidence}, current_storey: {self.current_storey}, "
                          f"board_original_timestamp_str: {item.original_timestamp_str}"))
-                    self.sw.add({"class": infered_class, "confid": infer_server_current_ebic_confid,
-                                "storey": self.current_storey, "is_qua_board": is_qua_board})
+                    self.sw.add({"class": infered_class,
+                                 "confid": infer_server_current_ebic_confid,
+                                 "storey": self.current_storey,
+                                 "is_qua_board": is_qua_board,
+                                 "timestamp": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()})
                 except Exception as e:
                     self.logger.exception(
                         "exception in handle async task in infer_from_model_worker_queue: {}".format(e))
@@ -158,7 +161,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             self.timeline.send_mqtt_message_to_board_inbox(
                 str(uuid.uuid4()), 'enable_block_door', description="suspicious ebike entering")
 
-        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> tuple[bool, any]:
             # call back function validate the eb entering
             eb_count = 0
             is_qua_board: bool = header_buffer[0]["is_qua_board"]
@@ -195,12 +198,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 if len(header_buffer) < header_buffer_validating_min_item_count:
                     self.logger.debug(
                         f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
-                    return False
+                    return False, f"qua board, short header length: {len(header_buffer)}"
             else:
                 if len(header_buffer) < header_buffer_validating_min_item_count:
                     self.logger.debug(
                         f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
-                    return False
+                    return False, f"short header length: {len(header_buffer)}"
             eb_rate = eb_count / len(header_buffer)
 
             predict_result = eb_rate >= configured_eb_rate
@@ -210,9 +213,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             else:
                 self.logger.debug(
                     f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as eb_rate: {eb_rate} < configured_eb_rate: {configured_eb_rate}")
-            return predict_result
+            return predict_result, f"header buffer-> {items_log_str}"
 
-        def on_header_buffer_validated(header_buffer: list[dict], is_header_buffer_valid: bool):
+        def on_header_buffer_validated(header_buffer: list[dict], predict_data: any, is_header_buffer_valid: bool):
             # send block door msg to edge board, ebike entring if is_header_buffer_valid is true
             # send cancel block door msg if is_header_buffer_valid is false
             if is_header_buffer_valid:
@@ -222,7 +225,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                     event_alarm.EventAlarmPriority.ERROR,
-                    "detected electric-bicycle entering elevator", "007", {}, ""))
+                    str(predict_data), "007", {}, ""))
                 self.timeline.notify_event_alarm(alarms)
             else:
                 self.logger.debug(
@@ -239,7 +242,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                 event_alarm.EventAlarmPriority.CLOSE,
-                "close the EBike alarm", "007"))
+                f"last session item-> {str(session_items[-1])}", "007"))
             self.timeline.notify_event_alarm(alarms)
             self.timeline.send_mqtt_message_to_board_inbox(
                 str(uuid.uuid4()), 'disable_block_door', description="ebike session end")

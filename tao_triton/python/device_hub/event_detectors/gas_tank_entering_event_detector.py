@@ -46,7 +46,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                 ["detectors", "GasTankEnteringEventDetector"], 'gas_tank_confid')
             return item["class"] == "gastank" and item["confid"] > gas_tank_confid
 
-        def header_buffer_validation_predict(header_buffer: list[dict]) -> bool:
+        def header_buffer_validation_predict(header_buffer: list[dict]) -> tuple[bool, any]:
             gas_tank_count = 0
             configured_gas_tank_rate = util.read_config_fast_to_property(
                 ["detectors", "GasTankEnteringEventDetector"],
@@ -56,9 +56,9 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             for item in header_buffer:
                 if item["class"] == "gastank" and item["confid"] > gas_tank_confid:
                     gas_tank_count += 1
-            return gas_tank_count / len(header_buffer) > configured_gas_tank_rate
+            return gas_tank_count / len(header_buffer) > configured_gas_tank_rate, "gas_tank"
 
-        def on_header_buffer_validated(buffer: list[dict], is_header_buffer_valid: bool) -> None:
+        def on_header_buffer_validated(buffer: list[dict], predict_data: any, is_header_buffer_valid: bool) -> None:
             self.logger.debug("board:{},header buffer validated result:{}".format(self.timeline.board_id,
                                                                                   str(is_header_buffer_valid)))
             # 进入body_buffering状态
@@ -115,7 +115,8 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         self.state_obj = {"last_infer_timestamp": None,
                           "last_notify_timestamp": None}
         self.timeline = timeline
-        self.inferencer = Inferencer(self.statistics_logger, self.timeline.board_id)
+        self.inferencer = Inferencer(
+            self.statistics_logger, self.timeline.board_id)
 
     '''
     def get_timeline_item_filter(self):
