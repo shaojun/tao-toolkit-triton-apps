@@ -97,7 +97,7 @@ handlers:
     when: S
     interval: 86400
     backupCount: 1200
-    maxBytes: 40240000
+    maxBytes: 10240000
     encoding: utf8
   elevatorJamsEventDetector_file_handler:
     class: enhanced_rotating_file_handler.enhanced_rotating_file_handler

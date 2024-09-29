@@ -200,10 +200,14 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
                     return False, f"qua board, short header length: {len(header_buffer)}"
             else:
-                if len(header_buffer) < header_buffer_validating_min_item_count:
-                    self.logger.debug(
-                        f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
-                    return False, f"short header length: {len(header_buffer)}"
+                # add a temp solution here for further boost the 1126 eb accuracy, if only got 2 and all of them are eb, then also treat as eb entering
+                if len(header_buffer) == 2:
+                    configured_eb_rate = 1
+                else:
+                    if len(header_buffer) < header_buffer_validating_min_item_count:
+                        self.logger.debug(
+                            f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
+                        return False, f"short header length: {len(header_buffer)}"
             eb_rate = eb_count / len(header_buffer)
 
             predict_result = eb_rate >= configured_eb_rate
@@ -213,7 +217,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             else:
                 self.logger.debug(
                     f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as eb_rate: {eb_rate} < configured_eb_rate: {configured_eb_rate}")
-            return predict_result, f"header buffer-> {items_log_str}"
+            return predict_result, f"is_qua_board: {is_qua_board}, header buffer-> {items_log_str}"
 
         def on_header_buffer_validated(header_buffer: list[dict], predict_data: any, is_header_buffer_valid: bool):
             # send block door msg to edge board, ebike entring if is_header_buffer_valid is true
