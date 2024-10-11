@@ -93,9 +93,21 @@ if __name__ == '__main__':
 
                     t0 = datetime.datetime.now()
                     try:
-                        infered_class, infer_server_current_ebic_confid, reason = inferencer.inference_image_from_ali_qwen_models(
-                            full_image_base64_encoded_text)
-                        time.sleep(0.4)
+                        infer_result_json = inferencer.inference_discrete_images_from_ali_qwen_vl_plus_model(
+                            [os.path.join(single_class_folder_full_path, simple_file_name)])
+                        try:
+                            if infer_result_json["vehicle_type"] == "电瓶车" or infer_result_json["vehicle_type"] == "电动车" or infer_result_json["vehicle_type"] == "摩托车":
+                                infered_class = 'electric_bicycle'
+                                infer_server_current_ebic_confid = 1
+                            else:
+                                infered_class = 'non_eb'
+                                infer_server_current_ebic_confid = 1
+                            reason = infer_result_json["reason"]
+                        except Exception as e:
+                            infered_class = 'exceptioned'
+                            infered_server_confid = 0
+                            print(
+                                '!!!exceptioned in parsing infer_result_json: {}'.format(e))
                         print('sub_folder: {}, file: {} infered_class: {}, confid: {}, reason: {}'.format(
                             single_class_folder_full_path.split("/")[-1], simple_file_name, infered_class, infer_server_current_ebic_confid, reason))
                         if infered_class == 'electric_bicycle':
@@ -111,6 +123,7 @@ if __name__ == '__main__':
 
                     infer_used_time = (
                         datetime.datetime.now() - t0).total_seconds()
+                    time.sleep(0.4)
                     stats['total_infer_times_by_seconds'] += infer_used_time
 
                     if infered_class == class_folder_simple_name:

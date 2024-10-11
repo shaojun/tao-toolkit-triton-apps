@@ -139,7 +139,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                  "confid": infer_server_current_ebic_confid,
                                  "storey": self.current_storey,
                                  "is_qua_board": is_qua_board,
-                                 "timestamp": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()})
+                                 "timestamp": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
+                                 "cropped_base64_image_file_text": f"data:image,{cropped_base64_image_file_text}"})
                 except Exception as e:
                     self.logger.exception(
                         "exception in handle async task in infer_from_model_worker_queue: {}".format(e))
@@ -220,16 +221,38 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             return predict_result, f"is_qua_board: {is_qua_board}, header buffer-> {items_log_str}"
 
         def on_header_buffer_validated(header_buffer: list[dict], predict_data: any, is_header_buffer_valid: bool):
+            is_qua_board: bool = header_buffer[0]["is_qua_board"]
+            alarm_description = str(predict_data)
             # send block door msg to edge board, ebike entring if is_header_buffer_valid is true
             # send cancel block door msg if is_header_buffer_valid is false
             if is_header_buffer_valid:
-                self.logger.info(
-                    f"board: {self.timeline.board_id}, ebike entering confirmed as header buffer validated with True, will raise alarm")
+                should_use_llm_for_post_infer = util.read_config_fast_to_board_control_level(
+                    ["detectors", 'ElectricBicycleEnteringEventDetector',
+                     'UseLlmForPostInferSwitchers'],
+                    self.timeline.board_id, False)
+                if not should_use_llm_for_post_infer:
+                    self.logger.info(
+                        f"board: {self.timeline.board_id}, ebike entering confirmed as header buffer validated with True, will raise alarm")
+                else:
+                    if not is_qua_board:
+                        self.logger.info(
+                            f"board: {self.timeline.board_id}, ebike entering confirmed as header buffer validated with True, further checking with qwen(image count: {len(header_buffer)})...")
+                        qwen_result = self.inferencer.inference_video_by_convert_from_image_frames_from_ali_qwen_vl_model(
+                            [i["cropped_base64_image_file_text"]
+                                for i in header_buffer],
+                            model_name="qwen-vl-plus-0809")
+                        self.logger.debug(
+                            f"board: {self.timeline.board_id}, qwen_result: {str(qwen_result or '')}")
+                        alarm_description = f"qwen: {qwen_result}\n{alarm_description}"
+                        if qwen_result != None and (qwen_result["vehicle_type"] == "电动车" or qwen_result["vehicle_type"] == "摩托车"):
+                            self.logger.info(
+                                f"board: {self.timeline.board_id}, qwen treat this is a ebike")
+
                 alarms = []
                 alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                     event_alarm.EventAlarmPriority.ERROR,
-                    str(predict_data), "007", {}, ""))
+                    alarm_description, "007", {}, ""))
                 self.timeline.notify_event_alarm(alarms)
             else:
                 self.logger.debug(
