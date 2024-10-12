@@ -1,5 +1,6 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
+import datetime
 from http import HTTPStatus
 import io
 import json
@@ -87,7 +88,7 @@ class Inferencer:
 
     def inference_discrete_images_from_ali_qwen_vl_plus_model(
             self,
-            image_file_full_path_list: list[str],
+            image_file_full_path_or_base64_str_list: list[str],
             user_prompt: str = None,
             system_prompt: str = None) -> dict:
         """
@@ -97,95 +98,15 @@ class Inferencer:
         import os
         import dashscope
         from http import HTTPStatus
-        if len(image_file_full_path_list) > 3:
+        # only take first 3 images
+        image_file_full_path_or_base64_str_list = image_file_full_path_or_base64_str_list[:3]
+
+        if len(image_file_full_path_or_base64_str_list) > 3:
             raise ValueError("input list MAX contain 3 images")
+        is_image_in_base64_str = False
+
         # make sure all path exists
-        for image_file_full_path in image_file_full_path_list:
-            if not os.path.exists(image_file_full_path):
-                raise FileNotFoundError(
-                    f"image file not found: {image_file_full_path}")
-
-        default_system_prompt = "你是一个区分车辆特征的专家,能区分出这4类车辆: 自行车,电瓶车,摩托车,其它.\n并一定以json格式回答,如```{\"vehicle_type\":\"自行车\",\"reason\":\"\"}```"
-        if system_prompt is None:
-            system_prompt = default_system_prompt
-
-        default_user_prompt = "你看到了什么类型的车辆, 并从车辆特征方面解释你的原因"
-        if user_prompt is None:
-            user_prompt = default_user_prompt
-
-        messages = [
-            {"role": "system", "content": [
-                {"text": system_prompt}]},
-
-            {"role": "user", "content": [
-                {"image": f"file://{i}"} for i in image_file_full_path_list]}
-        ]
-
-        messages[1]["content"].append({"text": user_prompt})
-        infer_start_time = time.time()
-        response = dashscope.MultiModalConversation.call(
-            model="qwen-vl-plus-0809",
-            messages=messages,
-            output_format="json",
-        )
-
-        infer_used_time_by_ms = (time.time() - infer_start_time) * 1000
-        if response.status_code == HTTPStatus.OK:
-            try:
-                raw_result = response.output.choices[0].message.content
-                self.logger.debug(
-                    f"{self.logger_str_prefix}, inferencer, qwen_vl_plus, raw_result: {raw_result}, infer_used_time_by_ms: {infer_used_time_by_ms}")
-                unformat_json_text = raw_result[0]["text"]
-            except Exception as e:
-                print(
-                    f"error for parsing basic structure from llm response: {e}")
-                raise e
-            # find the index of first char: { or [
-            start_index = unformat_json_text.find("{")
-            if start_index == -1:
-                start_index = unformat_json_text.find("[")
-                last_index = unformat_json_text.rfind("]")
-                if start_index == -1 or last_index == -1:
-                    raise ValueError(
-                        "error for parsing json structure from llm response")
-            else:
-                last_index = unformat_json_text.rfind("}")
-                if last_index == -1:
-                    raise ValueError(
-                        "error for parsing json structure from llm response")
-            json_str = unformat_json_text[start_index:last_index+1]
-            js = json.loads(json_str)
-            return js
-        else:
-            self.logger.debug(
-                f"{self.logger_str_prefix}, inferencer, qwen_vl_plus, HTTPStatus NOT OK, raw_result: {response.output}, infer_used_time_by_ms: {infer_used_time_by_ms}")
-
-            print(response.code)  # The error code.
-            print(response.message)  # The error message.
-
-    def inference_video_by_convert_from_image_frames_from_ali_qwen_vl_model(
-            self,
-            image_file_full_path_or_base64_str_list: list[str],
-            model_name: Literal['qwen-vl-max',
-                                'qwen-vl-plus-0809'] = 'qwen-vl-plus-0809',
-            enable_video_convert: bool = True,
-            duplicate_image_count_for_make_video: int = 4,
-            user_prompt: str = None,
-            system_prompt: str = None) -> dict:
-        """
-        infer with a video which composed by images
-        @param image_file_full_path_or_base64_str_list: list of image file full path, will be converted to video file, from exp, >=10 frames would be a good start of accuracy
-        @param model_name: model name, default is qwen-vl-plus-0809
-        @param enable_video_convert: enable video convert or not, default is True
-        @param duplicate_image_count_for_make_video: when original image count is less than 10, for improve the accuracy, will duplicate original images for making video, default is 3, that say 3 images will be duplicated to 9 images 
-        """
-        import os
-        import dashscope
-        import cv2
-        from http import HTTPStatus
-
-        def images_to_video(image_file_full_path_or_base64_str_list: list[str], output_video_file_full_path: str):
-            is_image_in_base64_str = False
+        for image_file_full_path in image_file_full_path_or_base64_str_list:
             # determine if the input is base64 string or file path
             if image_file_full_path_or_base64_str_list[0].startswith("data:image"):
                 is_image_in_base64_str = True
@@ -197,14 +118,135 @@ class Inferencer:
                     with open(f"/tmp/{uuid.uuid4()}.jpg", "wb") as f:
                         f.write(img_data)
                         image_file_full_path_or_base64_str_list[i] = f.name
-            # get the first image to get the size
-            img = cv2.imread(image_file_full_path_or_base64_str_list[0])
-            height, width, layers = img.shape
-            size = (width, height)
-            video_writer = cv2.VideoWriter(
-                output_video_file_full_path, cv2.VideoWriter_fourcc(*'mp4v'), 4, (width, height))
+            elif not os.path.exists(image_file_full_path):
+                raise FileNotFoundError(
+                    f"image file not found: {image_file_full_path}")
 
-            for p in image_file_full_path_or_base64_str_list:
+        default_system_prompt = "你是一个识别车辆的专家,能区分出这3类成人车辆: 自行车,电瓶车,摩托车. 如果你没有看到这3类车辆,或者不太确定,请回答:其它. \n切记,一定以json格式回答,如```{\"vehicle_type\":\"自行车\",\"reason\":\"\"}```"
+        if system_prompt is None:
+            system_prompt = default_system_prompt
+
+        default_user_prompt = "请查看图片并回答和解释原因"
+        if user_prompt is None:
+            user_prompt = default_user_prompt
+        try:
+            messages = [
+                {
+                    "role": "system",
+                    "content": [
+                        {"text": system_prompt}]},
+
+                {
+                    "role": "user",
+                    "content": [
+                        {"image": f"file://{i}"} for i in image_file_full_path_or_base64_str_list]}
+            ]
+
+            messages[1]["content"].append({"text": user_prompt})
+            infer_start_time = time.time()
+            response = dashscope.MultiModalConversation.call(
+                model="qwen-vl-plus-0809",
+                messages=messages,
+                output_format="json",
+            )
+
+            infer_used_time_by_ms = (time.time() - infer_start_time) * 1000
+            if response.status_code == HTTPStatus.OK:
+                try:
+                    raw_result = response.output.choices[0].message.content
+                    self.logger.debug(
+                        f"{self.logger_str_prefix}, inferencer, qwen_vl_plus, raw_result: {raw_result}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+                    unformat_json_text = raw_result[0]["text"]
+                except Exception as e:
+                    print(
+                        f"error for parsing basic structure from llm response: {e}")
+                    raise e
+                # find the index of first char: { or [
+                start_index = unformat_json_text.find("{")
+                if start_index == -1:
+                    start_index = unformat_json_text.find("[")
+                    last_index = unformat_json_text.rfind("]")
+                    if start_index == -1 or last_index == -1:
+                        self.logger.debug(
+                            f"{self.logger_str_prefix}, inferencer, qwen_vl_plus images, error for parsing json structure from llm response")
+                        return None
+                        raise ValueError(
+                            "error for parsing json structure from llm response")
+                else:
+                    last_index = unformat_json_text.rfind("}")
+                    if last_index == -1:
+                        self.logger.debug(
+                            f"{self.logger_str_prefix}, inferencer, qwen_vl_plus images, error for parsing json structure from llm response")
+                        return None
+                        raise ValueError(
+                            "error for parsing json structure from llm response")
+                json_str = unformat_json_text[start_index:last_index+1]
+                js = json.loads(json_str)
+                return js
+            else:
+                self.logger.debug(
+                    f"{self.logger_str_prefix}, inferencer, qwen_vl_plus images, HTTPStatus NOT OK, raw_result: {response.output}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+                # The error code.
+                print(f"{str(datetime.datetime.now())} {self.logger_str_prefix}, inferencer, qwen_vl_plus images, HTTPStatus NOT OK: {response.code} - {response.message}")
+        finally:
+            if is_image_in_base64_str:
+                for i in image_file_full_path_or_base64_str_list:
+                    os.remove(i)
+
+    def inference_video_by_convert_from_image_frames_from_ali_qwen_vl_model(
+            self,
+            image_file_full_path_or_base64_str_list: list[str],
+            model_name: Literal['qwen-vl-max',
+                                'qwen-vl-plus-0809'] = 'qwen-vl-plus-0809',
+            enable_video_convert: bool = False,
+            enable_base64_image_to_local_file: bool = True,
+            user_prompt: str = None,
+            system_prompt: str = None) -> dict:
+        """
+        infer with a video which composed by images
+        @param image_file_full_path_or_base64_str_list:
+        @param model_name: model name, default is qwen-vl-plus-0809
+        @param enable_video_convert: enable video convert or not, default is True
+        @param duplicate_image_count_for_make_video: when original image count is less than 10, for improve the accuracy, will duplicate original images for making video, default is 3, that say 3 images will be duplicated to 9 images
+        """
+        import os
+        import dashscope
+        import cv2
+        from http import HTTPStatus
+        if len(image_file_full_path_or_base64_str_list) == 1:
+            image_file_full_path_or_base64_str_list.append(
+                image_file_full_path_or_base64_str_list[0])
+        is_image_in_base64_str = False
+        if enable_base64_image_to_local_file and image_file_full_path_or_base64_str_list[0].startswith("data:image"):
+            is_image_in_base64_str = True
+            # convert base64 string to image file
+            for i in range(len(image_file_full_path_or_base64_str_list)):
+                img_data = image_file_full_path_or_base64_str_list[i]
+                img_data = img_data.split(",")[1]
+                img_data = base64.b64decode(img_data)
+                with open(f"/tmp/{uuid.uuid4()}.jpg", "wb") as f:
+                    f.write(img_data)
+                    image_file_full_path_or_base64_str_list[i] = f.name
+
+        def images_to_video(image_file_full_path_list: list[str], output_video_file_full_path: str):
+            # get the max hight and width by loop all images
+            max_height = 0
+            max_width = 0
+            for p in image_file_full_path_list:
+                img = cv2.imread(p)
+                height, width, _ = img.shape
+                if height > max_height:
+                    max_height = height
+                if width > max_width:
+                    max_width = width
+            size = (max_width, max_height)
+            frame_rate = 4
+            video_writer = cv2.VideoWriter(
+                output_video_file_full_path, cv2.VideoWriter_fourcc(*'mp4v'), frame_rate, (max_width, max_height))
+
+            duplicate_image_count_for_make_video = int(3*frame_rate /
+                                                       len(image_file_full_path_list))
+            for p in image_file_full_path_list:
                 try:
                     img = cv2.imread(p)
                     # resize image
@@ -216,34 +258,30 @@ class Inferencer:
                         os.remove(p)
 
             video_writer.release()
-            print("Video created successfully!")
+            print(f"{datetime.datetime.now()} {self.logger_str_prefix} - video file created with max hight: {max_height}, max width: {max_width}, total frames: {len(image_file_full_path_list) * duplicate_image_count_for_make_video}")
 
         default_system_prompt = "你是一个识别车辆的专家,能区分出这3类成人车辆: 自行车,电瓶车,摩托车. 如果你没有看到这3类车辆,或者不太确定,请回答:其它. \n切记,一定以json格式回答,如```{\"vehicle_type\":\"自行车\",\"reason\":\"\"}```"
         if system_prompt is None:
             system_prompt = default_system_prompt
 
-        default_user_prompt = "你看到车辆了吗?请解释原因"
+        default_user_prompt = "请查看图片并回答和解释原因"
         if user_prompt is None:
             user_prompt = default_user_prompt
-
-        video_file_full_path: str = None
-        if enable_video_convert:
-            video_file_full_path = f"/tmp/{uuid.uuid4()}.mp4"
-            images_to_video(
-                image_file_full_path_or_base64_str_list, video_file_full_path)
-            image_file_full_path_or_base64_str_list = [video_file_full_path]
-        infer_start_time = time.time()
         try:
+            infer_start_time = time.time()
             messages = [
-                {"role": "system", "content": [
-                    {"text": system_prompt}]},
+                {
+                    "role": "system",
+                    "content": [
+                        {"text": system_prompt}]},
                 {
                     "role": "user",
                     "content": [
                         # 以视频文件传入
                         # {"video": "https://cloud.video.taobao.com/vod/S8T54f_w1rkdfLdYjL3S5zKN9CrhkzuhRwOhF313tIQ.mp4"},
                         # 或以图片列表形式传入
-                        {"video": image_file_full_path_or_base64_str_list},
+                        {"video": [
+                            f"file://{i}" for i in image_file_full_path_or_base64_str_list]},
                         {"text": user_prompt}
                     ]
                 }
@@ -257,22 +295,23 @@ class Inferencer:
             )
 
             print(
-                f"infer used time(by ms): {(time.time() - infer_start_time) * 1000}")
+                f"{datetime.datetime.now()} {self.logger_str_prefix} - qwen video infer used time(by ms): {(time.time() - infer_start_time) * 1000} - {response}")
         finally:
-            if video_file_full_path is not None:
-                os.remove(video_file_full_path)
+            for p in image_file_full_path_or_base64_str_list:
+                if is_image_in_base64_str:
+                    os.remove(p)
+            pass
 
         infer_used_time_by_ms = (time.time() - infer_start_time) * 1000
         if response.status_code == HTTPStatus.OK:
             self.logger.debug(
-                    f"{self.logger_str_prefix}, inferencer, qwen video, raw_result: {response}, infer_used_time_by_ms: {infer_used_time_by_ms}")
-            # print(response)
+                f"{self.logger_str_prefix}, inferencer, qwen video, raw_result: {response}, infer_used_time_by_ms: {infer_used_time_by_ms}")
             try:
                 raw_result = response.output.choices[0].message.content
                 unformat_json_text = raw_result[0]["text"]
             except Exception as e:
                 print(
-                    f"error for parsing basic structure from llm response: {e}")
+                    f"{datetime.datetime.now()} {self.logger_str_prefix} - error for parsing basic structure from llm response: {e}")
                 self.logger.debug(
                     f"{self.logger_str_prefix}, inferencer, qwen video, error for parsing basic structure from llm response: {e}")
                 return None
@@ -297,8 +336,171 @@ class Inferencer:
                         "error for parsing json structure from llm response")
             json_str = unformat_json_text[start_index:last_index+1]
             js = json.loads(json_str)
-            print(js)
+            # print(js)
             return js
         else:
-            print(response.code)  # The error code.
-            print(response.message)  # The error message.
+            print(f"{str(datetime.datetime.now())} {self.logger_str_prefix}, inferencer, qwen video, HTTPStatus NOT OK: {response.code} - {response.message}")
+            self.logger.debug(
+                f"{self.logger_str_prefix}, inferencer, qwen video, HTTPStatus NOT OK, raw_result: {response.output}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+            return None
+            # print(response.code)  # The error code.
+            # print(response.message)  # The error message.
+
+    def inference_video_by_convert_from_image_frames_from_glm_4v_model(
+            self,
+            image_file_full_path_or_base64_str_list: list[str],
+            user_prompt: str = None,
+            system_prompt: str = None):
+        """
+        infer with a video which composed by images
+        @param image_file_full_path_or_base64_str_list: list of image file full path, will be converted to video file, from exp, >=10 frames would be a good start of accuracy
+        @param model_name: model name, default is glm-4v
+        @param enable_video_convert: enable video convert or not, default is True
+        @param duplicate_image_count_for_make_video: when original image count is less than 10, for improve the accuracy, will duplicate original images for making video, default is 3, that say 3 images will be duplicated to 9 images
+        """
+        import os
+        from zhipuai import ZhipuAI
+        import cv2
+        is_image_in_base64_str = False
+        if image_file_full_path_or_base64_str_list[0].startswith("data:image"):
+            is_image_in_base64_str = True
+            # convert base64 string to image file
+            for i in range(len(image_file_full_path_or_base64_str_list)):
+                img_data = image_file_full_path_or_base64_str_list[i]
+                img_data = img_data.split(",")[1]
+                img_data = base64.b64decode(img_data)
+                with open(f"/tmp/{uuid.uuid4()}.jpg", "wb") as f:
+                    f.write(img_data)
+                    image_file_full_path_or_base64_str_list[i] = f.name
+
+        def images_to_video(image_file_full_path_list: list[str], output_video_file_full_path: str):
+            # get the max hight and width by loop all images
+            max_height = 0
+            max_width = 0
+            for p in image_file_full_path_list:
+                img = cv2.imread(p)
+                height, width, _ = img.shape
+                if height > max_height:
+                    max_height = height
+                if width > max_width:
+                    max_width = width
+            size = (max_width, max_height)
+            frame_rate = 4
+            video_writer = cv2.VideoWriter(
+                output_video_file_full_path, cv2.VideoWriter_fourcc(*'mp4v'), frame_rate, (max_width, max_height))
+
+            duplicate_image_count_for_make_video = int(3*frame_rate /
+                                                       len(image_file_full_path_list))
+            for p in image_file_full_path_list:
+                try:
+                    img = cv2.imread(p)
+                    # resize image
+                    img = cv2.resize(img, size)
+                    for i in range(duplicate_image_count_for_make_video):
+                        video_writer.write(img)
+                finally:
+                    if is_image_in_base64_str:
+                        os.remove(p)
+
+            video_writer.release()
+            print(f"{datetime.datetime.now()} {self.logger_str_prefix} - video file created with max hight: {max_height}, max width: {max_width}, total frames: {len(image_file_full_path_list) * duplicate_image_count_for_make_video}")
+
+        default_system_prompt = "你是一个识别车辆的专家,能区分出这3类成人车辆: 自行车,电瓶车,摩托车. 如果你没有看到这3类车辆,或者不太确定,请回答:其它. \n切记,一定以json格式回答,如```{\"vehicle_type\":\"自行车\",\"reason\":\"\"}```"
+        if system_prompt is None:
+            system_prompt = default_system_prompt
+
+        default_user_prompt = default_system_prompt + "\n请回答和解释原因"
+        if user_prompt is None:
+            user_prompt = default_user_prompt
+
+        video_file_full_path: str = None
+        try:
+            video_file_full_path = f"/tmp/{uuid.uuid4()}.mp4"
+            images_to_video(
+                image_file_full_path_or_base64_str_list, video_file_full_path)
+            with open(video_file_full_path, 'rb') as video_file:
+                video_base = base64.b64encode(
+                    video_file.read()).decode('utf-8')
+            client = ZhipuAI(api_key=os.getenv(
+                "zhipuai_API_KEY"))  # 填写您自己的APIKey
+            infer_start_time = time.time()
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "video_url",
+                         # 以视频文件传入
+                         # {"video": "https://cloud.video.taobao.com/vod/S8T54f_w1rkdfLdYjL3S5zKN9CrhkzuhRwOhF313tIQ.mp4"},
+                         # 或以图片列表形式传入
+                         "video_url": {
+                             "url": video_base
+                         }},
+                        {"type": "text", "text": "你能看到这3类车辆吗? 自行车,电瓶车,摩托车. 如果你没有看到这3类车辆,或者不太确定,请回答:其它. do response to me with json:```{\"vehicle_type\":\"自行车\",\"reason\":\"\"}```"}
+                    ]
+                }
+            ]
+
+            response = client.chat.completions.create(
+                model="glm-4v-plus",
+                messages=messages,
+            )
+
+            print(
+                f"{datetime.datetime.now()} {self.logger_str_prefix} - glm4v video infer used time(by ms): {(time.time() - infer_start_time) * 1000}")
+        finally:
+            for p in image_file_full_path_or_base64_str_list:
+                if is_image_in_base64_str and os.path.exists(p):
+                    os.remove(p)
+            pass
+
+        infer_used_time_by_ms = (time.time() - infer_start_time) * 1000
+        print(response.choices[0].message)
+        return None
+        if response.status_code == HTTPStatus.OK:
+            self.logger.debug(
+                f"{self.logger_str_prefix}, inferencer, glm4v video, raw_result: {response}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+            # print(response)
+            if video_file_full_path is not None:
+                os.remove(video_file_full_path)
+            try:
+                raw_result = response.output.choices[0].message.content
+                unformat_json_text = raw_result[0]["text"]
+            except Exception as e:
+                print(
+                    f"{datetime.datetime.now()} {self.logger_str_prefix} - error for parsing basic structure from llm response: {e}")
+                self.logger.debug(
+                    f"{self.logger_str_prefix}, inferencer, glm4v video, error for parsing basic structure from llm response: {e}")
+                return None
+            # find the index of first char: { or [
+            start_index = unformat_json_text.find("{")
+            if start_index == -1:
+                start_index = unformat_json_text.find("[")
+                last_index = unformat_json_text.rfind("]")
+                if start_index == -1 or last_index == -1:
+                    self.logger.debug(
+                        f"{self.logger_str_prefix}, inferencer, glm4v video, error for parsing json structure from llm response")
+                    return None
+                    raise ValueError(
+                        "error for parsing json structure from llm response")
+            else:
+                last_index = unformat_json_text.rfind("}")
+                if last_index == -1:
+                    self.logger.debug(
+                        f"{self.logger_str_prefix}, inferencer, glm4v video, error for parsing json structure from llm response")
+                    return None
+                    raise ValueError(
+                        "error for parsing json structure from llm response")
+            json_str = unformat_json_text[start_index:last_index+1]
+            js = json.loads(json_str)
+            # print(js)
+            return js
+        else:
+            print(f"{str(datetime.datetime.now())} {self.logger_str_prefix}, inferencer, glm4v video, HTTPStatus NOT OK: {response.code} - {response.message}")
+            self.logger.debug(
+                f"{self.logger_str_prefix}, inferencer, glm4v video, HTTPStatus NOT OK, raw_result: {response.output}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+            if video_file_full_path is not None:
+                os.remove(video_file_full_path)
+            return None
+            # print(response.code)  # The error code.
+            # print(response.message)  # The error message.

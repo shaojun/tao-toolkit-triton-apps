@@ -237,13 +237,20 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     if not is_qua_board:
                         self.logger.info(
                             f"board: {self.timeline.board_id}, ebike entering confirmed as header buffer validated with True, further checking with qwen(image count: {len(header_buffer)})...")
+                        # qwen_result = self.inferencer.inference_video_by_convert_from_image_frames_from_glm_4v_model(
+                        #     [i["cropped_base64_image_file_text"] for i in header_buffer])
+
                         qwen_result = self.inferencer.inference_video_by_convert_from_image_frames_from_ali_qwen_vl_model(
                             [i["cropped_base64_image_file_text"]
                                 for i in header_buffer],
                             model_name="qwen-vl-plus-0809")
+
+                        # qwen_result = self.inferencer.inference_discrete_images_from_ali_qwen_vl_plus_model(
+                        #     [i["cropped_base64_image_file_text"]
+                        #         for i in header_buffer])
                         self.logger.debug(
                             f"board: {self.timeline.board_id}, qwen_result: {str(qwen_result or '')}")
-                        alarm_description = f"qwen: {qwen_result}\n{alarm_description}"
+                        alarm_description = f"qwen: {qwen_result} \n{alarm_description}"
                         if qwen_result != None and (qwen_result["vehicle_type"] == "电动车" or qwen_result["vehicle_type"] == "摩托车"):
                             self.logger.info(
                                 f"board: {self.timeline.board_id}, qwen treat this is a ebike")
