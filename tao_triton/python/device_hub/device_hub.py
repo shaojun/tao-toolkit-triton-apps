@@ -212,20 +212,20 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
     time_diff_by_sub_kafka_to_board = (kafka_server_received_msg_utc_datetime
                                        - board_timestamp_utc_datetime
                                        ).total_seconds()
-    if abs(time_diff_by_sub_kafka_to_board) >= 6:
+    if abs(time_diff_by_sub_kafka_to_board) >= 9:
         # log every 10 seconds for avoid log flooding
-        if datetime.datetime.now().second % 10 == 0:
-            logger.warning(
-                f"time_diff (kafka - board) is too big: {time_diff_by_sub_kafka_to_board}s for board: {board_id}, board network upload slow or un-synced datetime?")
+        # if datetime.datetime.now().second % 10 == 0:
+        logger.warning(
+            f"time_diff (kafka - board) is too big: {time_diff_by_sub_kafka_to_board}s for board: {board_id}, board network upload slow or un-synced datetime?")
         return True
     time_diff_by_sub_dh_to_kafka = (dh_local_utc_datetime
                                     - kafka_server_received_msg_utc_datetime
                                     ).total_seconds()
-    if abs(time_diff_by_sub_dh_to_kafka) >= 6:
+    if abs(time_diff_by_sub_dh_to_kafka) >= 9:
         # log every 10 seconds for avoid log flooding
-        if datetime.datetime.now().second % 10 == 0:
-            logger.warning(
-                f"time_diff (dh_local - kafka) is too big: {time_diff_by_sub_dh_to_kafka}s for board: {board_id}, dh process slow?")
+        # if datetime.datetime.now().second % 10 == 0:
+        logger.warning(
+            f"time_diff (dh_local - kafka) is too big: {time_diff_by_sub_dh_to_kafka}s for board: {board_id}, dh process slow?")
         return True
     return False
 
@@ -657,7 +657,7 @@ def check_and_update_incremental_board_info_via_web_service_and_send_msg_to_proc
         return
 
 
-GLOBAL_CONCURRENT_PROCESS_COUNT = 32
+GLOBAL_CONCURRENT_PROCESS_COUNT = 40
 
 # a global flag to indicate whether all processes should exit
 GLOBAL_SHOULD_QUIT_EVERYTHING = False
