@@ -64,6 +64,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     edge_board_confidence = sections[len(sections) - 1]
                     cropped_base64_image_file_text = sections[len(
                         sections) - 2][len("base64_image_data:"):]
+                    # the last but two is the OPTIONAL, full image file with base64 encoded text,
+                    # and the section is prefixed with-> full_base64_image_data:
+                    # upload the full image to cloud is for debug purpose, it's controlled and cofigurable from edge board local side.
+                    full_image_frame_base64_encode_text = None
+                    if sections[len(sections) - 3].startswith("full_base64_image_data:"):
+                        full_image_frame_base64_encode_text = sections[len(
+                            sections) - 3][len("full_base64_image_data:"):]
 
                     infer_start_time = time.time()
                     if self.sw.state == SessionState.Uninitialized:
@@ -100,24 +107,72 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         ["detectors", 'ElectricBicycleEnteringEventDetector',
                             'ForceToUseQuaModelSwitchers'],
                         self.timeline.board_id, False)
+                    qua_infer_classification_service_url = util.read_config_fast_to_property(
+                        ["detectors", 'ElectricBicycleEnteringEventDetector'], "qua_infer_classification_service_url", None)
+                    qua_infer_detection_service_url = util.read_config_fast_to_property(
+                        ["detectors", 'ElectricBicycleEnteringEventDetector'], "qua_infer_detection_service_url", None)
+                    enable_qua_detection_when_full_frame_uploaded_from_board = util.read_config_fast_to_property(
+                        ["detectors", 'ElectricBicycleEnteringEventDetector'],
+                        "enable_qua_detection_when_full_frame_uploaded_from_board", False)
 
                     if is_qua_board or is_forced_to_use_qua_model:
-                        infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_models(
-                            cropped_base64_image_file_text, "ebicycle")
-                        try:
-                            temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
-                                                                             str(uuid.uuid4()) + '.jpg')
+                        if full_image_frame_base64_encode_text and len(full_image_frame_base64_encode_text) > 1:
+                            self.logger.debug(
+                                f"board: {self.timeline.board_id}, see full frame image from edge board")
+                            temp_full_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
+                                                                          str(uuid.uuid4()) + '.jpg')
                             temp_image = Image.open(io.BytesIO(base64.decodebytes(
-                                cropped_base64_image_file_text.encode('ascii'))))
-                            temp_image.save(temp_cropped_image_file_full_name)
-                            self.save_sample_image(temp_cropped_image_file_full_name,
+                                full_image_frame_base64_encode_text.encode('ascii'))))
+                            temp_image.save(
+                                temp_full_image_file_full_name)
+                            self.save_sample_image(temp_full_image_file_full_name,
                                                    item.original_timestamp,
-                                                   infered_class, infer_server_current_ebic_confid,
+                                                   "no_detect_yet", 1,
                                                    None,
-                                                   "qua_")
-                        finally:
-                            if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
-                                os.unlink(temp_cropped_image_file_full_name)
+                                                   "full_frame")
+                            if enable_qua_detection_when_full_frame_uploaded_from_board:
+                                detection_result: list[dict] = self.inferencer.inference_image_from_qua_detection_models(
+                                    full_image_frame_base64_encode_text, service_url=qua_infer_detection_service_url)
+                                if detection_result != None:
+                                    # only get the ebicycle image base64 text, and then inference the classification model
+                                    ebicycle_detection_result = [
+                                        i for i in detection_result if i["name"] == "ebicycle" and i["conf"] >= 0.1]
+                                    if len(ebicycle_detection_result) > 0:
+                                        self.logger.debug(
+                                            f"board: {self.timeline.board_id}, qua detection, detected ebicycle with confid: {ebicycle_detection_result[0]['conf']}, coords: {ebicycle_detection_result[0]['coords']}")
+                                        cropped_base64_image_file_text = ebicycle_detection_result[
+                                            0]["image_base64_encoded_text"]
+                                    else:
+                                        cropped_base64_image_file_text = None
+                                        simplified_result = []
+                                        for r in detection_result:
+                                            simplified_result.append(
+                                                {"name": r["name"], "conf": r["conf"], "coords": r["coords"]})
+                                        self.logger.debug(
+                                            f"board: {self.timeline.board_id}, qua detection, see no ebicycle result in full frame: {simplified_result}")
+
+                        if cropped_base64_image_file_text == None or len(cropped_base64_image_file_text) < 1:
+                            infered_class = 'background'
+                            infer_server_current_ebic_confid = 0.0
+                        else:
+                            infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_classification_models(
+                                cropped_base64_image_file_text, "ebicycle", service_url=qua_infer_classification_service_url)
+                            try:
+                                temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
+                                                                                 str(uuid.uuid4()) + '.jpg')
+                                temp_image = Image.open(io.BytesIO(base64.decodebytes(
+                                    cropped_base64_image_file_text.encode('ascii'))))
+                                temp_image.save(
+                                    temp_cropped_image_file_full_name)
+                                self.save_sample_image(temp_cropped_image_file_full_name,
+                                                       item.original_timestamp,
+                                                       infered_class, infer_server_current_ebic_confid,
+                                                       None,
+                                                       "qua_")
+                            finally:
+                                if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
+                                    os.unlink(
+                                        temp_cropped_image_file_full_name)
                     else:
                         packed_infer_result = self.inference_image_from_models(
                             item, self.current_storey)
@@ -140,7 +195,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                  "storey": self.current_storey,
                                  "is_qua_board": is_qua_board,
                                  "timestamp": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
-                                 "cropped_base64_image_file_text": f"data:image,{cropped_base64_image_file_text}"})
+                                 "cropped_base64_image_file_text": f"data:image,{cropped_base64_image_file_text}",
+                                 "full_base64_image_file_text": f"data:image,{full_image_frame_base64_encode_text}"})
                 except Exception as e:
                     self.logger.exception(
                         "exception in handle async task in infer_from_model_worker_queue: {}".format(e))

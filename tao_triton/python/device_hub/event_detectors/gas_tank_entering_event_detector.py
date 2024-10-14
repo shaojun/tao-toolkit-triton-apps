@@ -194,7 +194,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                     self.inferencer.start_inference_image_from_qua_models(
                         cropped_base64_image_file_text, "gastank", infer_and_post_process)
                 else:
-                    infered_class, infered_confid = self.inferencer.inference_image_from_qua_models(
+                    infered_class, infered_confid = self.inferencer.inference_image_from_qua_classification_models(
                         cropped_base64_image_file_text, "gastank")
                     infer_and_post_process((infered_class, infered_confid))
         return None

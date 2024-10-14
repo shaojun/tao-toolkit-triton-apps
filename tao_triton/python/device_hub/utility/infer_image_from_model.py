@@ -10,6 +10,8 @@ import time
 from typing import Callable, Literal
 import uuid
 # from PIL import Image
+import cv2
+import numpy as np
 import requests
 from openai import OpenAI
 
@@ -29,7 +31,7 @@ class Inferencer:
         with open(file_full_path, "rb") as image_file:
             base64_image_data_text = base64.b64encode(
                 image_file.read()).decode('ascii')
-            return self.inference_image_from_qua_models(base64_image_data_text, model_name)
+            return self.inference_image_from_qua_classification_models(base64_image_data_text, model_name)
 
     def start_inference_image_file_from_qua_models(
             self,
@@ -41,13 +43,143 @@ class Inferencer:
             self.inference_image_file_from_qua_models, file_full_path, model_name)
         fut.add_done_callback(lambda future: callback(future.result()))
 
-    def inference_image_from_qua_models(
+    def inference_image_from_qua_detection_models(
             self,
             base64_image_data_text: str,
-            model_name: Literal['ebicycle', 'gastank', 'battery']) -> tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]:
+            service_url: str = "http://36.153.41.19:18091/detect_images") -> list[dict]:
+        """
+        @param base64_image_data_text: base64 encoded image data
+        @param service_url: service url
+        @return: list of dict, each dict has keys: name, conf, image_base64_encoded_text. The name could be: name=='ebicycle' or name=='battery' or name=='gastank' and others.
+        """
+        def scale_and_pad(image: np.ndarray, dsize, padding_value=0):
+            def pad(image: np.ndarray, pt, pl, pb, pr, padding_value):
+                image = np.pad(image, ((pt, pb), (pl, pr), (0, 0)),
+                               "constant", constant_values=padding_value)
+                return image
+
+            def scale(image: np.ndarray, ratio):
+                height, width, _ = image.shape
+                image = cv2.resize(
+                    image, (int(ratio * width), int(ratio * height)))
+                return image
+            w, h = dsize
+            height, width, _ = image.shape
+            if width == w and height == h:
+                return image
+            elif width < w and height < h:
+                new_image = np.full((h, w, 3), padding_value, dtype=np.uint8)
+                paste_top = (h - height) // 2
+                paste_left = (w - width) // 2
+                new_image[paste_top:paste_top + height,
+                          paste_left:paste_left + width] = image
+                return new_image
+            else:
+                ratio = min(w / width, h / height)
+                scaled_image = scale(image, ratio)
+                height, width, _ = scaled_image.shape
+                pt, pl = (h - height) // 2, (w - width) // 2
+                pb, pr = h - height - pt, w - width - pl
+                new_image = pad(scaled_image, pt, pl, pb, pr, padding_value)
+                return new_image
+
+        def make_divisible_by_2(x1, x2):
+            """
+            判断 (x2 - x1) 是否能被 2 整除，如果不能则减一个最小的数使其能被 16 整除。
+
+            Args:
+                x1 (int): 第一个数
+                x2 (int): 第二个数
+
+            Returns:
+                int: 修正后的 x2 值
+            """
+            diff = x2 - x1
+            subtract = 0
+            if diff % 2 != 0:
+                subtract = diff % 2
+            return subtract
+
+        def base64_image_data_to_cv2_img(base64_image_data_text: str):
+            nparr = np.frombuffer(base64.b64decode(
+                base64_image_data_text), np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            return img
         try:
+            if service_url is None:
+                service_url = "http://36.153.41.19:18091/detect_images"
+            infer_server_url = service_url
             infer_start_time = time.time()
-            infer_server_url = "http://36.139.163.39:18090/detect_images"
+            original_image = base64_image_data_to_cv2_img(
+                base64_image_data_text)
+            processed_image = scale_and_pad(original_image, (1280, 1280))
+            _, buffer = cv2.imencode('.jpg', processed_image)
+            processed_base64_image_data_text = base64.b64encode(
+                buffer).decode('utf-8')
+            data = {'input_image': processed_base64_image_data_text,
+                    'confidence_hold': 0.35, 'iou_hold': 0.35}
+            response = requests.post(infer_server_url, json=data, timeout=5)
+            if response.status_code != 200:
+                raise Exception(
+                    f"HTTP response status code is not 200: {response.status_code}, content: {response.text}")
+            t1 = time.time()
+            infer_used_time_by_ms = (t1 - infer_start_time) * 1000
+            height, width = processed_image.shape[:2]
+            targets = []
+            for item in response.json():
+                name = item['name']
+                conf = item['conf']
+                label = item['label']
+                # print(f"Name: {name}, Conf: {conf}")
+                x, y, w, h = map(float, label)
+                # with open(labelfile, 'a') as f:
+                #    f.write(f"{name}, {x}, {y}, {w}, {h}\n")
+                x1 = int((x - w / 2) * width)
+                y1 = int((y - h / 2) * height)
+                x2 = int((x + w / 2) * width)
+                y2 = int((y + h / 2) * height)
+                coords = (x1, y1, x2, y2)
+                targets.append({'name': name, 'coords': coords, 'conf': conf})
+            self.logger.debug(
+                f"{self.logger_str_prefix}, inferencer, qua detection with result: {targets}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+            return_results: list[dict] = []
+            if targets:
+                kk = 0
+                for target in targets:
+                    conf = target['conf']
+                    name = target['name']
+                    coords = target['coords']
+                    (x1, y1, x2, y2) = coords
+                    if (x2 - x1) > 20 and (y2 - y1) > 20 and x1 >= 0 and x2 >= 0 and y2 >= 0 and y1 >= 0:
+                        diff_x = make_divisible_by_2(x1, x2)
+                        diff_y = make_divisible_by_2(y1, y2)
+
+                        target_image = processed_image[y1:y2 -
+                                                       diff_y, x1:x2 - diff_x]
+                        if target_image.size > 10:
+                            # 使用内存中的图像数据进行编码
+                            _, buffer = cv2.imencode('.jpg', target_image)
+                            encoded_temp_image = base64.b64encode(
+                                buffer).decode('utf-8')
+                            return_results.append(
+                                {'name': name, 'conf': conf, 'coords': coords, 'image_base64_encoded_text': encoded_temp_image})
+                            kk += 1
+            return return_results
+        except Exception as e:
+            self.logger.exception(
+                f"{self.logger_str_prefix}, inferencer: qua detection, exception raised: {e}")
+            return []
+
+    def inference_image_from_qua_classification_models(
+            self,
+            base64_image_data_text: str,
+            model_name: Literal['ebicycle', 'gastank', 'battery'],
+            service_url: str = "http://36.153.41.19:18090/detect_images") -> tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]:
+        try:
+            if service_url is None:
+                service_url = "http://36.153.41.19:18090/detect_images"
+            infer_server_url = service_url
+            infer_start_time = time.time()
             data = {'input_image': base64_image_data_text,
                     'confidence_hold': 0.35,
                     'name': model_name}
@@ -83,7 +215,7 @@ class Inferencer:
             callback: Callable[[tuple[Literal['bicycle', 'electric_bicycle', 'background', 'gastank', 'battery'], float]], None]):
         # put the work into thread pool
         fut = Inferencer.executor.submit(
-            self.inference_image_from_qua_models, base64_image_data_text, model_name)
+            self.inference_image_from_qua_classification_models, base64_image_data_text, model_name)
         fut.add_done_callback(lambda future: callback(future.result()))
 
     def inference_discrete_images_from_ali_qwen_vl_plus_model(
@@ -295,7 +427,7 @@ class Inferencer:
             )
 
             print(
-                f"{datetime.datetime.now()} {self.logger_str_prefix} - qwen video infer used time(by ms): {(time.time() - infer_start_time) * 1000} - {response}")
+                f"{datetime.datetime.now()} {self.logger_str_prefix} - qwen video infer used time(by ms): {(time.time() - infer_start_time) * 1000} - {len(image_file_full_path_or_base64_str_list)} images - {response}")
         finally:
             for p in image_file_full_path_or_base64_str_list:
                 if is_image_in_base64_str:
