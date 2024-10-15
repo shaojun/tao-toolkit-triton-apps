@@ -82,8 +82,8 @@ def create_boardtimeline(board_id: str, kafka_producer, mqtt_client: paho_mqtt_c
             # event_detector.DoorStateChangedEventDetector(logging),
             event_detector.DoorStateSessionDetector(logging),
             event_detector.ElectricBicycleEnteringEventDetector(logging),
-            GasTankEnteringEventDetector(logging),
-            BatteryEnteringEventDetector(logging),
+            # GasTankEnteringEventDetector(logging),
+            # BatteryEnteringEventDetector(logging),
             #    event_detector.PeopleStuckEventDetector(logging),
             #    # event_detector.GasTankEnteringEventDetector(logging),
             #    # event_detector.DoorOpenedForLongtimeEventDetector(logging),
@@ -209,23 +209,34 @@ def is_time_diff_too_big(board_id: str, boardMsgTimeStampStr: str, kafkaServerAp
         kafkaServerAppliedTimeStamp / 1e3).astimezone(board_timestamp_utc_datetime.tzinfo)
     dh_local_utc_datetime = dh_local_datetime.astimezone(
         board_timestamp_utc_datetime.tzinfo)
+    
+    Drop_Threshold = 8
+    Warning_Threshold = 2.5
+   
     time_diff_by_sub_kafka_to_board = (kafka_server_received_msg_utc_datetime
                                        - board_timestamp_utc_datetime
                                        ).total_seconds()
-    if abs(time_diff_by_sub_kafka_to_board) >= 9:
+    if abs(time_diff_by_sub_kafka_to_board) < Drop_Threshold and abs(time_diff_by_sub_kafka_to_board) >= Warning_Threshold:
+        logger.info(
+            f"time_diff (kafka - board) is big: {time_diff_by_sub_kafka_to_board}s for board: {board_id}, board network upload slow or un-synced datetime?")
+    if abs(time_diff_by_sub_kafka_to_board) >= Drop_Threshold:
         # log every 10 seconds for avoid log flooding
         # if datetime.datetime.now().second % 10 == 0:
         logger.warning(
-            f"time_diff (kafka - board) is too big: {time_diff_by_sub_kafka_to_board}s for board: {board_id}, board network upload slow or un-synced datetime?")
+            f"time_diff (kafka - board) is too big: {time_diff_by_sub_kafka_to_board}s for board: {board_id}, will drop msg, board network upload slow or un-synced datetime?")
         return True
+    
     time_diff_by_sub_dh_to_kafka = (dh_local_utc_datetime
                                     - kafka_server_received_msg_utc_datetime
                                     ).total_seconds()
-    if abs(time_diff_by_sub_dh_to_kafka) >= 9:
+    if abs(time_diff_by_sub_dh_to_kafka) < Drop_Threshold and abs(time_diff_by_sub_dh_to_kafka) >= Warning_Threshold:
+        logger.info(
+            f"time_diff (dh_local - kafka) is big: {time_diff_by_sub_dh_to_kafka}s for board: {board_id}, dh process slow?")
+    if abs(time_diff_by_sub_dh_to_kafka) >= Drop_Threshold:
         # log every 10 seconds for avoid log flooding
         # if datetime.datetime.now().second % 10 == 0:
         logger.warning(
-            f"time_diff (dh_local - kafka) is too big: {time_diff_by_sub_dh_to_kafka}s for board: {board_id}, dh process slow?")
+            f"time_diff (dh_local - kafka) is too big: {time_diff_by_sub_dh_to_kafka}s for board: {board_id}, will drop msg, dh process slow?")
         return True
     return False
 
@@ -793,7 +804,7 @@ if __name__ == '__main__':
     All_Board_Infos = get_all_board_infos_response.json()["result"]
     if util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True:
         GLOBAL_CONCURRENT_PROCESS_COUNT = 1
-        All_Board_Infos = All_Board_Infos[600:1000]
+        All_Board_Infos = All_Board_Infos[200:1000]
     # duration is in seconds
     timely_check_incremental_board_info_timer = RepeatTimer(
         30, check_and_update_incremental_board_info_via_web_service_and_send_msg_to_process_via_conn,
