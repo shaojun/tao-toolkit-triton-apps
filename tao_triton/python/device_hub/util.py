@@ -10,7 +10,7 @@ lastReadjsonConfigFileContent = None
 def read_config_fast(path: List[str]):
     global lastReadjsonConfigFileTime
     global lastReadjsonConfigFileContent
-    if lastReadjsonConfigFileTime is None or (datetime.datetime.now() - lastReadjsonConfigFileTime).seconds > 5:
+    if lastReadjsonConfigFileTime is None or (datetime.datetime.now() - lastReadjsonConfigFileTime).seconds > 8:
         f = open('app_config.json')
         data = json.load(f)
         lastReadjsonConfigFileContent = data

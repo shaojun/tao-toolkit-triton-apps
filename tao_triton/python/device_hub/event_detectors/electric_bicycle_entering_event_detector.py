@@ -188,8 +188,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     self.logger.debug(
                         (f"board: {self.timeline.board_id}, adding sw item-> "
                          f"infered_class: {infered_class}, infered_confid: {infer_server_current_ebic_confid}, "
-                         f"edge_board_confidence: {edge_board_confidence}, current_storey: {self.current_storey}, "
-                         f"board_original_timestamp_str: {item.original_timestamp_str}"))
+                         f"board_confid: {edge_board_confidence}, current_storey: {self.current_storey}, "
+                         f"board_ori_timestamp_str: {item.original_timestamp_str}"))
                     self.sw.add({"class": infered_class,
                                  "confid": infer_server_current_ebic_confid,
                                  "storey": self.current_storey,
@@ -214,7 +214,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             self.logger.info((f"board: {self.timeline.board_id}, treat as suspicious ebike entering "
                              f"""and head buffer started, will enable pre block door, current storey is: {item["storey"]}"""))
             self.alarms = []
-            # send block door msg to edge for the first image
+            # send a alarm prestart msg to edge board
+            self.timeline.send_mqtt_message_to_board_inbox(
+                str(uuid.uuid4()), 'eb_entering_alarm_prestart', description="suspicious ebike entering")
+            # send block door msg to edge for the first image, NOTE, this msg could be configed with disabled underlying in boardtimeline
             self.timeline.send_mqtt_message_to_board_inbox(
                 str(uuid.uuid4()), 'enable_block_door', description="suspicious ebike entering")
 
@@ -243,7 +246,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # self.logger.debug(
             #     f"board: {self.timeline.board_id}, header_buffer_validation_predict, header length: {len(header_buffer)}")
             items_log_str = "\r\n".join(
-                [f"""class: {item["class"]}, confid: {item["confid"]}""" for item in header_buffer])
+                [f"""cl: {item["class"]}, cfd: {item["confid"]}""" for item in header_buffer])
             self.logger.debug(
                 f"board: {self.timeline.board_id}, header_buffer_validation_predict on facts:\r\n{items_log_str}")
             for item in header_buffer:
@@ -258,64 +261,66 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     return False, f"qua board, short header length: {len(header_buffer)}"
             else:
                 # add a temp solution here for further boost the 1126 eb accuracy, if only got 2 and all of them are eb, then also treat as eb entering
-                if len(header_buffer) == 2:
-                    configured_eb_rate = 1
-                else:
-                    if len(header_buffer) < header_buffer_validating_min_item_count:
-                        self.logger.debug(
-                            f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
-                        return False, f"short header length: {len(header_buffer)}"
+                # if len(header_buffer) == 2:
+                #     configured_eb_rate = 1
+                # else:
+                if len(header_buffer) < header_buffer_validating_min_item_count:
+                    self.logger.debug(
+                        f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
+                    return False, f"short header length: {len(header_buffer)}"
             eb_rate = eb_count / len(header_buffer)
 
             predict_result = eb_rate >= configured_eb_rate
             if predict_result:
-                self.logger.info(
-                    f"board: {self.timeline.board_id}, header_buffer_validation_predict with True as eb_rate: {eb_rate} >= configured_eb_rate: {configured_eb_rate}")
-            else:
-                self.logger.debug(
-                    f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as eb_rate: {eb_rate} < configured_eb_rate: {configured_eb_rate}")
-            return predict_result, f"is_qua_board: {is_qua_board}, header buffer-> {items_log_str}"
-
-        def on_header_buffer_validated(header_buffer: list[dict], predict_data: any, is_header_buffer_valid: bool):
-            is_qua_board: bool = header_buffer[0]["is_qua_board"]
-            alarm_description = str(predict_data)
-            # send block door msg to edge board, ebike entring if is_header_buffer_valid is true
-            # send cancel block door msg if is_header_buffer_valid is false
-            if is_header_buffer_valid:
                 should_use_llm_for_post_infer = util.read_config_fast_to_board_control_level(
                     ["detectors", 'ElectricBicycleEnteringEventDetector',
                      'UseLlmForPostInferSwitchers'],
                     self.timeline.board_id, False)
-                if not should_use_llm_for_post_infer:
+                if is_qua_board or not should_use_llm_for_post_infer:
                     self.logger.info(
-                        f"board: {self.timeline.board_id}, ebike entering confirmed as header buffer validated with True, will raise alarm")
+                        f"board: {self.timeline.board_id}, header_buffer_validation_predict with True as eb_rate: {eb_rate} >= configured_eb_rate: {configured_eb_rate}")
                 else:
-                    if not is_qua_board:
+                    self.logger.info(
+                        f"board: {self.timeline.board_id}, header_buffer_validation_predict with True as eb_rate: {eb_rate} >= configured_eb_rate: {configured_eb_rate}, further checking with llm(input image count: {len(header_buffer)})...")
+                    qwen_result = self.inferencer.inference_video_by_convert_from_image_frames_from_ali_qwen_vl_model(
+                        [i["cropped_base64_image_file_text"]
+                         for i in header_buffer],
+                        model_name="qwen-vl-plus-0809")
+
+                    # qwen_result = self.inferencer.inference_discrete_images_from_ali_qwen_vl_plus_model(
+                    #     [i["cropped_base64_image_file_text"]
+                    #         for i in header_buffer])
+                    self.logger.debug(
+                        f"board: {self.timeline.board_id}, got qwen_result: {str(qwen_result or '')}")
+                    if qwen_result != None and \
+                            (qwen_result["vehicle_type"] == "摩托车" or "电瓶" in qwen_result["vehicle_type"] or "电动" in qwen_result["vehicle_type"]):
                         self.logger.info(
-                            f"board: {self.timeline.board_id}, ebike entering confirmed as header buffer validated with True, further checking with qwen(image count: {len(header_buffer)})...")
-                        # qwen_result = self.inferencer.inference_video_by_convert_from_image_frames_from_glm_4v_model(
-                        #     [i["cropped_base64_image_file_text"] for i in header_buffer])
+                            f"board: {self.timeline.board_id}, qwen treat this is ebike")
+                        predict_result = True
+                    else:
+                        self.logger.info(
+                            f"board: {self.timeline.board_id}, qwen treat this is NOT ebike")
+                        predict_result = False
+                    return predict_result, f"is_qua: {is_qua_board}, llm: {qwen_result}, header buf-> {items_log_str}"
+            else:
+                self.logger.debug(
+                    f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as eb_rate: {eb_rate} < configured_eb_rate: {configured_eb_rate}")
+            return predict_result, f"is_qua: {is_qua_board}, header buf-> {items_log_str}"
 
-                        qwen_result = self.inferencer.inference_video_by_convert_from_image_frames_from_ali_qwen_vl_model(
-                            [i["cropped_base64_image_file_text"]
-                                for i in header_buffer],
-                            model_name="qwen-vl-plus-0809")
+        def on_header_buffer_validated(header_buffer: list[dict], predict_data: any, is_header_buffer_valid: bool):
+            is_qua_board: bool = header_buffer[0]["is_qua_board"]
 
-                        # qwen_result = self.inferencer.inference_discrete_images_from_ali_qwen_vl_plus_model(
-                        #     [i["cropped_base64_image_file_text"]
-                        #         for i in header_buffer])
-                        self.logger.debug(
-                            f"board: {self.timeline.board_id}, qwen_result: {str(qwen_result or '')}")
-                        alarm_description = f"qwen: {qwen_result} \n{alarm_description}"
-                        if qwen_result != None and (qwen_result["vehicle_type"] == "电动车" or qwen_result["vehicle_type"] == "摩托车"):
-                            self.logger.info(
-                                f"board: {self.timeline.board_id}, qwen treat this is a ebike")
-
+            # send block door msg to edge board, ebike entring if is_header_buffer_valid is true
+            # send cancel block door msg if is_header_buffer_valid is false
+            if is_header_buffer_valid:
+                # send a alarm start confirmation msg to edge board
+                self.timeline.send_mqtt_message_to_board_inbox(
+                    str(uuid.uuid4()), 'eb_entering_alarm_start', description="")
                 alarms = []
                 alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                     event_alarm.EventAlarmPriority.ERROR,
-                    alarm_description, "007", {}, ""))
+                    str(predict_data), "007", {}, ""))
                 self.timeline.notify_event_alarm(alarms)
             else:
                 self.logger.debug(
@@ -328,6 +333,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # session end means the ebike is out, close the alarm and send cancel block door to local
             self.logger.info(
                 "board: {}, will close alarm as session window end".format(self.timeline.board_id))
+            # send a alarm end confirmation msg to edge board
+            self.timeline.send_mqtt_message_to_board_inbox(
+                str(uuid.uuid4()), 'eb_entering_alarm_end', description="")
             alarms = []
             alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),

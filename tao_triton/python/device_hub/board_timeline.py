@@ -114,33 +114,36 @@ class BoardTimeline:
                     "board: {}, call detector_on_mqtt_message_from_board_outbox_function: {} from timeline raised an exception: {}".format(d.__class__.__name__, self.board_id, e))
 
     def send_mqtt_message_to_board_inbox(self, msg_id: str,
-                                         action_type: Literal['enable_block_door', 'disable_block_door'],
+                                         action_type: Literal['enable_block_door', 'disable_block_door', 'eb_entering_alarm_prestart', 'eb_entering_alarm_start', 'eb_entering_alarm_end'],
                                          action_data: dict = None,
                                          description: str = None) -> bool:
         try:
-            config_item = [
-                i for i in self.configures if i["code"] == "kqzt"]
-            config_kqzt = 1 if len(config_item) == 0 else int(
-                config_item[0]["value"])
-            config_close_zt = [
-                i for i in self.configures if i["code"] == "gbzt"]
-            gbzt = False if len(config_close_zt) == 0 else (
-                self.board_id in config_close_zt[0]["value"])
-            if (config_kqzt == 0 or gbzt) and "enable_block_door" in action_type:
-                self.logger.info("board:{}, configured to disable the feature of block door, so won't send request with action_type: 'enable_block_door' to board".format(
-                    self.board_id))
-                return
+            if action_type == 'eb_entering_alarm_prestart' or action_type == 'eb_entering_alarm_start' or action_type == 'eb_entering_alarm_end':
+                pass
+            else:
+                config_item = [
+                    i for i in self.configures if i["code"] == "kqzt"]
+                config_kqzt = 1 if len(config_item) == 0 else int(
+                    config_item[0]["value"])
+                config_close_zt = [
+                    i for i in self.configures if i["code"] == "gbzt"]
+                gbzt = False if len(config_close_zt) == 0 else (
+                    self.board_id in config_close_zt[0]["value"])
+                if (config_kqzt == 0 or gbzt) and "enable_block_door" in action_type:
+                    self.logger.info("board:{}, configured to disable the feature of block door, so won't send request with action_type: 'enable_block_door' to board".format(
+                        self.board_id))
+                    return
             # self.logger.info("------------------------board:{} is not in the target list".format(self.timeline.board_id))
             # producer = KafkaProducer(bootstrap_servers='msg.glfiot.com',
             #                         value_serializer=lambda x: dumps(x).encode('utf-8'))
             self.logger.debug("board: {}, sending mqtt request with msg_id: '{}', action_type: '{}' to board".format(
                 self.board_id, msg_id, action_type))
             inner_request = {"id": msg_id,
-                       "sender": "devicehub",
-                       "timestamp": f"{datetime.datetime.now().isoformat()}",
-                       "description": description,
-                       "type": action_type,
-                       "body": action_data}
+                             "sender": "devicehub",
+                             "timestamp": f"{datetime.datetime.now().isoformat()}",
+                             "description": description,
+                             "type": action_type,
+                             "body": action_data}
             request = {"request": inner_request}
             publish_result = self.mqtt_client.publish(
                 self.mqtt_board_inbox_topic, json.dumps(request), qos=1)

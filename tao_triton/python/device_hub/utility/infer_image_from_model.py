@@ -345,9 +345,15 @@ class Inferencer:
         import dashscope
         import cv2
         from http import HTTPStatus
+        original_image_count = len(image_file_full_path_or_base64_str_list)
+        # try append to make sure the input list has at least 3 images, guess may improve the perf??
         if len(image_file_full_path_or_base64_str_list) == 1:
             image_file_full_path_or_base64_str_list.append(
                 image_file_full_path_or_base64_str_list[0])
+        if len(image_file_full_path_or_base64_str_list) == 2:
+            image_file_full_path_or_base64_str_list.append(
+                image_file_full_path_or_base64_str_list[1])
+
         is_image_in_base64_str = False
         if enable_base64_image_to_local_file and image_file_full_path_or_base64_str_list[0].startswith("data:image"):
             is_image_in_base64_str = True
@@ -427,7 +433,12 @@ class Inferencer:
             )
 
             print(
-                f"{datetime.datetime.now()} {self.logger_str_prefix} - qwen video infer used time(by ms): {(time.time() - infer_start_time) * 1000} - {len(image_file_full_path_or_base64_str_list)} images - {response}")
+                f"{datetime.datetime.now()} {self.logger_str_prefix} - qwen video infer used time(by ms): {(time.time() - infer_start_time) * 1000} - {original_image_count} original images - {len(image_file_full_path_or_base64_str_list)} images - {response}")
+        except Exception as e:
+            print(f"{str(datetime.datetime.now())} {self.logger_str_prefix}, inferencer, qwen video, dashscope call exception: {e}")
+            self.logger.debug(
+                f"{self.logger_str_prefix}, inferencer, qwen video, dashscope call exception: {e}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+            return None
         finally:
             for p in image_file_full_path_or_base64_str_list:
                 if is_image_in_base64_str:
@@ -437,7 +448,7 @@ class Inferencer:
         infer_used_time_by_ms = (time.time() - infer_start_time) * 1000
         if response.status_code == HTTPStatus.OK:
             self.logger.debug(
-                f"{self.logger_str_prefix}, inferencer, qwen video, raw_result: {response}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+                f"{self.logger_str_prefix}, inferencer, qwen video, raw_result: {response}, {original_image_count} original images - {len(image_file_full_path_or_base64_str_list)} images - infer_used_time_by_ms: {infer_used_time_by_ms}")
             try:
                 raw_result = response.output.choices[0].message.content
                 unformat_json_text = raw_result[0]["text"]
@@ -473,7 +484,7 @@ class Inferencer:
         else:
             print(f"{str(datetime.datetime.now())} {self.logger_str_prefix}, inferencer, qwen video, HTTPStatus NOT OK: {response.code} - {response.message}")
             self.logger.debug(
-                f"{self.logger_str_prefix}, inferencer, qwen video, HTTPStatus NOT OK, raw_result: {response.output}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+                f"{self.logger_str_prefix}, inferencer, qwen video, HTTPStatus NOT OK, raw_result: {response.output}, {original_image_count} original images - {len(image_file_full_path_or_base64_str_list)} images - infer_used_time_by_ms: {infer_used_time_by_ms}")
             return None
             # print(response.code)  # The error code.
             # print(response.message)  # The error message.
