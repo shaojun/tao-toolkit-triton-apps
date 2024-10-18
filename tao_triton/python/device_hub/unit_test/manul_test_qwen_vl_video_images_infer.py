@@ -4,11 +4,8 @@ from tao_triton.python.device_hub.utility.infer_image_from_model import Inferenc
 
 
 inferencer = Inferencer(logging.getLogger("dummy"))
-full_path_list = ["/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/bicycle_move_out_scene1/1.png",
-                #   "/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/bicycle_move_out_scene1/2.png",
-                #   "/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/bicycle_move_out_scene1/3.png",
-                #   "/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/bicycle_move_out_scene1/4.png"
-                  ]
+full_path_list = ["/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/bicycle_move_out_scene1/qua_0.94___2024_1018_0756_57_880___0756_58_512.jpg",
+                  "/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/bicycle_move_out_scene1/qua_bicycle_1.0___2024_1018_0756_58_849___0756_59_556.jpg"]
 # convert image to base64 encoded string
 image_file_base64_encoded_string_list = []
 for full_path in full_path_list:

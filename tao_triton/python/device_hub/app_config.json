@@ -9,6 +9,8 @@
             "enable_qua_detection_when_full_frame_uploaded_from_board": true,
             "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH": "ebic_image_samples",
             "EnableSendConfirmedToLocalWhenFirstImageReceived": true,
+            "ebic_confid_board": 0.8,
+            "ebic_confid_board_qua": 0.1,
             "ebic_confid": 0.55,
             "ebic_confid_qua": 0.55,
             "eb_rate_treat_eb_entering": 0.4,

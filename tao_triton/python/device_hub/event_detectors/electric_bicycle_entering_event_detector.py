@@ -169,6 +169,9 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                                                        infered_class, infer_server_current_ebic_confid,
                                                        None,
                                                        "qua_")
+                            except Exception as e:
+                                self.logger.exception(
+                                    f"exception in save uploaded sample image: {e}")
                             finally:
                                 if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
                                     os.unlink(
@@ -192,6 +195,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                          f"board_ori_timestamp_str: {item.original_timestamp_str}"))
                     self.sw.add({"class": infered_class,
                                  "confid": infer_server_current_ebic_confid,
+                                 "confid_board": edge_board_confidence,
                                  "storey": self.current_storey,
                                  "is_qua_board": is_qua_board,
                                  "timestamp": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
@@ -228,6 +232,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             if is_qua_board:
                 eb_confid = util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
                                                               'ebic_confid_qua')
+                eb_confid_board = util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
+                                                                    'ebic_confid_board_qua', 0.1)
                 configured_eb_rate = util.read_config_fast_to_property(
                     ["detectors", "ElectricBicycleEnteringEventDetector"],
                     "eb_rate_treat_eb_entering_qua")
@@ -237,6 +243,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             else:
                 eb_confid = util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
                                                               'ebic_confid')
+                eb_confid_board = util.read_config_fast_to_property(["detectors", "ElectricBicycleEnteringEventDetector"],
+                                                                    'ebic_confid_board', 0.1)
                 configured_eb_rate = util.read_config_fast_to_property(
                     ["detectors", "ElectricBicycleEnteringEventDetector"],
                     "eb_rate_treat_eb_entering")
@@ -246,13 +254,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # self.logger.debug(
             #     f"board: {self.timeline.board_id}, header_buffer_validation_predict, header length: {len(header_buffer)}")
             items_log_str = "\r\n".join(
-                [f"""cl: {item["class"]}, cfd: {item["confid"]}""" for item in header_buffer])
+                [f"""cl: {item["class"]}, cfd: {item["confid"]}, b_cfd: {str(item["confid_board"])[:4]}""" for item in header_buffer])
             self.logger.debug(
                 f"board: {self.timeline.board_id}, header_buffer_validation_predict on facts:\r\n{items_log_str}")
             for item in header_buffer:
                 # self.logger.debug(
                 #     f"""board: {self.timeline.board_id}, header_buffer items-> class: {item["class"]}, confid: {item["confid"]}""")
-                if item["class"] == "electric_bicycle" and item["confid"] > eb_confid:
+                if item["class"] == "electric_bicycle" and item["confid"] >= eb_confid and item["confid_board"] >= eb_confid_board:
                     eb_count += 1
             if is_qua_board:
                 if len(header_buffer) < header_buffer_validating_min_item_count:
@@ -313,6 +321,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # send block door msg to edge board, ebike entring if is_header_buffer_valid is true
             # send cancel block door msg if is_header_buffer_valid is false
             if is_header_buffer_valid:
+                self.logger.info(
+                    f"board: {self.timeline.board_id}, will raise alarm as header buffer validated with True")
                 # send a alarm start confirmation msg to edge board
                 self.timeline.send_mqtt_message_to_board_inbox(
                     str(uuid.uuid4()), 'eb_entering_alarm_start', description="")
@@ -324,7 +334,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 self.timeline.notify_event_alarm(alarms)
             else:
                 self.logger.debug(
-                    f"board: {self.timeline.board_id}, ebike entering condition is not met as header buffer validated with False, will cancel pre block door")
+                    f"board: {self.timeline.board_id}, ebike entering condition does not met as header buffer validated with False, will cancel pre block door")
                 self.timeline.send_mqtt_message_to_board_inbox(
                     str(uuid.uuid4()), 'disable_block_door',
                     description="ebike entering condition is not met")

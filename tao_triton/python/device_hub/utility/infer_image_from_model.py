@@ -221,6 +221,9 @@ class Inferencer:
     def inference_discrete_images_from_ali_qwen_vl_plus_model(
             self,
             image_file_full_path_or_base64_str_list: list[str],
+            model_name: Literal['qwen-vl-max-0809',
+                                'qwen-vl-plus-0809',
+                                'qwen-vl-plus'] = 'qwen-vl-max-0809',
             user_prompt: str = None,
             system_prompt: str = None) -> dict:
         """
@@ -277,7 +280,7 @@ class Inferencer:
             messages[1]["content"].append({"text": user_prompt})
             infer_start_time = time.time()
             response = dashscope.MultiModalConversation.call(
-                model="qwen-vl-plus-0809",
+                model=model_name,
                 messages=messages,
                 output_format="json",
             )
