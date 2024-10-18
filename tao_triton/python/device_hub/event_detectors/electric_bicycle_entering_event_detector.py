@@ -195,7 +195,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                          f"board_ori_timestamp_str: {item.original_timestamp_str}"))
                     self.sw.add({"class": infered_class,
                                  "confid": infer_server_current_ebic_confid,
-                                 "confid_board": edge_board_confidence,
+                                 "confid_board": float(edge_board_confidence),
                                  "storey": self.current_storey,
                                  "is_qua_board": is_qua_board,
                                  "timestamp": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
