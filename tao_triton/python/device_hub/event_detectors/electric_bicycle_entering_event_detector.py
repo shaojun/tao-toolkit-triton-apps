@@ -378,7 +378,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             header_buffer_validation_predict,
             on_header_buffer_validated,
             pre_session_slient_time,
-            lambda items, new_item: new_item["class"] == "electric_bicycle" and new_item[
+            lambda items, new_item: (new_item["class"] == "electric_bicycle" or new_item["class"] == "background") and new_item[
                 "confid"] > util.read_config_fast_to_property(
                 ["detectors", "ElectricBicycleEnteringEventDetector"], 'body_buffer_validation_confid'
             ),
