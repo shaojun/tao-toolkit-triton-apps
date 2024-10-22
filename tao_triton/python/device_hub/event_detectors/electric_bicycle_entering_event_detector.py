@@ -57,6 +57,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         def infer_from_model_worker():
             while True:
                 try:
+                    self.logger.debug(
+                        f"board: {self.timeline.board_id}, poping from worker_queue...(sw.state: {str(self.sw.state)})")
                     item: board_timeline.TimelineItem = self.infer_from_model_worker_queue.get()
 
                     is_qua_board = item.version == "4.1qua"
@@ -206,6 +208,8 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                         "exception in handle async task in infer_from_model_worker_queue: {}".format(e))
                 finally:
                     self.infer_from_model_worker_queue.task_done()
+                    self.logger.debug(
+                        f"board: {self.timeline.board_id}, worker_queue.task_done(), sw.state: {str(self.sw.state)}")
 
         # Turn-on the worker thread.
         threading.Thread(target=infer_from_model_worker, daemon=True).start()
