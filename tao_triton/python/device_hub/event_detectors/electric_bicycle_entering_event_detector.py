@@ -57,10 +57,10 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         def infer_from_model_worker():
             while True:
                 try:
+                    item: board_timeline.TimelineItem = self.infer_from_model_worker_queue.get()
                     self.logger.debug(
                         f"board: {self.timeline.board_id}, poping from worker_queue...(sw.state: {str(self.sw.state)})")
-                    item: board_timeline.TimelineItem = self.infer_from_model_worker_queue.get()
-
+                   
                     is_qua_board = item.version == "4.1qua"
                     sections = item.raw_data.split('|')
                     edge_board_confidence = sections[len(sections) - 1]
