@@ -51,6 +51,8 @@
             ]
         },
         "GasTankEnteringEventDetector": {
+            "header_buffer_end_condition": 3,
+            "header_buffer_validating_min_item_count": 3,
             "silent_period_duration": 60,
             "enable_async_infer_and_post_process": true,
             "gas_tank_confid": 0.9,

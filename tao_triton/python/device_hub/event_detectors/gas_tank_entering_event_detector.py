@@ -51,15 +51,26 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             configured_gas_tank_rate = util.read_config_fast_to_property(
                 ["detectors", "GasTankEnteringEventDetector"],
                 "gas_tank_rate_treat_tank_entering")
+            header_buffer_validating_min_item_count = util.read_config_fast_to_property(
+                ["detectors", "GasTankEnteringEventDetector"],
+                "header_buffer_validating_min_item_count", 3)
             gas_tank_confid = util.read_config_fast_to_property(
                 ["detectors", "GasTankEnteringEventDetector"], 'gas_tank_confid')
+            items_log_str = "\r\n".join(
+                [f"""cl: {item["class"]}, cfd: {item["confid"]}, b_cfd: {str(item["confid_board"])[:4]}""" for item in header_buffer])
+            self.logger.debug(
+                f"board: {self.timeline.board_id}, header_buffer_validation_predict on facts:\r\n{items_log_str}")
+            if len(header_buffer) < header_buffer_validating_min_item_count:
+                self.logger.debug(
+                    f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
+                return False, f"short header length: {len(header_buffer)}"
             for item in header_buffer:
                 if item["class"] == "gastank" and item["confid"] > gas_tank_confid:
                     gas_tank_count += 1
-            return gas_tank_count / len(header_buffer) > configured_gas_tank_rate, "gas_tank"
+            return gas_tank_count / len(header_buffer) >= configured_gas_tank_rate, f"header buf-> {items_log_str}"
 
         def on_header_buffer_validated(buffer: list[dict], predict_data: any, is_header_buffer_valid: bool) -> None:
-            self.logger.debug("board:{},header buffer validated result:{}".format(self.timeline.board_id,
+            self.logger.debug("board:{}, header buffer validated result: {}".format(self.timeline.board_id,
                                                                                   str(is_header_buffer_valid)))
             # 进入body_buffering状态
             if is_header_buffer_valid:
@@ -69,10 +80,10 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                 event_alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                     event_alarm.EventAlarmPriority.ERROR,
-                    f"detected gas tank entering elevator with infered_class: {infered_class}, infered_confid: {infered_confid}"))
+                    predict_data))
                 self.timeline.notify_event_alarm(event_alarms)
                 self.logger.debug(
-                    "board:{}, raise gas tank alarm".format(self.timeline.board_id))
+                    "board:{}, raised gas tank alarm".format(self.timeline.board_id))
 
         def body_buffer_validation(items: list[dict], item: dict) -> bool:
             gas_tank_confid = util.read_config_fast_to_property(
@@ -98,7 +109,9 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             self.sw.reset()
 
         self.sw: SessionWindow[dict] = SessionWindow(
-            header_buffer_starter_validation, None, BufferType.ByPeriodTime, 4,
+            header_buffer_starter_validation, None, BufferType.ByPeriodTime,
+            util.read_config_fast_to_property(["detectors", "GasTankEnteringEventDetector"],
+                                              "header_buffer_end_condition"),
             header_buffer_validation_predict, on_header_buffer_validated, self.silent_period_duration,
             body_buffer_validation, BufferType.ByPeriodTime, self.body_buffer_end_period_duration,
             on_session_end=on_session_end,
@@ -186,7 +199,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                         f"board: {self.timeline.board_id}, infered_class: {infered_class}, infered_confid: {infered_confid}")
 
                     self.sw.add({"class": infered_class,
-                                "confid": infered_confid})
+                                "confid": infered_confid, "confid_board": float(edge_board_confidence)})
 
                 enable_async_infer_and_post_process = util.read_config_fast_to_property(
                     ["detectors", 'GasTankEnteringEventDetector'], 'enable_async_infer_and_post_process')
