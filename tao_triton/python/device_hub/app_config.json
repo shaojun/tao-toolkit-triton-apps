@@ -4,8 +4,8 @@
     },
     "detectors": {
         "ElectricBicycleEnteringEventDetector": {
-            "qua_infer_classification_service_url": "http://36.139.163.39:18090/detect_images",
-            "qua_infer_detection_service_url": "http://36.139.163.39:18091/detect_images",
+            "qua_infer_classification_service_url": "http://36.153.41.19:18090/detect_images",
+            "qua_infer_detection_service_url": "http://36.153.41.19:18091/detect_images",
             "enable_qua_detection_when_full_frame_uploaded_from_board": true,
             "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH": "ebic_image_samples",
             "EnableSendConfirmedToLocalWhenFirstImageReceived": true,
@@ -14,13 +14,13 @@
             "ebic_confid": 0.55,
             "ebic_confid_qua": 0.55,
             "eb_rate_treat_eb_entering": 0.4,
-            "eb_rate_treat_eb_entering_qua": 0.1,
-            "header_buffer_validating_min_item_count": 2,
-            "header_buffer_validating_min_item_count_qua": 1,
-            "header_buffer_end_condition": 1.5,
-            "header_buffer_end_condition_qua": 1,
+            "eb_rate_treat_eb_entering_qua": 0.51,
+            "header_buffer_validating_min_item_count": 3,
+            "header_buffer_validating_min_item_count_qua": 2,
+            "header_buffer_end_condition": 2.4,
+            "header_buffer_end_condition_qua": 2,
             "next_pre_session_silent_time": 48,
-            "next_pre_session_silent_time_qua": 0.1,
+            "next_pre_session_silent_time_qua": 2,
             "body_buffer_validation_confid": 0.1,
             "body_buffer_validation_confid_qua": 0.1,
             "body_buffer_end_condition": 7,
@@ -46,18 +46,24 @@
             "UseLlmForPostInferSwitchers": [
                 {
                     "TargetBoardId": "*",
+                    "Enable": false
+                }
+            ],
+            "EnableBurstUploadFramesSwitchers": [
+                {
+                    "TargetBoardId": "*",
                     "Enable": true
                 }
             ]
         },
         "GasTankEnteringEventDetector": {
-            "header_buffer_end_condition": 3,
-            "header_buffer_validating_min_item_count": 3,
+            "header_buffer_end_condition": 2.5,
+            "header_buffer_validating_min_item_count": 2,
             "silent_period_duration": 60,
             "enable_async_infer_and_post_process": true,
-            "gas_tank_confid": 0.9,
-            "gas_tank_rate_treat_tank_entering": 0.7,
-            "how_long_to_treat_tank_exist_when_no_predict_item_received": 30,
+            "gas_tank_confid": 0.7,
+            "gas_tank_rate_treat_tank_entering": 0.4,
+            "how_long_to_treat_tank_exist_when_no_predict_item_received": 20,
             "FeatureSwitchers": [
                 {
                     "TargetBoardId": "E999993222_specific_board_for_special_control",

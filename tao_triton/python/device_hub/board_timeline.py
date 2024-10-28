@@ -114,11 +114,12 @@ class BoardTimeline:
                     "board: {}, call detector_on_mqtt_message_from_board_outbox_function: {} from timeline raised an exception: {}".format(d.__class__.__name__, self.board_id, e))
 
     def send_mqtt_message_to_board_inbox(self, msg_id: str,
-                                         action_type: Literal['enable_block_door', 'disable_block_door', 'eb_entering_alarm_prestart', 'eb_entering_alarm_start', 'eb_entering_alarm_end'],
+                                         action_type: Literal['enable_block_door', 'disable_block_door', 'eb_entering_alarm_prestart', 'eb_entering_alarm_start', 'eb_entering_alarm_end', 'eb_entering_detector_config'],
                                          action_data: dict = None,
                                          description: str = None) -> bool:
         try:
-            if action_type == 'eb_entering_alarm_prestart' or action_type == 'eb_entering_alarm_start' or action_type == 'eb_entering_alarm_end':
+            if action_type == 'eb_entering_alarm_prestart' or action_type == 'eb_entering_alarm_start' or action_type == 'eb_entering_alarm_end' \
+                    or action_type == 'eb_entering_detector_config':
                 pass
             else:
                 config_item = [

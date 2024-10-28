@@ -185,7 +185,7 @@ class Inferencer:
                     'name': model_name}
 
             http_response = requests.post(
-                infer_server_url, json=data)
+                infer_server_url, json=data, timeout=5)
             if http_response.status_code != 200:
                 raise Exception(
                     f"HTTP response status code is not 200: {http_response.status_code}")
@@ -338,7 +338,7 @@ class Inferencer:
             user_prompt: str = None,
             system_prompt: str = None) -> dict:
         """
-        infer with a video which composed by images
+        infer with a video which composed by images, for 5 images of resolution 360*600, the cost is: "usage": {"input_tokens": 946, "output_tokens": 14, "video_tokens": 858}}
         @param image_file_full_path_or_base64_str_list:
         @param model_name: model name, default is qwen-vl-plus-0809
         @param enable_video_convert: enable video convert or not, default is True
