@@ -105,7 +105,8 @@ def create_boardtimeline(board_id: str, kafka_producer, mqtt_client: paho_mqtt_c
             #    event_detector.DeviceOfflineEventDetector(logging),
             #    event_detector.DetectPersonOnTopEventDetector(logging),
             #    event_detector.DetectCameraBlockedEventDetector(logging),
-            # event_detector.CameraDetectVehicleEventDetector(logging)
+            # event_detector.CameraDetectVehicleEventDetector(logging),
+            #  event_detector.SOSEventDetector(logging)
         ]
         return board_timeline.BoardTimeline(logging, board_id, [],
                                             event_detectors,
@@ -145,7 +146,8 @@ def create_boardtimeline(board_id: str, kafka_producer, mqtt_client: paho_mqtt_c
                        event_detector.DetectPersonOnTopEventDetector(logging),
                        event_detector.DetectCameraBlockedEventDetector(
                            logging),
-                       # event_detector.CameraDetectVehicleEventDetector(logging)
+                       # event_detector.CameraDetectVehicleEventDetector(logging),
+                       # event_detector.SOSEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,

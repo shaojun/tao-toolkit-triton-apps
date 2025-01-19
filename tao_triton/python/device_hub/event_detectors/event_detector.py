@@ -2187,12 +2187,17 @@ class PressureFaultEventDetector(EventDetectorBase):
 
 
 # 边缘计算超过1天时长获取的光电感信号一直为1
+# 冲顶报警，该判断放在边缘，只上传判断结果1，气压判断楼层为最高层 2，光电感未触发
 # 光电感应故障，直接在边缘端判断
+# 蹲底报警：电梯运行至最底层，但最底层光电感未触发，判断逻辑在边缘
 class ElectricSwitchFaultEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
         self.logger = logging.getLogger(__name__)
         self.alarms_to_fire = []
+        self.state_obj_CD: dict = None
+        # 蹲底
+        self.state_obj_DD: dict = None
 
     def prepare(self, timeline, event_detectors):
         """
@@ -2214,31 +2219,74 @@ class ElectricSwitchFaultEventDetector(EventDetectorBase):
 
     def detect(self, filtered_timeline_items):
         alarms = []
-        last_state_object = self.state_obj
-        new_state_object = None
+        # last_state_object = self.state_obj
         if not len(filtered_timeline_items) > 0:
             return None
+
+        for item in filtered_timeline_items:
+            item.consumed = True
+
         target_timeline_item = filtered_timeline_items[-1]
-        if last_state_object:
+        need_report_state_obj = target_timeline_item.raw_data["switchFault"]
+        need_report_state_obj_cd = target_timeline_item.raw_data["highestLevelSwitchError"]
+        need_report_state_obj_dd = target_timeline_item.raw_data["lowestLevelSwitchError"]
+        if self.state_obj and target_timeline_item.raw_data["switchFault"]:
             last_report_time_diff = (
-                    datetime.datetime.now() - last_state_object["time_stamp"]).total_seconds()
+                    datetime.datetime.now() - self.state_obj["time_stamp"]).total_seconds()
             # 光电故障6小时报一次，不用太频繁
             if last_report_time_diff < 21600:
-                target_timeline_item.consumed = True
-                return None
-        target_timeline_item.consumed = True
-        new_state_object = {
-            "code": "GDGXSYC", "message": "光电感已超过1天未触发", "time_stamp": datetime.datetime.now()}
+                need_report_state_obj = False
 
-        if new_state_object:
-            self.state_obj = new_state_object
+        if self.state_obj_CD and target_timeline_item.raw_data["highestLevelSwitchError"]:
+            last_report_time_diff = (
+                    datetime.datetime.now() - self.state_obj_CD["time_stamp"]).total_seconds()
+            # 光电故障6小时报一次，不用太频繁
+            if last_report_time_diff < 21600:
+                need_report_state_obj_cd = False
+
+        if self.state_obj_DD and target_timeline_item.raw_data["lowestLevelSwitchError"]:
+            last_report_time_diff = (
+                    datetime.datetime.now() - self.state_obj_DD["time_stamp"]).total_seconds()
+            # 光电故障6小时报一次，不用太频繁
+            if last_report_time_diff < 21600:
+                need_report_state_obj_dd = False
+
+        if not need_report_state_obj_cd and not need_report_state_obj and not need_report_state_obj_dd:
+            return None
+
+        # 光电感故障
+        if target_timeline_item.raw_data["switchFault"]:
+            self.state_obj = {
+                "code": "GDGXSYC", "message": "光电感已超过1天未触发", "time_stamp": datetime.datetime.now()}
             alarms.append(event_alarm.EventAlarm(
                 self,
                 datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                 event_alarm.EventAlarmPriority.WARNING,
-                new_state_object["message"],
+                self.state_obj["message"],
                 "GDGXSYC"))
+        # 冲顶
+        elif target_timeline_item.raw_data["highestLevelSwitchError"]:
+            self.state_obj_CD = {
+                "code": "CD", "message": "电梯运行至最高层，最高层光电感未触发", "time_stamp": datetime.datetime.now()}
+            alarms.append(event_alarm.EventAlarm(
+                self,
+                datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.WARNING,
+                self.state_obj_CD["message"],
+                "CD"))
+        # 蹲底
+        elif target_timeline_item.raw_data["lowestLevelSwitchError"]:
+            self.state_obj_DD = {
+                "code": "DD", "message": "电梯运行至底层，底层光电感未触发", "time_stamp": datetime.datetime.now()}
+            alarms.append(event_alarm.EventAlarm(
+                self,
+                datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.WARNING,
+                self.state_obj_DD["message"],
+                "DD"))
         return alarms
 
 
@@ -2523,7 +2571,9 @@ class DetectCameraBlockedEventDetector(EventDetectorBase):
                 "send electric-bicycle confirmed message to kafka(...) rasised an exception:")
 
 
-# 门标
+# 门标异常
+# 报警条件：连续20分钟检测不到门标
+# 关闭条件：连续5次检测到门标
 class DetectDoorWarningSignLostEventDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
@@ -2545,14 +2595,17 @@ class DetectDoorWarningSignLostEventDetector(EventDetectorBase):
         def filter(timeline_items):
             result = [i for i in timeline_items if
                       not i.consumed
-                      and i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and "DoorWarningSign" in i.raw_data and
+                      and i.item_type == board_timeline.TimelineItemType.OBJECT_DETECT and
                       (datetime.datetime.now(datetime.timezone.utc) - i.original_timestamp).total_seconds() < 10]
             return result
 
         return filter
 
     def detect(self, filtered_timeline_items):
-        if len(filtered_timeline_items) > 0:
+        result = [i for i in filtered_timeline_items if
+                  not i.consumed
+                  and "DoorWarningSign" in i.raw_data]
+        if len(result) > 0:
             self.state_obj["detect_door_warning_sign_time_stamp"] = filtered_timeline_items[-1].original_timestamp
 
         last_notify_time = None
@@ -2560,7 +2613,7 @@ class DetectDoorWarningSignLostEventDetector(EventDetectorBase):
             last_notify_time = self.state_obj["notify_time"]
 
         # 关闭告警
-        if last_notify_time and len(filtered_timeline_items) > 5:
+        if last_notify_time and len(result) > 4:
             self.state_obj["notify_time"] = None
             return [event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                 datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
@@ -2571,7 +2624,7 @@ class DetectDoorWarningSignLostEventDetector(EventDetectorBase):
 
         alarms = []
         config_item = [i for i in self.timeline.configures if i["code"] == "ffkgm"]
-        config_time = 15 if len(config_item) == 0 else int(config_item[0]["value"])
+        config_time = 1200 if len(config_item) == 0 else int(config_item[0]["value"])
         if ((datetime.datetime.now(datetime.timezone.utc) - self.state_obj[
             "detect_door_warning_sign_time_stamp"]).total_seconds() > config_time):
             self.state_obj["notify_time"] = datetime.datetime.now()
@@ -2579,7 +2632,71 @@ class DetectDoorWarningSignLostEventDetector(EventDetectorBase):
                 self,
                 datetime.datetime.fromisoformat(datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                 event_alarm.EventAlarmPriority.WARNING,
-                "最近一次检测到门标的时间为：{}".format(
+                "门标异常，连续20分钟未检测到门标：{}".format(
                     self.state_obj["detect_door_warning_sign_time_stamp"].strftime("%d/%m/%Y %H:%M:%S")),
                 "DOORWARNINGSIGN"))
         return alarms
+
+
+# 一键呼救
+# 一键呼救按钮被按时，边缘信息中将包含SOS buttonPressed= true
+# 此告警无需关闭
+class SOSEventDetector(EventDetectorBase):
+    def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
+        self.logger = logging.getLogger(__name__)
+        self.alarms_to_fire = []
+        self.state_obj_CD: dict = None
+
+    def prepare(self, timeline, event_detectors):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param timeline: BoardTimeline
+        @type event_detectors: List[EventDetectorBase]
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
+        self.timeline = timeline
+
+    def get_timeline_item_filter(self):
+        def filter(timeline_items):
+            result = [i for i in timeline_items if
+                      not i.consumed
+                      and i.item_type == board_timeline.TimelineItemType.SOS_BUTTON]
+            return result
+
+        return filter
+
+    def detect(self, filtered_timeline_items):
+        alarms = []
+        # last_state_object = self.state_obj
+        if not len(filtered_timeline_items) > 0:
+            return None
+
+        for item in filtered_timeline_items:
+            item.consumed = True
+
+        target_timeline_item = filtered_timeline_items[-1]
+
+        need_report_state_obj = target_timeline_item.raw_data["buttonPressed"]
+        if self.state_obj and target_timeline_item.raw_data["buttonPressed"]:
+            last_report_time_diff = (
+                    datetime.datetime.now() - self.state_obj["time_stamp"]).total_seconds()
+            # 一键呼救10分钟内不反复上传
+            if last_report_time_diff < 600:
+                need_report_state_obj = False
+
+        if not need_report_state_obj:
+            return None
+
+        # 一键呼叫按钮触发
+        if target_timeline_item.raw_data["buttonPressed"]:
+            self.state_obj = {
+                "code": "SOS", "message": "一键呼救按钮触发", "time_stamp": datetime.datetime.now()}
+            alarms.append(event_alarm.EventAlarm(
+                self,
+                datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                event_alarm.EventAlarmPriority.WARNING,
+                self.state_obj["message"],
+                "SOS"))
+        return None
