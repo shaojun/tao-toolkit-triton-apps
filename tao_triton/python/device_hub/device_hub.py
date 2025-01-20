@@ -565,6 +565,11 @@ def worker_of_process_board_msg(board_definitions: list[dict], process_name: str
                                 board_timeline.TimelineItem(cur_board_timeline,
                                                             board_timeline.TimelineItemType.CAMERA_VECHILE_EVENT,
                                                             board_msg_original_timestamp, board_msg_id, obj_data))
+                        elif "buttonPressed" in obj_data:
+                            new_timeline_items.append(
+                                board_timeline.TimelineItem(cur_board_timeline,
+                                                            board_timeline.TimelineItemType.SOS_BUTTON,
+                                                            board_msg_original_timestamp, board_msg_id, obj_data))
                     cur_board_timeline.add_items(new_timeline_items)
                 elif "update" in event_data:
                     new_update_timeline_items = [board_timeline.TimelineItem(cur_board_timeline,
