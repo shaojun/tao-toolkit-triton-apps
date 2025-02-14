@@ -30,8 +30,13 @@ for full_path in full_path_list:
 # print(result)
 
 result = inferencer.inference_discrete_images_from_ali_qwen_vl_plus_model(
-    ["/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/bicycle_move_out_scene1/qua_0.94___2024_1018_0756_57_880___0756_58_512.jpg",
-     "/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/bicycle_move_out_scene1/qua_bicycle_1.0___2024_1018_0756_58_849___0756_59_556.jpg"],
-    user_prompt="这些图片里都是同一个车辆,你能回答这个车辆是什么类型吗?"
+    ["/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/real/people_with_backpack_1/video_frame_3_localeb_1___2024_1028_1759_48_092___1759_48_092.jpg"],
+    model_name="qwen2-vl-7b-instruct"
+)
+print(result)
+
+result = inferencer.inference_discrete_images_from_ali_qwen_vl_plus_model(
+    ["/home/shao/tao-toolkit-triton-apps/tao_triton/python/device_hub/unit_test/assets/real/people_with_backpack_1/video_frame_3_localeb_1___2024_1028_1759_48_092___1759_48_092.jpg"],
+    model_name="qwen-vl-plus-0809"
 )
 print(result)

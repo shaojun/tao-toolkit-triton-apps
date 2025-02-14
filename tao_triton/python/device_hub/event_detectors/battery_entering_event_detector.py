@@ -44,7 +44,7 @@ class BatteryEnteringEventDetector(EventDetectorBase):
         self.state_obj = {"last_infer_timestamp": None,
                           "last_notify_timestamp": None}
         self.timeline = timeline
-        self.inferencer = Inferencer(self.logger, self.timeline.board_id)
+        self.inferencer = Inferencer(self.statistics_logger, self.timeline.board_id)
         
 
     def detect(self, filtered_timeline_items):

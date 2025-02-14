@@ -55,202 +55,154 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         self.infer_from_model_worker_queue = queue.Queue()
 
         def infer_from_model_worker():
-            def reload_sw_basic_parameters(is_qua_board):
-                if is_qua_board:
-                    next_pre_session_slient_time = util.read_config_fast_to_property(
-                        ["detectors", "ElectricBicycleEnteringEventDetector"],
-                        'next_pre_session_silent_time_qua')
-                    post_session_silent_time = util.read_config_fast_to_property(
-                        ["detectors", "ElectricBicycleEnteringEventDetector"],
-                        'post_session_silent_time_qua')
-                    header_buffer_end_condition = util.read_config_fast_to_property(
-                        ["detectors", "ElectricBicycleEnteringEventDetector"],
-                        'header_buffer_end_condition_qua')
-                else:
-                    next_pre_session_slient_time = util.read_config_fast_to_property(
-                        ["detectors", "ElectricBicycleEnteringEventDetector"],
-                        'next_pre_session_silent_time')
-                    post_session_silent_time = util.read_config_fast_to_property(
-                        ["detectors", "ElectricBicycleEnteringEventDetector"],
-                        'post_session_silent_time')
-                    header_buffer_end_condition = util.read_config_fast_to_property(
-                        ["detectors", "ElectricBicycleEnteringEventDetector"],
-                        'header_buffer_end_condition')
-                if self.sw.next_pre_session_silent_time != next_pre_session_slient_time \
-                        or self.sw.post_session_silent_time != post_session_silent_time \
-                        or self.sw.header_buffer_end_condition != header_buffer_end_condition:
-                    self.sw.next_pre_session_silent_time = next_pre_session_slient_time
-                    self.sw.post_session_silent_time = post_session_silent_time
-                    self.sw.header_buffer_end_condition = header_buffer_end_condition
-                    self.logger.debug(
-                        f"board: {self.timeline.board_id}, sw updated parameters with next_pre_session_slient_time: {next_pre_session_slient_time}, post_session_silent_time: {post_session_silent_time}, header_buffer_end_condition: {header_buffer_end_condition}")
-
-            def handle_burst_upload_frames_event_message(event: dict):
-                """
-                @param event: dict, sample: {"event": {
-                    "sender": "edge_board_app_elenet",
-                    "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                    "type": "burst_upload_frames",
-                    "data": burst_upload_frames_base64_text_list,
-                    "description": f""}}
-                """
-
             while True:
                 try:
-                    timelineitem_or_event = self.infer_from_model_worker_queue.get()
-                    if isinstance(timelineitem_or_event, dict) and \
-                            "event" in timelineitem_or_event and "type" in timelineitem_or_event["event"] and timelineitem_or_event["event"]["type"] == "burst_upload_frames":
-                        self.logger.debug(
-                            f"board: {self.timeline.board_id}, poped burst_upload_frames event msg from worker_queue...(sw.state: {str(self.sw.state)})")
-                        if self.sw.state != SessionState.Uninitialized:
+                    item: board_timeline.TimelineItem = self.infer_from_model_worker_queue.get()
+                    self.logger.debug(
+                        f"board: {self.timeline.board_id}, poping from worker_queue...(sw.state: {str(self.sw.state)})")
+
+                    is_qua_board = item.version == "4.1qua"
+                    sections = item.raw_data.split('|')
+                    edge_board_confidence = sections[len(sections) - 1]
+                    cropped_base64_image_file_text = sections[len(
+                        sections) - 2][len("base64_image_data:"):]
+                    # the last but two is the OPTIONAL, full image file with base64 encoded text,
+                    # and the section is prefixed with-> full_base64_image_data:
+                    # upload the full image to cloud is for debug purpose, it's controlled and cofigurable from edge board local side.
+                    full_image_frame_base64_encode_text = None
+                    if sections[len(sections) - 3].startswith("full_base64_image_data:"):
+                        full_image_frame_base64_encode_text = sections[len(
+                            sections) - 3][len("full_base64_image_data:"):]
+
+                    infer_start_time = time.time()
+                    if self.sw.state == SessionState.Uninitialized:
+                        if is_qua_board:
+                            next_pre_session_slient_time = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'next_pre_session_silent_time_qua')
+                            post_session_silent_time = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'post_session_silent_time_qua')
+                            header_buffer_end_condition = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'header_buffer_end_condition_qua')
+                        else:
+                            next_pre_session_slient_time = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'next_pre_session_silent_time')
+                            post_session_silent_time = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'post_session_silent_time')
+                            header_buffer_end_condition = util.read_config_fast_to_property(
+                                ["detectors", "ElectricBicycleEnteringEventDetector"],
+                                'header_buffer_end_condition')
+                        if self.sw.next_pre_session_silent_time != next_pre_session_slient_time \
+                                or self.sw.post_session_silent_time != post_session_silent_time \
+                                or self.sw.header_buffer_end_condition != header_buffer_end_condition:
+                            self.sw.next_pre_session_silent_time = next_pre_session_slient_time
+                            self.sw.post_session_silent_time = post_session_silent_time
+                            self.sw.header_buffer_end_condition = header_buffer_end_condition
                             self.logger.debug(
-                                f"board: {self.timeline.board_id}, see burst_upload_frames event msg while sw.state is not Uninitialized, ignore it")
-                            continue
-                        burst_upload_frames_base64_text_list = timelineitem_or_event["event"]["data"]
-                        for i, base64_text in enumerate(burst_upload_frames_base64_text_list):
+                                f"board: {self.timeline.board_id}, sw updated parameters with next_pre_session_slient_time: {next_pre_session_slient_time}, post_session_silent_time: {post_session_silent_time}, header_buffer_end_condition: {header_buffer_end_condition}")
+
+                    is_forced_to_use_qua_model = util.read_config_fast_to_board_control_level(
+                        ["detectors", 'ElectricBicycleEnteringEventDetector',
+                            'ForceToUseQuaModelSwitchers'],
+                        self.timeline.board_id, False)
+                    qua_infer_classification_service_url = util.read_config_fast_to_property(
+                        ["detectors", 'ElectricBicycleEnteringEventDetector'], "qua_infer_classification_service_url", None)
+                    qua_infer_detection_service_url = util.read_config_fast_to_property(
+                        ["detectors", 'ElectricBicycleEnteringEventDetector'], "qua_infer_detection_service_url", None)
+                    enable_qua_detection_when_full_frame_uploaded_from_board = util.read_config_fast_to_property(
+                        ["detectors", 'ElectricBicycleEnteringEventDetector'],
+                        "enable_qua_detection_when_full_frame_uploaded_from_board", False)
+
+                    if is_qua_board or is_forced_to_use_qua_model:
+                        if full_image_frame_base64_encode_text and len(full_image_frame_base64_encode_text) > 1:
+                            self.logger.debug(
+                                f"board: {self.timeline.board_id}, see full frame image from edge board")
                             temp_full_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
                                                                           str(uuid.uuid4()) + '.jpg')
                             temp_image = Image.open(io.BytesIO(base64.decodebytes(
-                                base64_text.encode('ascii'))))
+                                full_image_frame_base64_encode_text.encode('ascii'))))
                             temp_image.save(
                                 temp_full_image_file_full_name)
                             self.save_sample_image(temp_full_image_file_full_name,
-                                                   datetime.datetime.now(
-                                                       datetime.timezone.utc),
-                                                   "localeb", 1,
+                                                   item.original_timestamp,
+                                                   "no_detect_yet", 1,
                                                    None,
-                                                   f"video_frame_{i}_")
-                        is_qua_board = False
-                        reload_sw_basic_parameters(is_qua_board)
-                        self.sw.header_buffer_end_condition = 0.1
-                        infered_class, infer_server_current_ebic_confid, edge_board_confidence = "electric_bicycle", 0.119, 0.119
-                        self.sw.add({"class": infered_class,
-                                    "confid": infer_server_current_ebic_confid,
-                                     "confid_board": float(edge_board_confidence),
-                                     "storey": self.current_storey,
-                                     "is_qua_board": is_qua_board,
-                                     "timestamp": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
-                                     "cropped_base64_image_file_text": None,
-                                     "base64_image_file_text_list":
-                                     [f"data:image,{t}" for t in burst_upload_frames_base64_text_list]})
-                    else:
-                        self.logger.debug(
-                            f"board: {self.timeline.board_id}, poped timelineitem from worker_queue...(sw.state: {str(self.sw.state)})")
-                        item: board_timeline.TimelineItem = timelineitem_or_event
-                        is_qua_board = item.version == "4.1qua"
-                        sections = item.raw_data.split('|')
-                        edge_board_confidence = sections[len(sections) - 1]
-                        cropped_base64_image_file_text = sections[len(
-                            sections) - 2][len("base64_image_data:"):]
-                        # the last but two is the OPTIONAL, full image file with base64 encoded text,
-                        # and the section is prefixed with-> full_base64_image_data:
-                        # upload the full image to cloud is for debug purpose, it's controlled and cofigurable from edge board local side.
-                        full_image_frame_base64_encode_text = None
-                        if sections[len(sections) - 3].startswith("full_base64_image_data:"):
-                            full_image_frame_base64_encode_text = sections[len(
-                                sections) - 3][len("full_base64_image_data:"):]
+                                                   "full_frame")
+                            if enable_qua_detection_when_full_frame_uploaded_from_board:
+                                detection_result: list[dict] = self.inferencer.inference_image_from_qua_detection_models(
+                                    full_image_frame_base64_encode_text, service_url=qua_infer_detection_service_url)
+                                if detection_result != None:
+                                    # only get the ebicycle image base64 text, and then inference the classification model
+                                    ebicycle_detection_result = [
+                                        i for i in detection_result if i["name"] == "ebicycle" and i["conf"] >= 0.1]
+                                    if len(ebicycle_detection_result) > 0:
+                                        self.logger.debug(
+                                            f"board: {self.timeline.board_id}, qua detection, detected ebicycle with confid: {ebicycle_detection_result[0]['conf']}, coords: {ebicycle_detection_result[0]['coords']}")
+                                        cropped_base64_image_file_text = ebicycle_detection_result[
+                                            0]["image_base64_encoded_text"]
+                                    else:
+                                        cropped_base64_image_file_text = None
+                                        simplified_result = []
+                                        for r in detection_result:
+                                            simplified_result.append(
+                                                {"name": r["name"], "conf": r["conf"], "coords": r["coords"]})
+                                        self.logger.debug(
+                                            f"board: {self.timeline.board_id}, qua detection, see no ebicycle result in full frame: {simplified_result}")
 
-                        infer_start_time = time.time()
-                        if self.sw.state == SessionState.Uninitialized:
-                            reload_sw_basic_parameters(is_qua_board)
-
-                        is_forced_to_use_qua_model = util.read_config_fast_to_board_control_level(
-                            ["detectors", 'ElectricBicycleEnteringEventDetector',
-                                'ForceToUseQuaModelSwitchers'],
-                            self.timeline.board_id, False)
-                        qua_infer_classification_service_url = util.read_config_fast_to_property(
-                            ["detectors", 'ElectricBicycleEnteringEventDetector'], "qua_infer_classification_service_url", None)
-                        qua_infer_detection_service_url = util.read_config_fast_to_property(
-                            ["detectors", 'ElectricBicycleEnteringEventDetector'], "qua_infer_detection_service_url", None)
-                        enable_qua_detection_when_full_frame_uploaded_from_board = util.read_config_fast_to_property(
-                            ["detectors", 'ElectricBicycleEnteringEventDetector'],
-                            "enable_qua_detection_when_full_frame_uploaded_from_board", False)
-
-                        if is_qua_board or is_forced_to_use_qua_model:
-                            if full_image_frame_base64_encode_text and len(full_image_frame_base64_encode_text) > 1:
-                                self.logger.debug(
-                                    f"board: {self.timeline.board_id}, see full frame image from edge board")
-                                temp_full_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
-                                                                              str(uuid.uuid4()) + '.jpg')
-                                temp_image = Image.open(io.BytesIO(base64.decodebytes(
-                                    full_image_frame_base64_encode_text.encode('ascii'))))
-                                temp_image.save(
-                                    temp_full_image_file_full_name)
-                                self.save_sample_image(temp_full_image_file_full_name,
-                                                       item.original_timestamp,
-                                                       "no_detect_yet", 1,
-                                                       None,
-                                                       "full_frame")
-                                if enable_qua_detection_when_full_frame_uploaded_from_board:
-                                    detection_result: list[dict] = self.inferencer.inference_image_from_qua_detection_models(
-                                        full_image_frame_base64_encode_text, service_url=qua_infer_detection_service_url)
-                                    if detection_result != None:
-                                        # only get the ebicycle image base64 text, and then inference the classification model
-                                        ebicycle_detection_result = [
-                                            i for i in detection_result if i["name"] == "ebicycle" and i["conf"] >= 0.1]
-                                        if len(ebicycle_detection_result) > 0:
-                                            self.logger.debug(
-                                                f"board: {self.timeline.board_id}, qua detection, detected ebicycle with confid: {ebicycle_detection_result[0]['conf']}, coords: {ebicycle_detection_result[0]['coords']}")
-                                            cropped_base64_image_file_text = ebicycle_detection_result[
-                                                0]["image_base64_encoded_text"]
-                                        else:
-                                            cropped_base64_image_file_text = None
-                                            simplified_result = []
-                                            for r in detection_result:
-                                                simplified_result.append(
-                                                    {"name": r["name"], "conf": r["conf"], "coords": r["coords"]})
-                                            self.logger.debug(
-                                                f"board: {self.timeline.board_id}, qua detection, see no ebicycle result in full frame: {simplified_result}")
-
-                            if cropped_base64_image_file_text == None or len(cropped_base64_image_file_text) < 1:
-                                infered_class = 'background'
-                                infer_server_current_ebic_confid = 0.0
-                            else:
-                                infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_classification_models(
-                                    cropped_base64_image_file_text, "ebicycle", service_url=qua_infer_classification_service_url)
-                                try:
-                                    temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
-                                                                                     str(uuid.uuid4()) + '.jpg')
-                                    temp_image = Image.open(io.BytesIO(base64.decodebytes(
-                                        cropped_base64_image_file_text.encode('ascii'))))
-                                    temp_image.save(
-                                        temp_cropped_image_file_full_name)
-                                    self.save_sample_image(temp_cropped_image_file_full_name,
-                                                           item.original_timestamp,
-                                                           infered_class, infer_server_current_ebic_confid,
-                                                           None,
-                                                           "qua_")
-                                except Exception as e:
-                                    self.logger.exception(
-                                        f"exception in save uploaded sample image: {e}")
-                                finally:
-                                    if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
-                                        os.unlink(
-                                            temp_cropped_image_file_full_name)
+                        if cropped_base64_image_file_text == None or len(cropped_base64_image_file_text) < 1:
+                            infered_class = 'background'
+                            infer_server_current_ebic_confid = 0.0
                         else:
-                            packed_infer_result = self.inference_image_from_models(
-                                item, self.current_storey)
-                            if packed_infer_result == None:
-                                continue
-                            infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
-                        infer_used_time_by_ms = (
-                            time.time() - infer_start_time) * 1000
-                        if (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True and infer_used_time_by_ms >= 600) \
-                                or (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == False and infer_used_time_by_ms >= 250):
-                            self.logger.info(
-                                f"board: {self.timeline.board_id}, infer used long time: {infer_used_time_by_ms}ms")
-                        self.logger.debug(
-                            (f"board: {self.timeline.board_id}, adding sw item-> "
-                             f"infered_class: {infered_class}, infered_confid: {infer_server_current_ebic_confid}, "
-                             f"board_confid: {edge_board_confidence}, current_storey: {self.current_storey}, "
-                             f"board_ori_timestamp_str: {item.original_timestamp_str}"))
-                        self.sw.add({"class": infered_class,
-                                    "confid": infer_server_current_ebic_confid,
-                                     "confid_board": float(edge_board_confidence),
-                                     "storey": self.current_storey,
-                                     "is_qua_board": is_qua_board,
-                                     "timestamp": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
-                                     "cropped_base64_image_file_text": f"data:image,{cropped_base64_image_file_text}"})
+                            infered_class, infer_server_current_ebic_confid = self.inferencer.inference_image_from_qua_classification_models(
+                                cropped_base64_image_file_text, "ebicycle", service_url=qua_infer_classification_service_url)
+                            try:
+                                temp_cropped_image_file_full_name = os.path.join(self.temp_image_files_folder_name,
+                                                                                 str(uuid.uuid4()) + '.jpg')
+                                temp_image = Image.open(io.BytesIO(base64.decodebytes(
+                                    cropped_base64_image_file_text.encode('ascii'))))
+                                temp_image.save(
+                                    temp_cropped_image_file_full_name)
+                                self.save_sample_image(temp_cropped_image_file_full_name,
+                                                       item.original_timestamp,
+                                                       infered_class, infer_server_current_ebic_confid,
+                                                       None,
+                                                       "qua_")
+                            except Exception as e:
+                                self.logger.exception(
+                                    f"exception in save uploaded sample image: {e}")
+                            finally:
+                                if os.path.isfile(temp_cropped_image_file_full_name) or os.path.islink(temp_cropped_image_file_full_name):
+                                    os.unlink(
+                                        temp_cropped_image_file_full_name)
+                    else:
+                        packed_infer_result = self.inference_image_from_models(
+                            item, self.current_storey)
+                        if packed_infer_result == None:
+                            continue
+                        infered_class, infer_server_current_ebic_confid, edge_board_confidence, eb_image_base64_encode_text = packed_infer_result
+                    infer_used_time_by_ms = (
+                        time.time() - infer_start_time) * 1000
+                    if (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == True and infer_used_time_by_ms >= 600) \
+                            or (util.read_config_fast_to_property(["developer_debug"], "enable_developer_local_debug_mode") == False and infer_used_time_by_ms >= 250):
+                        self.logger.info(
+                            f"board: {self.timeline.board_id}, infer used long time: {infer_used_time_by_ms}ms")
+                    self.logger.debug(
+                        (f"board: {self.timeline.board_id}, adding sw item-> "
+                         f"infered_class: {infered_class}, infered_confid: {infer_server_current_ebic_confid}, "
+                         f"board_confid: {edge_board_confidence}, current_storey: {self.current_storey}, "
+                         f"board_ori_timestamp_str: {item.original_timestamp_str}"))
+                    self.sw.add({"class": infered_class,
+                                 "confid": infer_server_current_ebic_confid,
+                                 "confid_board": float(edge_board_confidence),
+                                 "storey": self.current_storey,
+                                 "is_qua_board": is_qua_board,
+                                 "timestamp": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(),
+                                 "cropped_base64_image_file_text": f"data:image,{cropped_base64_image_file_text}",
+                                 "full_base64_image_file_text": f"data:image,{full_image_frame_base64_encode_text}"})
                 except Exception as e:
                     self.logger.exception(
                         "exception in handle async task in infer_from_model_worker_queue: {}".format(e))
@@ -279,31 +231,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
 
         def header_buffer_validation_predict(header_buffer: list[dict]) -> tuple[bool, any]:
             # call back function validate the eb entering
-            is_burst_upload_frames_enabled_board = "base64_image_file_text_list" in header_buffer[
-                0]
-            if is_burst_upload_frames_enabled_board:
-                burst_upload_frames_base64_text_list = header_buffer[0]["base64_image_file_text_list"]
-                self.logger.info(
-                    f"board: {self.timeline.board_id}, header_buffer_validation_predict is directly checking with llm(input image count: {len(burst_upload_frames_base64_text_list)})...")
-                qwen_result = self.inferencer.inference_video_by_convert_from_image_frames_from_ali_qwen_vl_model(
-                    [t for t in burst_upload_frames_base64_text_list],
-                    model_name="qwen-vl-plus-0809")
-
-                # qwen_result = self.inferencer.inference_discrete_images_from_ali_qwen_vl_plus_model(
-                #     [i["cropped_base64_image_file_text"]
-                #         for i in header_buffer])
-                self.logger.debug(
-                    f"board: {self.timeline.board_id}, got qwen_result: {str(qwen_result or '')}")
-                if qwen_result != None and \
-                        (qwen_result["vehicle_type"] == "摩托车" or "电瓶" in qwen_result["vehicle_type"] or "电动" in qwen_result["vehicle_type"]):
-                    self.logger.info(
-                        f"board: {self.timeline.board_id}, qwen treat this is ebike")
-                    predict_result = True
-                else:
-                    self.logger.info(
-                        f"board: {self.timeline.board_id}, qwen treat this is NOT ebike")
-                    predict_result = False
-                return predict_result, f"llm: {qwen_result}"
             eb_count = 0
             is_qua_board: bool = header_buffer[0]["is_qua_board"]
             if is_qua_board:
@@ -346,13 +273,13 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                     return False, f"qua board, short header length: {len(header_buffer)}"
             else:
                 # add a temp solution here for further boost the 1126 eb accuracy, if only got 2 and all of them are eb, then also treat as eb entering
-                # if len(header_buffer) == 2:
-                #     configured_eb_rate = 1
-                # else:
-                if len(header_buffer) < header_buffer_validating_min_item_count:
-                    self.logger.debug(
-                        f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
-                    return False, f"short header length: {len(header_buffer)}"
+                if len(header_buffer) == 2:
+                    configured_eb_rate = 1
+                else:
+                    if len(header_buffer) < header_buffer_validating_min_item_count:
+                        self.logger.debug(
+                            f"board: {self.timeline.board_id}, header_buffer_validation_predict with False as short header length: {len(header_buffer)}")
+                        return False, f"short header length: {len(header_buffer)}"
             eb_rate = eb_count / len(header_buffer)
 
             predict_result = eb_rate >= configured_eb_rate
@@ -403,6 +330,12 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                 # send a alarm start confirmation msg to edge board
                 self.timeline.send_mqtt_message_to_board_inbox(
                     str(uuid.uuid4()), 'eb_entering_alarm_start', description="")
+                # send camera voice play msg to edge board
+                self.timeline.send_mqtt_message_to_board_inbox(
+                    str(uuid.uuid4()),
+                    'Category_Camera__play_audio_alarm_by_audio_description',
+                    action_data={"audio_description": "electric_bicycle"},
+                    description="")
                 alarms = []
                 alarms.append(event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
@@ -437,18 +370,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             # reset the session window to uninitialized state and clear the list
             self.logger.debug(
                 f"board: {self.timeline.board_id}, will reset the session window as post silent time elapsed")
-            is_burst_upload_frames_enabled_board = "base64_image_file_text_list" in session_items[
-                0]
-            if is_burst_upload_frames_enabled_board:
-                self.logger.debug(
-                    f"board: {self.timeline.board_id}, re-enable burst upload frames as post silent time elapsed")
-                self.timeline.send_mqtt_message_to_board_inbox(
-                    str(uuid.uuid4()),
-                    "eb_entering_detector_config",
-                    action_data={"burst_upload_enable": True, "burst_upload_frames_count": 4,
-                                 "burst_upload_frames_pre_delay_time_by_ms": 200},
-                    description="cycle enable")
-
             # 告警结束后的静默结束
             self.sw.reset()
 
@@ -467,7 +388,7 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
             header_buffer_validation_predict,
             on_header_buffer_validated,
             pre_session_slient_time,
-            lambda items, new_item: (new_item["class"] == "electric_bicycle" or new_item["class"] == "background") and new_item[
+            lambda items, new_item: (new_item["class"] != "none") and new_item[
                 "confid"] > util.read_config_fast_to_property(
                 ["detectors", "ElectricBicycleEnteringEventDetector"], 'body_buffer_validation_confid'
             ),
@@ -507,12 +428,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
                             "exit_time": "", "latest_infer_success": ""}
         self.inferencer = Inferencer(
             self.statistics_logger, self.timeline.board_id)
-        self.timeline.send_mqtt_message_to_board_inbox(
-            str(uuid.uuid4()),
-            "eb_entering_detector_config",
-            action_data={"burst_upload_enable": True, "burst_upload_frames_count": 4,
-                         "burst_upload_frames_pre_delay_time_by_ms": 250},
-            description="init enable")
 
     def get_timeline_item_filter(self):
         def filter(timeline_items):
@@ -539,15 +454,6 @@ class ElectricBicycleEnteringEventDetector(EventDetectorBase):
         has been received and processed in board.
         """
         str_msg = mqtt_message.payload.decode("utf-8")
-        if "\"event\"" in str_msg:
-            try:
-                # convert to json object of event message
-                evt = json.loads(str_msg)
-                self.infer_from_model_worker_queue.put(
-                    evt, timeout=3)
-            except Exception as e:
-                self.logger.exception(
-                    f"board: {self.timeline.board_id}, on_mqtt_message_from_board_outbox, exception in handle event message: {e}")
         pass
 
     def detect(self, filtered_timeline_items):

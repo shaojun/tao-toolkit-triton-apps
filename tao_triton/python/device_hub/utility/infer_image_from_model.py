@@ -291,6 +291,8 @@ class Inferencer:
                     raw_result = response.output.choices[0].message.content
                     self.logger.debug(
                         f"{self.logger_str_prefix}, inferencer, qwen_vl_plus, raw_result: {raw_result}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+                    print(
+                        f"{datetime.datetime.now()} {self.logger_str_prefix} - qwen_vl_plus images infer used time(by ms): {infer_used_time_by_ms}")
                     unformat_json_text = raw_result[0]["text"]
                 except Exception as e:
                     print(
@@ -440,7 +442,7 @@ class Inferencer:
         except Exception as e:
             print(f"{str(datetime.datetime.now())} {self.logger_str_prefix}, inferencer, qwen video, dashscope call exception: {e}")
             self.logger.debug(
-                f"{self.logger_str_prefix}, inferencer, qwen video, dashscope call exception: {e}, infer_used_time_by_ms: {infer_used_time_by_ms}")
+                f"{self.logger_str_prefix}, inferencer, qwen video, dashscope call exception: {e}")
             return None
         finally:
             for p in image_file_full_path_or_base64_str_list:

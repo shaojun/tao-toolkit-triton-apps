@@ -196,11 +196,15 @@ class EventAlarmWebServiceNotifier:
                                  "base64string": target_alarm.imageText,
                                  "data": target_alarm.data}
                 try:
-                    self.logger.info(
-                        "board: {}, Notifying alarm(by {}) with priority: {} at: {} -> {}".format(
-                            target_alarm.event_detector.timeline.board_id,
-                            target_alarm.event_detector.__class__.__name__,
-                            target_alarm.priority, str(target_alarm.original_utc_timestamp), target_alarm.description))
+                    if target_alarm.event_detector.__class__.__name__ == "ElevatorMileageEventDetector":
+                        # avoid logging too many mileage alarms
+                        pass
+                    else:
+                        self.logger.info(
+                            "board: {}, Notifying alarm(by {}) with priority: {} at: {} -> {}".format(
+                                target_alarm.event_detector.timeline.board_id,
+                                target_alarm.event_detector.__class__.__name__,
+                                target_alarm.priority, str(target_alarm.original_utc_timestamp), target_alarm.description))
 
                     # if datetime.datetime.now().second % 9 != 0 and post_data["warning_type"] == "008":
                     #    continue

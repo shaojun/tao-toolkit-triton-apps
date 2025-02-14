@@ -36,8 +36,12 @@ class GasTankEnteringEventDetector(EventDetectorBase):
         self.logger = logging.getLogger("gasTankEnteringEventDetectorLogger")
         self.statistics_logger = logging.getLogger("statisticsLogger")
         self.need_close_alarm = False
-        self.silent_period_duration = util.read_config_fast_to_property(
-            ["detectors", "GasTankEnteringEventDetector"], 'silent_period_duration')
+
+        self.next_pre_session_slient_time = util.read_config_fast_to_property(
+            ["detectors", "GasTankEnteringEventDetector"],
+            'next_pre_session_silent_time', 15)
+        self.post_session_silent_time = util.read_config_fast_to_property(
+            ["detectors", "GasTankEnteringEventDetector"], 'post_session_silent_time', 60)
         self.body_buffer_end_period_duration = util.read_config_fast_to_property(
             ["detectors", "GasTankEnteringEventDetector"], 'how_long_to_treat_tank_exist_when_no_predict_item_received')
 
@@ -71,7 +75,7 @@ class GasTankEnteringEventDetector(EventDetectorBase):
 
         def on_header_buffer_validated(buffer: list[dict], predict_data: any, is_header_buffer_valid: bool) -> None:
             self.logger.debug("board:{}, header buffer validated result: {}".format(self.timeline.board_id,
-                                                                                  str(is_header_buffer_valid)))
+                                                                                    str(is_header_buffer_valid)))
             # 进入body_buffering状态
             if is_header_buffer_valid:
                 infered_class = buffer[-1]["class"]
@@ -112,10 +116,11 @@ class GasTankEnteringEventDetector(EventDetectorBase):
             header_buffer_starter_validation, None, BufferType.ByPeriodTime,
             util.read_config_fast_to_property(["detectors", "GasTankEnteringEventDetector"],
                                               "header_buffer_end_condition"),
-            header_buffer_validation_predict, on_header_buffer_validated, self.silent_period_duration,
+            header_buffer_validation_predict, on_header_buffer_validated,
+            self.next_pre_session_slient_time,
             body_buffer_validation, BufferType.ByPeriodTime, self.body_buffer_end_period_duration,
             on_session_end=on_session_end,
-            post_session_silent_time=self.silent_period_duration,
+            post_session_silent_time=self.post_session_silent_time,
             on_post_session_silent_time_elapsed=on_post_session_silent_time_elapsed)
 
     def prepare(self, timeline, event_detectors):
@@ -197,6 +202,23 @@ class GasTankEnteringEventDetector(EventDetectorBase):
                     infered_class, infered_confid = infered_result
                     self.logger.debug(
                         f"board: {self.timeline.board_id}, infered_class: {infered_class}, infered_confid: {infered_confid}")
+
+                    next_pre_session_slient_time = util.read_config_fast_to_property(
+                        ["detectors", "GasTankEnteringEventDetector"],
+                        'next_pre_session_silent_time', 15)
+                    post_session_silent_time = util.read_config_fast_to_property(
+                        ["detectors", "GasTankEnteringEventDetector"], 'post_session_silent_time', 60)
+                    header_buffer_end_condition = util.read_config_fast_to_property(
+                        ["detectors", "GasTankEnteringEventDetector"],
+                        'header_buffer_end_condition')
+                    if self.sw.next_pre_session_silent_time != next_pre_session_slient_time \
+                            or self.sw.post_session_silent_time != post_session_silent_time \
+                            or self.sw.header_buffer_end_condition != header_buffer_end_condition:
+                        self.sw.next_pre_session_silent_time = next_pre_session_slient_time
+                        self.sw.post_session_silent_time = post_session_silent_time
+                        self.sw.header_buffer_end_condition = header_buffer_end_condition
+                        self.logger.debug(
+                            f"board: {self.timeline.board_id}, sw updated parameters with next_pre_session_slient_time: {next_pre_session_slient_time}, post_session_silent_time: {post_session_silent_time}, header_buffer_end_condition: {header_buffer_end_condition}")
 
                     self.sw.add({"class": infered_class,
                                 "confid": infered_confid, "confid_board": float(edge_board_confidence)})

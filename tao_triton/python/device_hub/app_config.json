@@ -9,13 +9,13 @@
             "enable_qua_detection_when_full_frame_uploaded_from_board": true,
             "SAVE_EBIC_IMAGE_SAMPLE_ROOT_FOLDER_PATH": "ebic_image_samples",
             "EnableSendConfirmedToLocalWhenFirstImageReceived": true,
-            "ebic_confid_board": 0.8,
+            "ebic_confid_board": 0.78,
             "ebic_confid_board_qua": 0.1,
             "ebic_confid": 0.55,
             "ebic_confid_qua": 0.55,
             "eb_rate_treat_eb_entering": 0.4,
             "eb_rate_treat_eb_entering_qua": 0.51,
-            "header_buffer_validating_min_item_count": 3,
+            "header_buffer_validating_min_item_count": 2,
             "header_buffer_validating_min_item_count_qua": 2,
             "header_buffer_end_condition": 2.4,
             "header_buffer_end_condition_qua": 2,
@@ -48,18 +48,13 @@
                     "TargetBoardId": "*",
                     "Enable": false
                 }
-            ],
-            "EnableBurstUploadFramesSwitchers": [
-                {
-                    "TargetBoardId": "*",
-                    "Enable": true
-                }
             ]
         },
         "GasTankEnteringEventDetector": {
             "header_buffer_end_condition": 2.5,
+            "next_pre_session_silent_time": 48,
             "header_buffer_validating_min_item_count": 2,
-            "silent_period_duration": 60,
+            "post_session_silent_time": 60,
             "enable_async_infer_and_post_process": true,
             "gas_tank_confid": 0.7,
             "gas_tank_rate_treat_tank_entering": 0.4,

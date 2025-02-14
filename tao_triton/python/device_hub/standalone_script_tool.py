@@ -64,4 +64,4 @@ if __name__ == '__main__':
                         help='path to log folder')
     FLAGS = parser.parse_args()
     if FLAGS.function == 'purge_logs':
-        function_purge_logs_by_file_name_datetime(FLAGS.parameters, 12)
+        function_purge_logs_by_file_name_datetime(FLAGS.parameters, 20)

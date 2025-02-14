@@ -114,12 +114,12 @@ class BoardTimeline:
                     "board: {}, call detector_on_mqtt_message_from_board_outbox_function: {} from timeline raised an exception: {}".format(d.__class__.__name__, self.board_id, e))
 
     def send_mqtt_message_to_board_inbox(self, msg_id: str,
-                                         action_type: Literal['enable_block_door', 'disable_block_door', 'eb_entering_alarm_prestart', 'eb_entering_alarm_start', 'eb_entering_alarm_end', 'eb_entering_detector_config'],
+                                         action_type: Literal['enable_block_door', 'disable_block_door', 'eb_entering_alarm_prestart', 'eb_entering_alarm_start', 'eb_entering_alarm_end', 'eb_entering_detector_config', 'Category_Camera__play_audio_alarm_by_audio_description'],
                                          action_data: dict = None,
                                          description: str = None) -> bool:
         try:
             if action_type == 'eb_entering_alarm_prestart' or action_type == 'eb_entering_alarm_start' or action_type == 'eb_entering_alarm_end' \
-                    or action_type == 'eb_entering_detector_config':
+                    or action_type == 'eb_entering_detector_config' or action_type == 'Category_Camera__play_audio_alarm_by_audio_description':
                 pass
             else:
                 config_item = [
@@ -144,7 +144,7 @@ class BoardTimeline:
                              "timestamp": f"{datetime.datetime.now().isoformat()}",
                              "description": description,
                              "type": action_type,
-                             "body": action_data}
+                             "data": action_data}
             request = {"request": inner_request}
             publish_result = self.mqtt_client.publish(
                 self.mqtt_board_inbox_topic, json.dumps(request), qos=1)
