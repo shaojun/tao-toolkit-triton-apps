@@ -20,7 +20,10 @@ import requests
 from tao_triton.python.device_hub.event_detectors.event_detector_base import EventDetectorBase
 from tao_triton.python.device_hub.event_detectors.electric_bicycle_entering_event_detector import \
     ElectricBicycleEnteringEventDetector
-
+import paho.mqtt.client as paho_mqtt_client
+import json
+from tao_triton.python.device_hub.utility.infer_image_from_model import Inferencer
+from logging import Logger
 
 class DoorStateSessionDetector(EventDetectorBase):
     def __init__(self, logging):
@@ -2583,3 +2586,139 @@ class DetectDoorWarningSignLostEventDetector(EventDetectorBase):
                     self.state_obj["detect_door_warning_sign_time_stamp"].strftime("%d/%m/%Y %H:%M:%S")),
                 "DOORWARNINGSIGN"))
         return alarms
+
+
+#
+# 电梯的 通过本系统气压计算出来的楼层 与 电梯自带的楼层显示屏显示楼层 不一致
+class CaculatedFloorNumberDifferentFromEleFloorScreenNumberEventDetector(EventDetectorBase):
+    def __init__(self, logging):
+        EventDetectorBase.__init__(self, logging)
+        self.logger: Logger = logging.getLogger(
+            "CaculatedFloorNumberDifferentFromEleFloorScreenNumberEventDetectorLogger")
+        self.statistics_logger = logging.getLogger("statisticsLogger")
+
+    def prepare(self, timeline, event_detectors):
+        """
+        before call the `detect`, this function is guaranteed to be called ONLY once.
+        @param timeline: BoardTimeline
+        @type event_detectors: List[EventDetectorBase]
+        @param event_detectors: other detectors in pipeline, could be used for subscribe inner events.
+        """
+        self.timeline = timeline
+        self.inferencer = Inferencer(
+            self.statistics_logger, self.timeline.board_id)
+        pass
+
+    def get_timeline_item_filter(self):
+        def filter(timeline_items):
+            """
+
+            @param timeline_items: List[TimelineItem]
+            @return:
+            """
+            result = [i for i in timeline_items if
+                      not i.consumed
+                      # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
+                      and (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
+                            and "storey" in i.raw_data)]
+            return result
+
+        return filter
+    
+
+    def detect(self, filtered_timeline_items):
+        """
+
+        @param filtered_timeline_items: List[TimelineItem]
+        @return: List[EventAlarm]
+        """
+        last_state_obj = self.state_obj
+        new_state_obj = None
+        if last_state_obj and "last_notify_timestamp" in last_state_obj:
+            last_report_time_diff = (
+                    datetime.datetime.now() - last_state_obj["last_notify_timestamp"]).total_seconds()
+            if last_report_time_diff < 120:
+                return None
+
+        story_filtered_timeline_items = [i for i in filtered_timeline_items if
+                                         i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE]
+
+        if len(story_filtered_timeline_items) > 0:
+            self.current_storey = story_filtered_timeline_items[-1].raw_data["storey"]
+
+        for item in reversed(acceleration_filtered_timeline_items):
+            if item.raw_data["acceleration"] > item.raw_data["maxAcceleration"] and detect_person:
+                new_state_obj = {"last_state": "shock", "acceleration": item.raw_data["acceleration"],
+                                 "last_notify_timestamp": datetime.datetime.now()}
+            break
+        if not new_state_obj:
+            return None
+        # store it back, and it will be passed in at next call
+        self.state_obj = new_state_obj
+        if new_state_obj:
+            return [
+                event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                       event_alarm.EventAlarmPriority.ERROR,
+                                       "剧烈运动，当前加速度: {}".format(new_state_obj["acceleration"]), "005")]
+        return None
+    def on_mqtt_message_from_board_outbox(self, mqtt_message: paho_mqtt_client.MQTTMessage):
+        """
+        the callback function when a mqtt message is received from board,
+        mostly used for receive the response from board for confirm the previous request
+        has been received and processed in board.
+        """
+        str_msg = mqtt_message.payload.decode("utf-8")
+        """
+        sample of event for type of "ele_idle_floor_screen_snapshot"---->
+        {
+  "event": {
+    "id": "",
+    "sender": "edge_board_app_elenet",
+    "timestamp": "2025-02-14T02:28:19.221458+00:00",
+    "overall_status_code": 200,
+    "type": "ele_idle_floor_screen_snapshot",
+    "data": {
+      "image_base64": "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"
+    },
+    "description": ""
+  }
+}
+        """
+        # try handle the ele_idle_floor_screen_snapshot event
+        try:
+            event = json.loads(str_msg)
+            if "event" in event and "type" in event["event"] and event["event"]["type"] == "ele_idle_floor_screen_snapshot":
+                if "data" in event["event"] and "image_base64" in event["event"]["data"]:
+                    # do something with the image_base64
+                    image_base64_str = event["event"]["data"]["image_base64"]
+                    try:
+                        if self.state_obj and "last_notify_timestamp" in self.state_obj:
+                            last_report_time_diff = (
+                                    datetime.datetime.now() - self.state_obj["last_notify_timestamp"]).total_seconds()
+                            if last_report_time_diff < 60*60*24:
+                                return
+            
+                        llm_result = self.inferencer.inference_discrete_images_from_ali_qwen_vl_plus_model(
+                            ["data:image,"+image_base64_str], model_name="qwen-vl-max-0809", 
+                            user_prompt="请回答",
+                            system_prompt="你是一个数字识别专家,此图片是电梯中的楼层显示屏,里面显示的楼层数是多少?必须以json格式返回结果,例如: {'floor_number': 1999}")
+                        inferenced_floor_number = llm_result["floor_number"]
+                        self.logger.debug("Inferenced floor number is: {}".format(inferenced_floor_number))
+                        if self.current_storey != inferenced_floor_number:
+                            self.logger.info("Current storey is: {}, inferenced floor number is: {}, will raise alarm".format(
+                                self.current_storey, inferenced_floor_number))
+                            new_state_obj = {"last_state": "different", "current_storey": self.current_storey,
+                                             "inferenced_floor_number": inferenced_floor_number,
+                                             "last_notify_timestamp": datetime.datetime.now()}
+                            self.state_obj = new_state_obj
+                            self.timeline.notify_event_alarm(
+                                event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
+                                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
+                                                       event_alarm.EventAlarmPriority.WARNING,
+                                                       "电梯的 通过本系统气压计算出来的楼层 与 电梯自带的楼层显示屏显示楼层 不一致, 通过本系统计算的楼层为: {}, 电梯自带的楼层显示屏显示的楼层为: {}".format(
+                                                           inferenced_floor_number, self.current_storey), "CaculatedFloorNumberDifferentFromEleFloorScreenNumber"))
+                    except:
+                        self.logger.exception("handle ele_idle_floor_screen_snapshot event raised an exception")
+        except:
+            self.logger.exception("handle ele_idle_floor_screen_snapshot event raised an exception:")
