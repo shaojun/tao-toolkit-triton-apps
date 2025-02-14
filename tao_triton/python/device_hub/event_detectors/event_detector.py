@@ -2761,22 +2761,6 @@ class CaculatedFloorNumberDifferentFromEleFloorScreenNumberEventDetector(EventDe
 
         if len(story_filtered_timeline_items) > 0:
             self.current_storey = story_filtered_timeline_items[-1].raw_data["storey"]
-
-        for item in reversed(acceleration_filtered_timeline_items):
-            if item.raw_data["acceleration"] > item.raw_data["maxAcceleration"] and detect_person:
-                new_state_obj = {"last_state": "shock", "acceleration": item.raw_data["acceleration"],
-                                 "last_notify_timestamp": datetime.datetime.now()}
-            break
-        if not new_state_obj:
-            return None
-        # store it back, and it will be passed in at next call
-        self.state_obj = new_state_obj
-        if new_state_obj:
-            return [
-                event_alarm.EventAlarm(self, datetime.datetime.fromisoformat(
-                    datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
-                                       event_alarm.EventAlarmPriority.ERROR,
-                                       "剧烈运动，当前加速度: {}".format(new_state_obj["acceleration"]), "005")]
         return None
     def on_mqtt_message_from_board_outbox(self, mqtt_message: paho_mqtt_client.MQTTMessage):
         """
