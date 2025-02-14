@@ -105,7 +105,8 @@ def create_boardtimeline(board_id: str, kafka_producer, mqtt_client: paho_mqtt_c
             #    event_detector.DeviceOfflineEventDetector(logging),
             #    event_detector.DetectPersonOnTopEventDetector(logging),
             #    event_detector.DetectCameraBlockedEventDetector(logging),
-            # event_detector.CameraDetectVehicleEventDetector(logging)
+            # event_detector.CameraDetectVehicleEventDetector(logging),
+            #  event_detector.SOSEventDetector(logging)
         ]
         return board_timeline.BoardTimeline(logging, board_id, [],
                                             event_detectors,
@@ -145,7 +146,8 @@ def create_boardtimeline(board_id: str, kafka_producer, mqtt_client: paho_mqtt_c
                        event_detector.DetectPersonOnTopEventDetector(logging),
                        event_detector.DetectCameraBlockedEventDetector(
                            logging),
-                       # event_detector.CameraDetectVehicleEventDetector(logging)
+                       # event_detector.CameraDetectVehicleEventDetector(logging),
+                       # event_detector.SOSEventDetector(logging)
                        ]
     return board_timeline.BoardTimeline(logging, board_id, [],
                                         event_detectors,
@@ -562,6 +564,11 @@ def worker_of_process_board_msg(board_definitions: list[dict], process_name: str
                             new_timeline_items.append(
                                 board_timeline.TimelineItem(cur_board_timeline,
                                                             board_timeline.TimelineItemType.CAMERA_VECHILE_EVENT,
+                                                            board_msg_original_timestamp, board_msg_id, obj_data))
+                        elif "buttonPressed" in obj_data:
+                            new_timeline_items.append(
+                                board_timeline.TimelineItem(cur_board_timeline,
+                                                            board_timeline.TimelineItemType.SOS_BUTTON,
                                                             board_msg_original_timestamp, board_msg_id, obj_data))
                     cur_board_timeline.add_items(new_timeline_items)
                 elif "update" in event_data:
