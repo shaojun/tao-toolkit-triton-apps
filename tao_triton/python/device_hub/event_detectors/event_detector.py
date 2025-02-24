@@ -25,6 +25,7 @@ import json
 from tao_triton.python.device_hub.utility.infer_image_from_model import Inferencer
 from logging import Logger
 
+
 class DoorStateSessionDetector(EventDetectorBase):
     def __init__(self, logging):
         EventDetectorBase.__init__(self, logging)
@@ -2626,7 +2627,8 @@ class DetectDoorWarningSignLostEventDetector(EventDetectorBase):
             return None
 
         alarms = []
-        config_item = [i for i in self.timeline.configures if i["code"] == "ffkgm"]
+        # config_item = [i for i in self.timeline.configures if i["code"] == "ffkgm"]
+        config_item = []
         config_time = 1200 if len(config_item) == 0 else int(config_item[0]["value"])
         if ((datetime.datetime.now(datetime.timezone.utc) - self.state_obj[
             "detect_door_warning_sign_time_stamp"]).total_seconds() > config_time):
@@ -2704,6 +2706,7 @@ class SOSEventDetector(EventDetectorBase):
                 "SOS"))
         return None
 
+
 #
 # 电梯的 通过本系统气压计算出来的楼层 与 电梯自带的楼层显示屏显示楼层 不一致
 class CaculatedFloorNumberDifferentFromEleFloorScreenNumberEventDetector(EventDetectorBase):
@@ -2736,11 +2739,10 @@ class CaculatedFloorNumberDifferentFromEleFloorScreenNumberEventDetector(EventDe
                       not i.consumed
                       # (i.type == TimelineItemType.LOCAL_IDLE_LOOP or
                       and (i.item_type == board_timeline.TimelineItemType.SENSOR_READ_PRESSURE
-                            and "storey" in i.raw_data)]
+                           and "storey" in i.raw_data)]
             return result
 
         return filter
-    
 
     def detect(self, filtered_timeline_items):
         """
@@ -2762,6 +2764,7 @@ class CaculatedFloorNumberDifferentFromEleFloorScreenNumberEventDetector(EventDe
         if len(story_filtered_timeline_items) > 0:
             self.current_storey = story_filtered_timeline_items[-1].raw_data["storey"]
         return None
+
     def on_mqtt_message_from_board_outbox(self, mqtt_message: paho_mqtt_client.MQTTMessage):
         """
         the callback function when a mqtt message is received from board,
@@ -2788,7 +2791,8 @@ class CaculatedFloorNumberDifferentFromEleFloorScreenNumberEventDetector(EventDe
         # try handle the ele_idle_floor_screen_snapshot event
         try:
             event = json.loads(str_msg)
-            if "event" in event and "type" in event["event"] and event["event"]["type"] == "ele_idle_floor_screen_snapshot":
+            if "event" in event and "type" in event["event"] and event["event"][
+                "type"] == "ele_idle_floor_screen_snapshot":
                 if "data" in event["event"] and "image_base64" in event["event"]["data"]:
                     # do something with the image_base64
                     image_base64_str = event["event"]["data"]["image_base64"]
@@ -2796,18 +2800,19 @@ class CaculatedFloorNumberDifferentFromEleFloorScreenNumberEventDetector(EventDe
                         if self.state_obj and "last_notify_timestamp" in self.state_obj:
                             last_report_time_diff = (
                                     datetime.datetime.now() - self.state_obj["last_notify_timestamp"]).total_seconds()
-                            if last_report_time_diff < 60*60*24:
+                            if last_report_time_diff < 60 * 60 * 24:
                                 return
-            
+
                         llm_result = self.inferencer.inference_discrete_images_from_ali_qwen_vl_plus_model(
-                            ["data:image,"+image_base64_str], model_name="qwen-vl-max-0809", 
+                            ["data:image," + image_base64_str], model_name="qwen-vl-max-0809",
                             user_prompt="请回答",
                             system_prompt="你是一个数字识别专家,此图片是电梯中的楼层显示屏,里面显示的楼层数是多少?必须以json格式返回结果,例如: {'floor_number': 1999}")
                         inferenced_floor_number = llm_result["floor_number"]
                         self.logger.debug("Inferenced floor number is: {}".format(inferenced_floor_number))
                         if self.current_storey != inferenced_floor_number:
-                            self.logger.info("Current storey is: {}, inferenced floor number is: {}, will raise alarm".format(
-                                self.current_storey, inferenced_floor_number))
+                            self.logger.info(
+                                "Current storey is: {}, inferenced floor number is: {}, will raise alarm".format(
+                                    self.current_storey, inferenced_floor_number))
                             new_state_obj = {"last_state": "different", "current_storey": self.current_storey,
                                              "inferenced_floor_number": inferenced_floor_number,
                                              "last_notify_timestamp": datetime.datetime.now()}
@@ -2817,7 +2822,8 @@ class CaculatedFloorNumberDifferentFromEleFloorScreenNumberEventDetector(EventDe
                                     datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()),
                                                        event_alarm.EventAlarmPriority.WARNING,
                                                        "电梯的 通过本系统气压计算出来的楼层 与 电梯自带的楼层显示屏显示楼层 不一致, 通过本系统计算的楼层为: {}, 电梯自带的楼层显示屏显示的楼层为: {}".format(
-                                                           inferenced_floor_number, self.current_storey), "CaculatedFloorNumberDifferentFromEleFloorScreenNumber"))
+                                                           inferenced_floor_number, self.current_storey),
+                                                       "CaculatedFloorNumberDifferentFromEleFloorScreenNumber"))
                     except:
                         self.logger.exception("handle ele_idle_floor_screen_snapshot event raised an exception")
         except:
